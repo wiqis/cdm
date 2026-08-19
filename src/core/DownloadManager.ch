@@ -1,271 +1,216 @@
+// ChemicalDM — download queue manager. Owns the item list (persistent record)
+// and the live task runtimes (worker threads). All queue mutations happen
+// under a single mutex; worker threads only touch their own TaskRuntime.
+
+public namespace cdm {
+
 using std::string;
+using std::string_view;
+using std::vector;
+using std::ordered_map;
+using std::mutex;
 
-public namespace download {
+    public struct DownloadManager {
+        var items_mutex : mutex
+        var items : vector<DownloadItem>
+        var runtimes : ordered_map<string, *mut TaskRuntime>
+        var download_dir : string
+        var max_concurrent : int
 
-public struct DownloadEntry {
-    var id : i64
-    var url : string
-    var filename : string
-    var folder : string
-    var status : i64
-    var total_bytes : i64
-    var downloaded_bytes : i64
-    var speed : i64
-    var task_active : bool
-}
-
-public struct DownloadManager {
-    var next_id : i64
-    var entries : std::vector<DownloadEntry>
-    var task_urls : std::vector<string>
-    var task_filenames : std::vector<string>
-    var task_folders : std::vector<string>
-    var task_total : std::vector<i64>
-    var task_downloaded : std::vector<i64>
-    var task_speeds : std::vector<i64>
-    var task_status : std::vector<i64>
-    var task_error : std::vector<string>
-}
-
-public func dm_init() : DownloadManager {
-    var dm = DownloadManager {
-        next_id: 1,
-        entries: std::vector<DownloadEntry>(),
-        task_urls: std::vector<string>(),
-        task_filenames: std::vector<string>(),
-        task_folders: std::vector<string>(),
-        task_total: std::vector<i64>(),
-        task_downloaded: std::vector<i64>(),
-        task_speeds: std::vector<i64>(),
-        task_status: std::vector<i64>(),
-        task_error: std::vector<string>()
-    }
-    return dm
-}
-
-public func dm_add(dm : *mut DownloadManager, url_str : &string, filename : &string, folder : &string) : i64 {
-    var id = dm.next_id
-    dm.next_id = dm.next_id + 1
-
-    dm.task_urls.push_back(url_str.copy())
-    dm.task_filenames.push_back(filename.copy())
-    dm.task_folders.push_back(folder.copy())
-    dm.task_total.push_back(0)
-    dm.task_downloaded.push_back(0)
-    dm.task_speeds.push_back(0)
-    dm.task_status.push_back(0)
-    dm.task_error.push_back(string())
-
-    var entry = DownloadEntry {
-        id: id,
-        url: url_str.copy(),
-        filename: filename.copy(),
-        folder: folder.copy(),
-        status: 0,
-        total_bytes: 0,
-        downloaded_bytes: 0,
-        speed: 0,
-        task_active: false
-    }
-    dm.entries.push_back(entry)
-
-    start_task_bg(dm, dm.entries.size() - 1 as int)
-    return id
-}
-
-public func dm_get_all_json(dm : *mut DownloadManager) : string {
-    sync_tasks(dm)
-    var json = string("[")
-    var first = true
-    var i = 0
-    while(i < dm.entries.size() as int) {
-        var e = dm.entries.get_ptr(i as size_t)
-        if(!first) { json.append_view(",") }
-        first = false
-        json.append_view("{\"id\":")
-        json.append_integer(e.id)
-        json.append_view(",\"url\":\"")
-        json.append_string(&e.url)
-        json.append_view("\",\"filename\":\"")
-        json.append_string(&e.filename)
-        json.append_view("\",\"folder\":\"")
-        json.append_string(&e.folder)
-        json.append_view("\",\"status\":\"")
-        var status_str = status_to_str(e.status)
-        json.append_view(&status_str.to_view())
-        json.append_view("\",\"total\":")
-        json.append_integer(e.total_bytes)
-        json.append_view(",\"downloaded\":")
-        json.append_integer(e.downloaded_bytes)
-        json.append_view(",\"speed\":")
-        json.append_integer(e.speed)
-        json.append_view(",\"progress\":")
-        json.append_integer(calc_progress(e.total_bytes, e.downloaded_bytes))
-        json.append_view(",\"eta\":\"")
-        var eta_str = calc_eta(e.total_bytes, e.downloaded_bytes, e.speed)
-        json.append_view(&eta_str.to_view())
-        json.append_view("\"}")
-        i = i + 1
-    }
-    json.append_view("]")
-    return json
-}
-
-public func dm_pause(dm : *mut DownloadManager, id : i64) {
-    var i = 0
-    while(i < dm.entries.size() as int) {
-        var e = dm.entries.get_ptr(i as size_t)
-        if(e.id == id && e.status == 1) {
-            e.status = 2
-            e.task_active = false
+        @constructor func constructor() {
+            var dir = string::make_no_len(DEFAULT_DOWNLOAD_DIR)
+            return DownloadManager {
+                items_mutex = mutex(),
+                items = vector<DownloadItem>(),
+                runtimes = ordered_map<string, *mut TaskRuntime>(),
+                download_dir = dir,
+                max_concurrent = DEFAULT_MAX_CONCURRENT
+            }
         }
-        i = i + 1
     }
-}
 
-public func dm_resume(dm : *mut DownloadManager, id : i64) {
-    var i = 0
-    while(i < dm.entries.size() as int) {
-        var e = dm.entries.get_ptr(i as size_t)
-        if(e.id == id && (e.status == 2 || e.status == 4)) {
-            var idx = i
-            e.status = 1
-            e.task_active = true
-            e.speed = 0
-            dm.task_status.set(idx as size_t, 1)
-            dm.task_downloaded.set(idx as size_t, 0)
-            dm.task_speeds.set(idx as size_t, 0)
-            start_task_bg(dm, idx)
+    // Count of items currently in the DOWNLOADING state (proxies scheduler slots).
+    func count_active(dm : &DownloadManager) : int {
+        var n = 0
+        for(var i = 0u; i < dm.items.size(); i++) {
+            var it = dm.items.get_ptr(i)
+            var rtpp = dm.runtimes.get_ptr(&it.id)
+            if(rtpp != null) {
+                var rt = *rtpp
+                if(rt != null) {
+                    var p = snapshot_progress(rt)
+                    if(p.state == STATE_DOWNLOADING) { n = n + 1 }
+                }
+            }
         }
-        i = i + 1
+        return n
     }
-}
 
-public func dm_cancel(dm : *mut DownloadManager, id : i64) {
-    var i = 0
-    while(i < dm.entries.size() as int) {
-        var e = dm.entries.get_ptr(i as size_t)
-        if(e.id == id) {
-            dm.entries.remove(i as size_t)
-            dm.task_urls.remove(i as size_t)
-            dm.task_filenames.remove(i as size_t)
-            dm.task_folders.remove(i as size_t)
-            dm.task_total.remove(i as size_t)
-            dm.task_downloaded.remove(i as size_t)
-            dm.task_speeds.remove(i as size_t)
-            dm.task_status.remove(i as size_t)
-            dm.task_error.remove(i as size_t)
-            return
+    // Look up an index by id, or return items.size().
+    func find_item_index(dm : &DownloadManager, id : &string) : usize {
+        for(var i = 0u; i < dm.items.size(); i++) {
+            var it = dm.items.get_ptr(i)
+            if(it.id.equals(id)) { return i }
         }
-        i = i + 1
-    }
-}
-
-struct _TaskBgArgs {
-    var dm_ptr : *mut DownloadManager
-    var idx : int
-}
-
-func _task_bg_thread(arg : *mut void) : *void {
-    var args = arg as *mut _TaskBgArgs
-    var dm = args.dm_ptr
-    var idx = args.idx
-
-    var url_ptr = dm.task_urls.get_ptr(idx as size_t)
-    var fname_ptr = dm.task_filenames.get_ptr(idx as size_t)
-    var fpath_ptr = dm.task_folders.get_ptr(idx as size_t)
-
-    var task = DownloadTask {
-        id: dm.entries.get_ptr(idx as size_t).id,
-        url: url_ptr.copy(),
-        filename: fname_ptr.copy(),
-        folder: fpath_ptr.copy(),
-        total_bytes: 0,
-        downloaded_bytes: 0,
-        speed: 0,
-        status_code: 1,
-        error_msg: string()
+        return dm.items.size()
     }
 
-    do_download(&raw mut task, null as *mut bool)
+    // Start queued items up to max_concurrent.
+    public func start_pending(dm : &mut DownloadManager) {
+        var active = count_active(dm)
+        for(var i = 0u; i < dm.items.size(); i++) {
+            if(active >= dm.max_concurrent) { return }
+            var it = dm.items.get_ptr(i)
+            if(it.state != STATE_QUEUED) { continue }
+            var rtpp = dm.runtimes.get_ptr(&it.id)
+            if(rtpp != null) { continue }
 
-    dm.task_status.set(idx as size_t, task.status_code)
-    dm.task_downloaded.set(idx as size_t, task.downloaded_bytes)
-    dm.task_total.set(idx as size_t, task.total_bytes)
-    dm.task_speeds.set(idx as size_t, task.speed)
-    dm.task_error.set(idx as size_t, task.error_msg.copy())
+            var id_copy = it.id.copy()
+            var rt = new TaskRuntime(id_copy)
+            if(rt == null) { continue }
 
-    var e = dm.entries.get_ptr(idx as size_t)
-    e.status = task.status_code
-    e.total_bytes = task.total_bytes
-    e.downloaded_bytes = task.downloaded_bytes
-    e.speed = task.speed
-    e.task_active = false
-
-    free(arg)
-    return null as *void
-}
-
-func start_task_bg(dm : *mut DownloadManager, idx : int) {
-    var args = malloc(sizeof(_TaskBgArgs) as size_t) as *mut _TaskBgArgs
-    args.dm_ptr = dm
-    args.idx = idx
-    std::concurrent::spawn(_task_bg_thread, args as *mut void)
-}
-
-func sync_tasks(dm : *mut DownloadManager) {
-    var i = 0
-    while(i < dm.entries.size() as int) {
-        var e = dm.entries.get_ptr(i as size_t)
-        if(i < dm.task_status.size() as int) {
-            e.status = dm.task_status.get(i as size_t)
-            e.total_bytes = dm.task_total.get(i as size_t)
-            e.downloaded_bytes = dm.task_downloaded.get(i as size_t)
-            e.speed = dm.task_speeds.get(i as size_t)
+            dm.runtimes.insert(it.id.copy(), rt)
+            var url_v = string_view::make_view(&it.url)
+            var dir_v = string_view::make_view(&it.dir)
+            var fname_v = string_view::make_view(&it.filename)
+            if(start_task(rt, url_v, dir_v, fname_v)) {
+                it.state = STATE_DOWNLOADING
+                active = active + 1
+            } else {
+                dm.runtimes.erase(&it.id)
+                delete rt
+            }
         }
-        i = i + 1
     }
-}
 
-func status_to_str(s : i64) : string {
-    if(s == 0) { return string("queued") }
-    if(s == 1) { return string("active") }
-    if(s == 2) { return string("paused") }
-    if(s == 3) { return string("complete") }
-    if(s == 4) { return string("failed") }
-    if(s == 5) { return string("error") }
-    return string("unknown")
-}
+    // Add a new URL to the queue.
+    public func add_task(dm : &mut DownloadManager, url_str : string_view) : string {
+        var suggested = suggested_filename(url_str)
+        var id = uuid::v4().to_string()
 
-func calc_progress(total : i64, downloaded : i64) : i64 {
-    if(total <= 0) { return 0 }
-    return downloaded * 100 / total
-}
+        var item = DownloadItem(id.copy(), string(url_str.data(), url_str.size()),
+                                dm.download_dir.copy(), suggested)
 
-func calc_eta(total : i64, downloaded : i64, speed : i64) : string {
-    if(speed <= 0 || total <= downloaded) { return string("--:--") }
-    var remaining = total - downloaded
-    var secs = remaining / speed
-    var mins = secs / 60
-    var hrs = mins / 60
-    mins = mins % 60
-    secs = secs % 60
-    var s = string()
-    if(hrs > 0) {
-        append_two_digit(&raw s, hrs)
-        s.append(':')
+        dm.items.push_back(item)
+        start_pending(dm)
+        return id
     }
-    append_two_digit(&raw s, mins)
-    s.append(':')
-    append_two_digit(&raw s, secs)
-    return s
-}
 
-func append_two_digit(s : *string, val : i64) {
-    var tens = val / 10
-    var ones = val % 10
-    s.append((tens + '0') as char)
-    s.append((ones + '0') as char)
-}
+    // Pause a task. If it has not started yet it is simply marked paused.
+    public func pause_task(dm : &mut DownloadManager, id : &string) {
+        var idx = find_item_index(dm, id)
+        if(idx == dm.items.size()) { return }
+        var it = dm.items.get_ptr(idx)
+        var rtpp = dm.runtimes.get_ptr(&it.id)
+        if(rtpp != null && *rtpp != null) {
+            request_pause(*rtpp)
+        } else if(it.state == STATE_QUEUED) {
+            it.state = STATE_PAUSED
+        }
+    }
 
-}
+    // Resume a paused or queued task.
+    public func resume_task(dm : &mut DownloadManager, id : &string) {
+        var idx = find_item_index(dm, id)
+        if(idx == dm.items.size()) { return }
+        var it = dm.items.get_ptr(idx)
+        var rtpp = dm.runtimes.get_ptr(&it.id)
+        if(rtpp != null && *rtpp != null) {
+            resume_runtime(*rtpp)
+        } else if(it.state == STATE_PAUSED || it.state == STATE_QUEUED) {
+            it.state = STATE_QUEUED
+        }
+        start_pending(dm)
+    }
+
+    // Cancel a running or queued task.
+    public func cancel_task(dm : &mut DownloadManager, id : &string) {
+        var idx = find_item_index(dm, id)
+        if(idx == dm.items.size()) { return }
+        var it = dm.items.get_ptr(idx)
+
+        var rtpp = dm.runtimes.get_ptr(&it.id)
+        if(rtpp != null && *rtpp != null) {
+            var rt = *rtpp
+            request_cancel(rt)
+            if(rt.running) {
+                join_task(rt)
+            }
+            delete rt
+            dm.runtimes.erase(&it.id)
+            it.state = STATE_CANCELLED
+        } else if(it.state != STATE_DONE && it.state != STATE_FAILED) {
+            it.state = STATE_CANCELLED
+        }
+    }
+
+    // Remove a task from the queue entirely (cancelling it if still active).
+    public func remove_task(dm : &mut DownloadManager, id : &string) {
+        var idx = find_item_index(dm, id)
+        if(idx == dm.items.size()) { return }
+        cancel_task(dm, id)
+        idx = find_item_index(dm, id)
+        if(idx == dm.items.size()) { return }
+        var it = dm.items.get_ptr(idx)
+        // vector erase by swap-and-pop is O(1); order is not user-visible.
+        dm.items.erase(idx)
+    }
+
+    // Merge live progress into the item list and return an immutable snapshot.
+    public func snapshot(dm : &mut DownloadManager) : vector<DownloadItem> {
+        var out = vector<DownloadItem>()
+        for(var i = 0u; i < dm.items.size(); i++) {
+            var it = dm.items.get_ptr(i)
+            var copy = it.copy()
+            var rtpp = dm.runtimes.get_ptr(&it.id)
+            if(rtpp != null && *rtpp != null) {
+                var p = snapshot_progress(*rtpp)
+                copy.total_bytes = p.total_bytes
+                copy.downloaded_bytes = p.downloaded_bytes
+                copy.speed_bytes_per_sec = p.speed_bytes_per_sec
+                copy.state = p.state
+                copy.error = p.error.copy()
+            }
+            out.push_back(copy)
+        }
+        return out
+    }
+
+    // Serve-side JSON document of the whole queue + settings.
+    public func state_json(dm : &mut DownloadManager, version : string_view) : string {
+        var dir_copy = dm.download_dir.copy()
+        var out = string::make_no_len("{\"download_dir\":")
+        out.append_string(&json_string(string_view::make_view(&dir_copy)))
+        out.append_string(&string::make_no_len(",\"max_concurrent\":"))
+        out.append_integer(dm.max_concurrent as bigint)
+        out.append_string(&string::make_no_len(",\"version\":"))
+        out.append_string(&json_string(version))
+        out.append_string(&string::make_no_len(",\"items\":["))
+        var snap = snapshot(dm)
+        for(var i = 0u; i < snap.size(); i++) {
+            if(i > 0u) { out.append(',') }
+            var it = snap.get_ptr(i)
+            out.append_string(&item_to_json(&*it))
+        }
+        out.append_string(&string::make_no_len("]}"))
+        return out
+    }
+
+    // Join and release every worker thread (called on shutdown or --selftest).
+    public func shutdown(dm : &mut DownloadManager) {
+        for(var i = 0u; i < dm.items.size(); i++) {
+            var it = dm.items.get_ptr(i)
+            var rtpp = dm.runtimes.get_ptr(&it.id)
+            if(rtpp != null && *rtpp != null) {
+                var rt = *rtpp
+                request_cancel(rt)
+                if(rt.running) {
+                    join_task(rt)
+                }
+                delete rt
+            }
+        }
+        dm.runtimes = ordered_map<string, *mut TaskRuntime>()
+    }
+
+} // end namespace cdm

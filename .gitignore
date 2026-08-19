@@ -1,3 +1,4 @@
 *.def
 *.exe
 build
+bin
