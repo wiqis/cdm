@@ -80,6 +80,13 @@ func run_gui() : int {
     var dm = cdm::DownloadManager()
     var dmp = &raw mut dm
 
+    // Apply persisted settings (trace the download dir, concurrency, speed,
+    // categories, duplicate policy) so a restart keeps the user's choices.
+    var settings = cdm::CdmSettings()
+    if(cdm::load_settings(&raw mut settings)) {
+        dm.apply_settings(&settings)
+    }
+
     // Restore previously queued downloads so a restart resumes them.
     var restored = cdm::restore_queue(&mut dm)
     if(restored > 0) {

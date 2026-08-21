@@ -3,6 +3,7 @@
 public namespace cdm {
 
 using std::string;
+using std::string_view;
 
     // Pure data pod describing one download task. No pointers, no sockets —
     // those live in the Engine. The manager swaps snapshots of this struct
@@ -22,6 +23,12 @@ using std::string;
         var finished_at : i64
         var pause_requested : bool
         var cancel_requested : bool
+        var priority : int            // lower = downloaded first (0 highest)
+        var category : int            // cdm::Category value
+        var max_segments : int        // 0 = use the manager default
+        var speed_limit_kbps : i64    // 0 = no per-item limit
+        var retry_count : int
+        var duplicate_suffix : int    // 0 = original name; 1,2,.. = "name (N).ext"
 
         @constructor func constructor(id_ : string, url_ : string, dir_ : string, filename_ : string) {
             return DownloadItem {
@@ -38,7 +45,13 @@ using std::string;
                 started_at = 0,
                 finished_at = 0,
                 pause_requested = false,
-                cancel_requested = false
+                cancel_requested = false,
+                priority = 0,
+                category = Category.Other as int,
+                max_segments = 0,
+                speed_limit_kbps = 0,
+                retry_count = 0,
+                duplicate_suffix = 0
             }
         }
 
@@ -48,6 +61,29 @@ using std::string;
             s.append('/')
             s.append_string(&self.filename)
             return s
+        }
+
+        // The file name after applying duplicate renaming. When
+        // duplicate_suffix > 0 the name becomes "base (N).ext".
+        public func display_filename(&self) : string {
+            if(self.duplicate_suffix <= 0) { return self.filename.copy() }
+            var base = string()
+            var ext = string()
+            var dot = string_view::make_view(&self.filename).find_last(".")
+            if(dot != std::NPOS && dot > 0) {
+                base = self.filename.substring(0u, dot)
+                ext = self.filename.substring(dot, self.filename.size())
+            } else {
+                base = self.filename.copy()
+            }
+            var out = base
+            out.append_view(" (")
+            var sfx = string()
+            sfx.append_integer(self.duplicate_suffix as bigint)
+            out.append_string(&sfx)
+            out.append(')')
+            out.append_string(&ext)
+            return out
         }
 
         public func copy(&self) : DownloadItem {
@@ -62,6 +98,12 @@ using std::string;
             c.finished_at = self.finished_at
             c.pause_requested = self.pause_requested
             c.cancel_requested = self.cancel_requested
+            c.priority = self.priority
+            c.category = self.category
+            c.max_segments = self.max_segments
+            c.speed_limit_kbps = self.speed_limit_kbps
+            c.retry_count = self.retry_count
+            c.duplicate_suffix = self.duplicate_suffix
             return c
         }
     }

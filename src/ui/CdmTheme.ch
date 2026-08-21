@@ -200,5 +200,91 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-btn:hover { background: hsl(var(--secondary)); }
         .cdm-btn-danger { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.4); }
         .cdm-btn-danger:hover { background: hsl(var(--destructive) / 0.1); }
+        .cdm-filterbar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .cdm-filter-chip {
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: hsl(var(--muted-foreground));
+            background: transparent;
+            border: 1px solid hsl(var(--border));
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        .cdm-filter-chip:hover { background: hsl(var(--secondary)); }
+        .cdm-filter-chip-on {
+            color: hsl(var(--primary-foreground));
+            background: hsl(var(--primary));
+            border-color: hsl(var(--primary));
+        }
+        .cdm-settings {
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: var(--radius);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .cdm-settings-title {
+            font-size: 15px;
+            font-weight: 700;
+        }
+        .cdm-settings label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12.5px;
+            color: hsl(var(--muted-foreground));
+        }
+        .cdm-settings input,
+        .cdm-settings select {
+            padding: 8px 10px;
+            font-size: 13.5px;
+            font-family: var(--font-mono);
+            background: hsl(var(--background));
+            color: hsl(var(--foreground));
+            border: 1px solid hsl(var(--input));
+            border-radius: calc(var(--radius) - 2px);
+            outline: none;
+        }
+        .cdm-settings input:focus,
+        .cdm-settings select:focus {
+            border-color: hsl(var(--ring));
+            box-shadow: 0 0 0 3px hsl(var(--ring) / 0.25);
+        }
+        .cdm-settings-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .cdm-item-meta-line {
+            display: flex;
+            gap: 10px;
+            font-size: 12px;
+            color: hsl(var(--muted-foreground));
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .cdm-item-cat {
+            padding: 1px 8px;
+            border-radius: 999px;
+            background: hsl(var(--muted));
+            font-weight: 600;
+        }
+        .cdm-item-prio { font-weight: 700; color: hsl(var(--info)); }
+        .cdm-item-dir {
+            margin-left: auto;
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            opacity: 0.75;
+        }
     """)
 }

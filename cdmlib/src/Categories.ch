@@ -82,7 +82,7 @@ using std::Option;
 
     // Extract the extension of a filename (after the last dot, lower-cased).
     // Returns an empty string when there is none.
-    func extension_of(name : string_view) : string {
+    public func extension_of(name : string_view) : string {
         var out = string()
         var i = 0u
         var last_dot = std::NPOS

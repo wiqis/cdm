@@ -2,6 +2,8 @@ application chemicaldm
 
 source "src"
 
+import "./cdmlib"
+
 import cstd
 import std
 import core

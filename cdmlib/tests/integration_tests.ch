@@ -278,6 +278,23 @@ func test_srv_url(port : uint, name : string_view) : string {
     return u
 }
 
+// Unique-but-stable port for this test process. The @test runner forks each
+// test concurrently, so a hard-coded port would collide in parallel runs. We
+// derive a base from the process start time (nanos) and add the caller's own
+// offset so simultaneous tests on distinct builds stay apart.
+var GLOBAL_TEST_PORT : uint = 0u
+func test_port(offset : uint) : uint {
+    if(GLOBAL_TEST_PORT == 0u) {
+        var st = std::chrono::SystemTime::now()
+        var na = st.as_unix_epoch_nanos()
+        // Microsecond-granular base so concurrent forked test processes pick
+        // distinct ports even when they start within the same millisecond.
+        var sb = (20000i64 + (na / 1000i64) % 10000i64) as uint
+        GLOBAL_TEST_PORT = sb
+    }
+    return GLOBAL_TEST_PORT + offset
+}
+
 func test_srv_start(srv : &mut TestServer, root : string, port : uint) : bool {
     srv.listen_sock = net::listen_addr("127.0.0.1", port)
     if(srv.listen_sock == 0u || (srv.listen_sock as longlong) < 0) { return false }
@@ -297,10 +314,27 @@ func test_srv_stop(srv : &mut TestServer) {
     }
 }
 
-// Temp download directory per test (fixed path; created on demand).
+// Temp download directory per test. Each `@test` runs in its own (forked)
+// process, so we key the directory off a per-process value (time + serial) to
+// get isolation between concurrent tests and across separate runs. This avoids
+// leftover files from a previous run being accidentally picked up by the
+// duplicate-rename policy.
 func test_dl_dir() : string {
-    var dir = string::make_no_len("/tmp/cdm-dltest/")
-    test_mkdir(dir.data())
+    var serial = 0
+    var st = std::chrono::SystemTime::now()
+    var seed = (st.as_unix_epoch_nanos() / 1000) as ubigint
+    var dir = string::make_no_len("/tmp/cdm-dl-")
+    var tmp = string()
+    tmp.append_uinteger(seed & 0xFFFFFFFFu)
+    dir.append_string(&tmp)
+    dir.append('-')
+    var tmp2 = string()
+    tmp2.append_integer(serial as bigint)
+    dir.append_string(&tmp2)
+    dir.append('/')
+    if(!test_mkdir(dir.data())) {
+        return string()
+    }
     return dir
 }
 
@@ -453,14 +487,14 @@ public func CDM_INT_single_download(env : &mut TestEnv) {
     }
 
     var srv = TestServer()
-    if(!test_srv_start(&mut srv, root, 3001u)) { env.error("failed to start test server"); return }
+    if(!test_srv_start(&mut srv, root, test_port(1u))) { env.error("failed to start test server"); return }
 
     var dl = test_dl_dir()
     test_mkdir(dl.data())
 
     var dm = cdm::DownloadManager()
     dm.download_dir = dl.copy()
-    var u = test_srv_url(3001u, string_view::make_no_len("one.bin"))
+    var u = test_srv_url(test_port(1u), string_view::make_no_len("one.bin"))
     cdm::add_task(&mut dm, string_view::make_view(&u))
 
     var ok = test_wait_all(&mut dm, 20000)
@@ -505,7 +539,7 @@ public func CDM_INT_segmented_download(env : &mut TestEnv) {
     }
 
     var srv = TestServer()
-    if(!test_srv_start(&mut srv, root, 3002u)) { env.error("failed to start test server"); return }
+    if(!test_srv_start(&mut srv, root, test_port(2u))) { env.error("failed to start test server"); return }
 
     var dl = test_dl_dir()
     test_mkdir(dl.data())
@@ -514,7 +548,7 @@ public func CDM_INT_segmented_download(env : &mut TestEnv) {
     dm.download_dir = dl.copy()
     dm.max_segments = 4
     // The manager must propagate max_segments to runtimes; ensure it.
-    var u = test_srv_url(3002u, string_view::make_no_len("seg.bin"))
+    var u = test_srv_url(test_port(2u), string_view::make_no_len("seg.bin"))
     cdm::add_task(&mut dm, string_view::make_view(&u))
 
     var ok = test_wait_all(&mut dm, 20000)
@@ -555,7 +589,7 @@ public func CDM_INT_multiple_downloads(env : &mut TestEnv) {
     if(!test_write_pattern(src3.data(), 1024 * 1024)) { env.error("m3 fopen failed"); return }
 
     var srv = TestServer()
-    if(!test_srv_start(&mut srv, root, 3003u)) { env.error("failed to start test server"); return }
+    if(!test_srv_start(&mut srv, root, test_port(3u))) { env.error("failed to start test server"); return }
 
     var dl = test_dl_dir()
     test_mkdir(dl.data())
@@ -563,9 +597,9 @@ public func CDM_INT_multiple_downloads(env : &mut TestEnv) {
     var dm = cdm::DownloadManager()
     dm.download_dir = dl.copy()
     dm.max_concurrent = 3
-    var u1 = test_srv_url(3003u, string_view::make_no_len("m1.bin"))
-    var u2 = test_srv_url(3003u, string_view::make_no_len("m2.bin"))
-    var u3 = test_srv_url(3003u, string_view::make_no_len("m3.bin"))
+    var u1 = test_srv_url(test_port(3u), string_view::make_no_len("m1.bin"))
+    var u2 = test_srv_url(test_port(3u), string_view::make_no_len("m2.bin"))
+    var u3 = test_srv_url(test_port(3u), string_view::make_no_len("m3.bin"))
     cdm::add_task(&mut dm, string_view::make_view(&u1))
     cdm::add_task(&mut dm, string_view::make_view(&u2))
     cdm::add_task(&mut dm, string_view::make_view(&u3))
@@ -631,7 +665,7 @@ public func CDM_INT_not_found(env : &mut TestEnv) {
         return
     }
     var srv = TestServer()
-    if(!test_srv_start(&mut srv, root, 3004u)) { env.error("failed to start test server"); return }
+    if(!test_srv_start(&mut srv, root, test_port(4u))) { env.error("failed to start test server"); return }
 
     var dl = test_dl_dir()
     test_mkdir(dl.data())
@@ -639,7 +673,7 @@ public func CDM_INT_not_found(env : &mut TestEnv) {
     var dm = cdm::DownloadManager()
     dm.download_dir = dl.copy()
     dm.max_concurrent = 1
-    var u = test_srv_url(3004u, string_view::make_no_len("missing.file"))
+    var u = test_srv_url(test_port(4u), string_view::make_no_len("missing.file"))
     cdm::add_task(&mut dm, string_view::make_view(&u))
 
     var ok = test_wait_all(&mut dm, 20000)
@@ -710,7 +744,7 @@ public func CDM_INT_pause_resume(env : &mut TestEnv) {
     var srv = TestServer()
     srv.chunk_bytes = 8192
     srv.chunk_delay_ms = 50
-    if(!test_srv_start(&mut srv, root, 3005u)) { env.error("pause srv"); return }
+    if(!test_srv_start(&mut srv, root, test_port(5u))) { env.error("pause srv"); return }
 
     var dl = test_dl_dir()
     test_mkdir(dl.data())
@@ -719,7 +753,7 @@ public func CDM_INT_pause_resume(env : &mut TestEnv) {
     dm.download_dir = dl.copy()
     dm.max_concurrent = 1
     dm.max_segments = 1   // single stream so pause hits the one active connection
-    var u = test_srv_url(3005u, string_view::make_no_len("p.bin"))
+    var u = test_srv_url(test_port(5u), string_view::make_no_len("p.bin"))
     var id = cdm::add_task(&mut dm, string_view::make_view(&u))
 
     // Wait for the download to make real progress (observed bytes > 0).
@@ -769,7 +803,7 @@ public func CDM_INT_cancel(env : &mut TestEnv) {
     var srv = TestServer()
     srv.chunk_bytes = 8192
     srv.chunk_delay_ms = 50
-    if(!test_srv_start(&mut srv, root, 3006u)) { env.error("cancel srv"); return }
+    if(!test_srv_start(&mut srv, root, test_port(6u))) { env.error("cancel srv"); return }
 
     var dl = test_dl_dir()
     test_mkdir(dl.data())
@@ -778,7 +812,7 @@ public func CDM_INT_cancel(env : &mut TestEnv) {
     dm.download_dir = dl.copy()
     dm.max_concurrent = 1
     dm.max_segments = 1
-    var u = test_srv_url(3006u, string_view::make_no_len("c.bin"))
+    var u = test_srv_url(test_port(6u), string_view::make_no_len("c.bin"))
     var id = cdm::add_task(&mut dm, string_view::make_view(&u))
 
     var saw_progress = false
@@ -813,7 +847,7 @@ public func CDM_INT_speed_limit(env : &mut TestEnv) {
     var srv = TestServer()
     srv.chunk_bytes = 0
     srv.chunk_delay_ms = 0
-    if(!test_srv_start(&mut srv, root, 3007u)) { env.error("speed srv"); return }
+    if(!test_srv_start(&mut srv, root, test_port(7u))) { env.error("speed srv"); return }
 
     var dl = test_dl_dir()
     test_mkdir(dl.data())
@@ -822,7 +856,7 @@ public func CDM_INT_speed_limit(env : &mut TestEnv) {
     dm.download_dir = dl.copy()
     dm.max_concurrent = 1
     dm.max_segments = 1
-    var u = test_srv_url(3007u, string_view::make_no_len("s.bin"))
+    var u = test_srv_url(test_port(7u), string_view::make_no_len("s.bin"))
     cdm::add_task(&mut dm, string_view::make_view(&u))
 
     var ok = test_wait_all(&mut dm, 20000)

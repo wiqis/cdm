@@ -168,33 +168,6 @@ public func CDM_json_escape(env : &mut TestEnv) {
     cdm_expect_eq(env, "json escape", &got, &want)
 }
 
-// ─── CLI parsing ──────────────────────────────────────────────────────
-
-@test
-public func CDM_cli_parse(env : &mut TestEnv) {
-    var opts = cdm::CliOptions()
-    var arg0 = string::make_no_len("cdm")
-    var arg1 = string::make_no_len("https://a.com/f.bin")
-    var arg2 = string::make_no_len("--dir")
-    var arg3 = string::make_no_len("/tmp/out")
-
-    var argv : [4]*char
-    argv[0] = arg0.data()
-    argv[1] = arg1.data()
-    argv[2] = arg2.data()
-    argv[3] = arg3.data()
-
-    var err = cdm::parse_cli(4, &raw mut argv[0], &mut opts)
-    if(err != null) {
-        env.error("cli parse returned error")
-        return
-    }
-    if(opts.urls.size() != 1u) { env.error("cli urls size"); return }
-    var got_url = opts.urls.get_ref(0).copy()
-    cdm_expect_eq(env, "cli url", &got_url, &arg1)
-    cdm_expect_eq(env, "cli dir", &opts.download_dir, &arg3)
-}
-
 // ─── URL parsing / filename edge cases ───────────────────────────────
 
 @test

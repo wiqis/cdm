@@ -28,6 +28,11 @@ using std::ordered_map;
         var category_dirs : ordered_map<string, string>
         var auto_start : bool
         var quiet : bool
+        var use_categories : bool
+        var duplicate_action : int        // 0 = rename, 1 = overwrite, 2 = skip
+        var network_timeout : int         // seconds
+        var auto_resume_failed : bool
+        var temporary_folder : string
 
         @constructor func constructor() {
             return CdmSettings {
@@ -43,9 +48,56 @@ using std::ordered_map;
                 categories = vector<string>(),
                 category_dirs = ordered_map<string, string>(),
                 auto_start = false,
-                quiet = false
+                quiet = false,
+                use_categories = false,
+                duplicate_action = 0,
+                network_timeout = SOCKET_TIMEOUT_SECS,
+                auto_resume_failed = false,
+                temporary_folder = string()
             }
         }
+
+        // The default sub-folder used for a category when the user has not
+        // overridden it. Other category = "" (no sub folder => download root).
+        public func category_folder(&self, c : Category) : string {
+            var key = category_key(c)
+            var cached = string()
+            if(self.category_dirs.find(&key, &mut cached)) {
+                return cached
+            }
+            return category_default_dir(c)
+        }
+
+        // Resolve the destination directory for a download. When categories are
+        // enabled and the category has a folder, returns download_dir + folder.
+        public func category_dir_for(&self, c : Category, filename : string_view) : string {
+            if(!self.use_categories) { return self.download_dir.copy() }
+            var sub = self.category_folder(c)
+            if(sub.empty()) { return self.download_dir.copy() }
+            var out = self.download_dir.copy()
+            out.append('/')
+            out.append_string(&sub)
+            return out
+        }
+    }
+
+    // Stable key used for per-category directory override persistence.
+    func category_key(c : Category) : string {
+        if(c == Category.Documents) { return string::make_no_len("documents") }
+        if(c == Category.Programs) { return string::make_no_len("programs") }
+        if(c == Category.Video) { return string::make_no_len("video") }
+        if(c == Category.Music) { return string::make_no_len("music") }
+        if(c == Category.Compressed) { return string::make_no_len("compressed") }
+        return string::make_no_len("other")
+    }
+
+    func category_default_dir(c : Category) : string {
+        if(c == Category.Documents) { return string::make_no_len(CATEGORY_DOCS_DIR) }
+        if(c == Category.Programs) { return string::make_no_len(CATEGORY_PROGRAMS_DIR) }
+        if(c == Category.Video) { return string::make_no_len(CATEGORY_VIDEO_DIR) }
+        if(c == Category.Music) { return string::make_no_len(CATEGORY_MUSIC_DIR) }
+        if(c == Category.Compressed) { return string::make_no_len(CATEGORY_COMPRESSED_DIR) }
+        return string()
     }
 
 func settings_dir() : string {
@@ -120,10 +172,55 @@ func settings_dir() : string {
         if(s.auto_start) { out.append_view("true\n") } else { out.append_view("false\n") }
         out.append_view("quiet:")
         if(s.quiet) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("useCategories:")
+        if(s.use_categories) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("duplicateAction:")
+        out.append_integer(s.duplicate_action as bigint)
+        out.append_view("\n")
+        out.append_view("networkTimeout:")
+        out.append_integer(s.network_timeout as bigint)
+        out.append_view("\n")
+        out.append_view("autoResumeFailed:")
+        if(s.auto_resume_failed) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("temporaryFolder:")
+        out.append_string(&s.temporary_folder)
+        out.append_view("\n")
+        // Per-category folder overrides: categoryDocuments:<dir> etc.
+        var doc_v = category_folder_for_write(s, Category.Documents)
+        out.append_view("categoryDocuments:")
+        out.append_string(&doc_v)
+        out.append_view("\n")
+        var mus_v = category_folder_for_write(s, Category.Music)
+        out.append_view("categoryMusic:")
+        out.append_string(&mus_v)
+        out.append_view("\n")
+        var vid_v = category_folder_for_write(s, Category.Video)
+        out.append_view("categoryVideos:")
+        out.append_string(&vid_v)
+        out.append_view("\n")
+        var pro_v = category_folder_for_write(s, Category.Programs)
+        out.append_view("categoryPrograms:")
+        out.append_string(&pro_v)
+        out.append_view("\n")
+        var cmp_v = category_folder_for_write(s, Category.Compressed)
+        out.append_view("categoryCompressed:")
+        out.append_string(&cmp_v)
+        out.append_view("\n")
 
         var wrote = fwrite(out.data() as *mut u8, 1, out.size(), f)
         fclose(f)
         return wrote == out.size()
+    }
+
+    // Return the override for a category, or an empty string when the category
+    // still uses its built-in default (so the writer can persist only diffs).
+    func category_folder_for_write(s : &CdmSettings, c : Category) : string {
+        var key = category_key(c)
+        var cached = string()
+        if(s.category_dirs.find(&key, &mut cached)) {
+            return cached
+        }
+        return string()
     }
 
     func read_line(content : &string, pos : &mut usize) : string {
@@ -139,6 +236,24 @@ func settings_dir() : string {
 
     func parse_bool(s : &string) : bool {
         return s.equals_view("true") || s.equals_view("1") || s.equals_view("yes")
+    }
+
+    // Parse a non-negative integer from a C string. Returns -1 on failure.
+    func parse_int_opt(s : *char) : int {
+        var p = s
+        var val = 0
+        var started = false
+        while(*p != 0) {
+            if(*p >= '0' && *p <= '9') {
+                val = val * 10 + (*p as int - '0' as int)
+                started = true
+            } else {
+                return -1
+            }
+            p = p + 1
+        }
+        if(!started) { return -1 }
+        return val
     }
 
     // Load settings from disk. Returns false when no settings exist yet.
@@ -168,30 +283,56 @@ func settings_dir() : string {
             var kh = fnv1_hash_view(string_view::make_view(&key))
             if(kh == comptime_fnv1_hash("downloadFolder")) { out.download_dir = val.copy() }
             else if(kh == comptime_fnv1_hash("parallelDownloads")) {
-                var n = cli_parse_int(val.data())
+                var n = parse_int_opt(val.data())
                 if(n > 0) { out.max_concurrent = n }
             }
             else if(kh == comptime_fnv1_hash("maxSegments")) {
-                var n = cli_parse_int(val.data())
+                var n = parse_int_opt(val.data())
                 if(n > 0) { out.max_segments = n }
             }
             else if(kh == comptime_fnv1_hash("minSegmentSize")) {
-                var n = cli_parse_int(val.data())
+                var n = parse_int_opt(val.data())
                 if(n > 0) { out.min_segment_size = n as i64 }
             }
             else if(kh == comptime_fnv1_hash("speedLimit")) {
-                var n = cli_parse_int(val.data())
+                var n = parse_int_opt(val.data())
                 if(n > 0) { out.speed_limit_kbps = n as i64 }
             }
             else if(kh == comptime_fnv1_hash("enableResume")) { out.enable_resume = parse_bool(&val) }
             else if(kh == comptime_fnv1_hash("allowSegments")) { out.allow_segments = parse_bool(&val) }
             else if(kh == comptime_fnv1_hash("proxyHost")) { out.proxy_host = val.copy() }
             else if(kh == comptime_fnv1_hash("proxyPort")) {
-                var n = cli_parse_int(val.data())
+                var n = parse_int_opt(val.data())
                 if(n >= 0) { out.proxy_port = n }
             }
             else if(kh == comptime_fnv1_hash("autoStart")) { out.auto_start = parse_bool(&val) }
             else if(kh == comptime_fnv1_hash("quiet")) { out.quiet = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("useCategories")) { out.use_categories = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("duplicateAction")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { out.duplicate_action = n }
+            }
+            else if(kh == comptime_fnv1_hash("networkTimeout")) {
+                var n = parse_int_opt(val.data())
+                if(n > 0) { out.network_timeout = n }
+            }
+            else if(kh == comptime_fnv1_hash("autoResumeFailed")) { out.auto_resume_failed = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("temporaryFolder")) { out.temporary_folder = val.copy() }
+            else if(kh == comptime_fnv1_hash("categoryDocuments")) {
+                out.category_dirs.insert(string::make_no_len("documents"), val.copy())
+            }
+            else if(kh == comptime_fnv1_hash("categoryMusic")) {
+                out.category_dirs.insert(string::make_no_len("music"), val.copy())
+            }
+            else if(kh == comptime_fnv1_hash("categoryVideos")) {
+                out.category_dirs.insert(string::make_no_len("video"), val.copy())
+            }
+            else if(kh == comptime_fnv1_hash("categoryPrograms")) {
+                out.category_dirs.insert(string::make_no_len("programs"), val.copy())
+            }
+            else if(kh == comptime_fnv1_hash("categoryCompressed")) {
+                out.category_dirs.insert(string::make_no_len("compressed"), val.copy())
+            }
         }
         return true
     }
@@ -212,7 +353,7 @@ func settings_dir() : string {
 
     // Load a previously saved queue and re-queue its incomplete items into the
     // manager. Returns how many items were restored.
-    func restore_queue(dm : &mut DownloadManager) : int {
+    public func restore_queue(dm : &mut DownloadManager) : int {
         var path = queue_file()
         var f = fopen(path.data(), "rb")
         if(f == null) { return 0 }

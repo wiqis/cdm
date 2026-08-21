@@ -20,6 +20,9 @@ using std::Option;
         var segments : int               // 0 => keep configured default
         var concurrent : int             // 0 => keep configured default
         var speed_limit_kbps : i64       // 0 => unlimited
+        var priority : int               // 0 = high/drop default; higher = lower
+        var use_categories : bool        // route into category folders
+        var no_categories : bool         // --no-categories override
         var quiet : bool
         var show_help : bool
         var show_version : bool
@@ -35,6 +38,9 @@ using std::Option;
                 segments = 0,
                 concurrent = 0,
                 speed_limit_kbps = 0,
+                priority = 0,
+                use_categories = false,
+                no_categories = false,
                 quiet = false,
                 show_help = false,
                 show_version = false,
@@ -106,6 +112,16 @@ using std::Option;
                 var n = cli_parse_int(argv[i])
                 if(n < 0) { return "invalid speed limit" }
                 out.speed_limit_kbps = n as i64
+            } else if(h == comptime_fnv1_hash("--priority") || h == comptime_fnv1_hash("--prio")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--priority requires a number (0 = highest)" }
+                var n = cli_parse_int(argv[i])
+                if(n < 0) { return "invalid priority" }
+                out.priority = n
+            } else if(h == comptime_fnv1_hash("--categories")) {
+                out.use_categories = true
+            } else if(h == comptime_fnv1_hash("--no-categories")) {
+                out.no_categories = true
             } else if(h == comptime_fnv1_hash("--file") || h == comptime_fnv1_hash("-f")) {
                 i = i + 1
                 if(i >= argc || argv[i] == null) { return "--file requires a path argument" }
@@ -198,6 +214,12 @@ using std::Option;
     public func run_headless(opts : &CliOptions) : int {
         var dm = DownloadManager()
 
+        // Apply persisted settings first, then let explicit CLI flags override.
+        var settings = CdmSettings()
+        if(load_settings(&raw mut settings)) {
+            dm.apply_settings(&settings)
+        }
+
         if(opts.download_dir.size() > 0) {
             dm.download_dir = opts.download_dir.copy()
         }
@@ -209,6 +231,12 @@ using std::Option;
         }
         if(opts.speed_limit_kbps > 0) {
             dm.set_speed_limit_kbps(opts.speed_limit_kbps)
+        }
+        if(opts.use_categories) {
+            dm.use_categories = true
+        }
+        if(opts.no_categories) {
+            dm.use_categories = false
         }
 
         // Make sure the destination directory exists.
@@ -231,10 +259,16 @@ using std::Option;
         }
 
         var added : i64 = 0
+        var name_view = string_view::make_view(&opts.output_name)
         for(var i = 0u; i < opts.urls.size(); i++) {
             var u = opts.urls.get_ref(i)
             var uv = string_view::make_view(u)
-            var id = add_task(&mut dm, uv)
+            var id = string()
+            if(i == 0u && opts.output_name.size() > 0u) {
+                id = add_task_ex(&mut dm, uv, string_view(), name_view, opts.priority, Category.Other)
+            } else {
+                id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, Category.Other)
+            }
             added = added + 1
             if(!opts.quiet) {
                 printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())
@@ -243,7 +277,7 @@ using std::Option;
         for(var i = 0u; i < batch.size(); i++) {
             var u = batch.get_ref(i)
             var uv = string_view::make_view(u)
-            var id = add_task(&mut dm, uv)
+            var id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, Category.Other)
             added = added + 1
             if(!opts.quiet) {
                 printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())
@@ -311,6 +345,9 @@ using std::Option;
         printf("  -p, --segments <n>    connections per download\n")
         printf("  -j, --concurrent <n>  max concurrent downloads\n")
         printf("      --speed-limit kb  global speed limit in KB/s\n")
+        printf("      --priority <n>    queue priority (0 = highest)\n")
+        printf("      --categories      route downloads into category folders\n")
+        printf("      --no-categories   do not route into category folders\n")
         printf("  -f, --file <path>     read URLs from a file\n")
         printf("  -q, --quiet           don't print progress\n")
         printf("  -g, --gui             force the GUI\n")

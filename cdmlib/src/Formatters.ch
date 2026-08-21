@@ -83,4 +83,15 @@ using std::string;
         return string::make_no_len("Unknown")
     }
 
+    // Human readable category name for the UI.
+    public func format_category(cat : int) : string {
+        var c = cat as Category
+        if(c == Category.Documents) { return string::make_no_len("Documents") }
+        if(c == Category.Programs) { return string::make_no_len("Programs") }
+        if(c == Category.Video) { return string::make_no_len("Video") }
+        if(c == Category.Music) { return string::make_no_len("Music") }
+        if(c == Category.Compressed) { return string::make_no_len("Compressed") }
+        return string::make_no_len("Other")
+    }
+
 } // end namespace cdm

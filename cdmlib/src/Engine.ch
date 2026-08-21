@@ -886,6 +886,12 @@ using std::vector;
         }
         rt.running = true
         rt.thread_started = true
+        // Reflect DOWNLOADING immediately so snapshots taken before the worker
+        // thread actually starts agree with the queued item's transition
+        // (otherwise the scheduler slot looks free and consumers see QUEUED).
+        if(rt.progress.state == STATE_QUEUED) {
+            rt.progress.state = STATE_DOWNLOADING
+        }
         rt.info_mutex.unlock()
 
         rt.thread = std::concurrent::spawn(download_entry, job as *void)
