@@ -328,9 +328,13 @@ var id = uuid::v4().to_string()
         if(it.state == STATE_DONE) { return false }
         var rtpp = dm.runtimes.get_ptr(&it.id)
         if(rtpp != null && *rtpp != null) {
-            // Cannot retry while a worker is attached; restart instead via
-            // cancel+re-queue.
-            return false
+            // Worker still attached (e.g. internal retry loop exhausted);
+            // cancel it, wait for exit, clean up the runtime, then re-queue.
+            var rt = *rtpp
+            request_cancel(rt)
+            if(rt.running) { join_task(rt) }
+            delete rt
+            dm.runtimes.erase(&it.id)
         }
         it.state = STATE_QUEUED
         it.error = string()
@@ -407,8 +411,8 @@ var id = uuid::v4().to_string()
                 if(it.retry_count >= MAX_RETRIES) { continue }
                 it.state = STATE_QUEUED
                 it.error = string()
-                it.downloaded_bytes = 0
-                it.total_bytes = 0
+                // Preserve downloaded_bytes / total_bytes so the worker can
+                // resume from the last written position on disk.
                 it.retry_count = it.retry_count + 1
                 requeued = requeued + 1
             }

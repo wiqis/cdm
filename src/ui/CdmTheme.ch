@@ -407,5 +407,70 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-seg-pending .cdm-seg-fill {
             background: hsl(var(--muted));
         }
+        .cdm-filter-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .cdm-filter-secondary {
+            margin-top: 4px;
+        }
+        .cdm-filter-sep {
+            width: 1px;
+            height: 20px;
+            background: hsl(var(--border));
+            margin: 0 4px;
+        }
+        .cdm-filter-cat {
+            font-size: 11px;
+            padding: 3px 10px;
+        }
+        .cdm-search-input {
+            flex: 1;
+            min-width: 180px;
+            padding: 5px 10px;
+            font-size: 12.5px;
+            font-family: var(--font-mono);
+            background: hsl(var(--background));
+            color: hsl(var(--foreground));
+            border: 1px solid hsl(var(--input));
+            border-radius: calc(var(--radius) - 2px);
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .cdm-search-input:focus {
+            border-color: hsl(var(--ring));
+            box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
+        }
+        .cdm-sort-select {
+            padding: 5px 8px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+            background: hsl(var(--background));
+            color: hsl(var(--foreground));
+            border: 1px solid hsl(var(--input));
+            border-radius: calc(var(--radius) - 2px);
+            outline: none;
+            cursor: pointer;
+        }
+        .cdm-toggle-row {
+            display: flex;
+            align-items: center;
+        }
+        .cdm-toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: hsl(var(--foreground));
+            cursor: pointer;
+        }
+        .cdm-toggle-label input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: hsl(var(--primary));
+            cursor: pointer;
+        }
     """)
 }

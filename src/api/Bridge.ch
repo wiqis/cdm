@@ -65,6 +65,29 @@ using std::Option;
         return def
     }
 
+    // Extract a boolean field; returns `def` when absent.
+    func json_bool_field(args : string_view, key : string_view, def : bool) : bool {
+        var parser = JsonParser(128, 4096)
+        var ph = ASTJsonHandler.make()
+        parser.parse(args.data(), args.size(), &mut ph)
+        if(ph.root is JsonValue.Object) {
+            var Object(map) = ph.root else unreachable
+            var k = string(key.data(), key.size())
+            var vp = map.get_ptr(&k)
+            if(vp != null) {
+                if(vp is JsonValue.Bool) {
+                    var Bool(b) = *vp else unreachable
+                    return b
+                }
+                if(vp is JsonValue.Number) {
+                    var Number(n) = *vp else unreachable
+                    return n.equals_view("1") || n.equals_view("true")
+                }
+            }
+        }
+        return def
+    }
+
     func ok_json() : string {
         return string::make_no_len("{\"ok\":true}")
     }
@@ -225,6 +248,10 @@ using std::Option;
             var seats = json_int_field(args, string_view::make_no_len("max_segments"), dm.max_segments)
             var speed = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), dm.speed_limit_kbps as int)
             var dupact = json_int_field(args, string_view::make_no_len("duplicate_action"), dm.duplicate_action)
+            var en_resume = json_bool_field(args, string_view::make_no_len("enable_resume"), dm.enable_resume)
+            var al_segs = json_bool_field(args, string_view::make_no_len("allow_segments"), dm.allow_segments)
+            var use_cats = json_bool_field(args, string_view::make_no_len("use_categories"), dm.use_categories)
+            var auto_res = json_bool_field(args, string_view::make_no_len("auto_resume_failed"), dm.auto_resume_failed)
             if(dl.size() > 0u) {
                 dm.download_dir = dl.copy()
             }
@@ -232,6 +259,10 @@ using std::Option;
             if(seats > 0) { dm.max_segments = seats }
             dm.speed_limit_kbps = speed as i64
             dm.duplicate_action = dupact
+            dm.enable_resume = en_resume
+            dm.allow_segments = al_segs
+            dm.use_categories = use_cats
+            dm.auto_resume_failed = auto_res
             // Persist the settings for next launch.
             var settings = CdmSettings()
             settings.download_dir = dm.download_dir.copy()
@@ -239,6 +270,10 @@ using std::Option;
             settings.max_segments = dm.max_segments
             settings.speed_limit_kbps = dm.speed_limit_kbps
             settings.duplicate_action = dm.duplicate_action
+            settings.enable_resume = dm.enable_resume
+            settings.allow_segments = dm.allow_segments
+            settings.use_categories = dm.use_categories
+            settings.auto_resume_failed = dm.auto_resume_failed
             save_settings(&settings)
             return ok_json()
         }

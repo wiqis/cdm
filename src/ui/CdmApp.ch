@@ -13,6 +13,9 @@
     state settings = null
     state showSettings = false
     state filter = "All"          // All | Active | Done | Failed | Paused
+    state catFilter = "All"       // All | Other | Documents | Programs | Video | Music | Compressed
+    state searchQuery = ""
+    state sortBy = "newest"       // newest | oldest | name | size
     state addOpen = false
     state addUrl = ""
     state addDir = ""
@@ -65,9 +68,15 @@
         refresh()
         refreshSettings()
         var t = setInterval(refresh, 1000)
-        var closeCtx = (e) => { if(ctxOpen) ctxOpen = false }
-        document.addEventListener("click", closeCtx)
-        return () => { clearInterval(t); document.removeEventListener("click", closeCtx) }
+        var closeCtx = (e) => {
+            if(!ctxOpen) return
+            // Don't close if clicking inside the context menu itself.
+            var menuEl = e.target.closest && e.target.closest('.cdm-ctx-menu')
+            if(menuEl) return
+            ctxOpen = false
+        }
+        document.addEventListener("mousedown", closeCtx)
+        return () => { clearInterval(t); document.removeEventListener("mousedown", closeCtx) }
     }, [])
 
     var post = (method, id, extra) => {
@@ -109,7 +118,11 @@
             max_concurrent: settings.max_concurrent,
             max_segments: settings.max_segments,
             speed_limit_kbps: settings.speed_limit_kbps,
-            duplicate_action: settings.duplicate_action
+            duplicate_action: settings.duplicate_action,
+            enable_resume: settings.enable_resume,
+            allow_segments: settings.allow_segments,
+            use_categories: settings.use_categories,
+            auto_resume_failed: settings.auto_resume_failed
         }
         call("settings_set", body)
         alert = "Settings saved"
@@ -136,12 +149,19 @@
          (s === "Failed" || s === "Cancelled") ? "cdm-badge-error" :
          "cdm-badge-idle")
 
-    var filterMatches = (s) => {
-        if(filter === "All") return true
-        if(filter === "Active") return s === "Downloading" || s === "Queued"
-        if(filter === "Done") return s === "Done"
-        if(filter === "Failed") return s === "Failed" || s === "Cancelled"
-        if(filter === "Paused") return s === "Paused"
+    var filterMatches = (s, cat) => {
+        if(filter === "Active") {
+            if(s !== "Downloading" && s !== "Queued") return false
+        } else if(filter === "Done") {
+            if(s !== "Done") return false
+        } else if(filter === "Failed") {
+            if(s !== "Failed" && s !== "Cancelled") return false
+        } else if(filter === "Paused") {
+            if(s !== "Paused") return false
+        }
+        if(catFilter !== "All") {
+            if(cat !== catFilter) return false
+        }
         return true
     }
 
@@ -167,7 +187,29 @@
         ctxOpen = false
     }
 
-    var visibleItems = items.filter((u) => filterMatches(u.state))
+    var visibleItems = items.filter((u) => {
+        if(!filterMatches(u.state, u.category)) return false
+        if(searchQuery.trim() !== "") {
+            var q = searchQuery.trim().toLowerCase()
+            var name = (u.display_name || u.filename || "").toLowerCase()
+            var url = (u.url || "").toLowerCase()
+            if(name.indexOf(q) === -1 && url.indexOf(q) === -1) return false
+        }
+        return true
+    })
+
+    // Sort
+    visibleItems.sort((a, b) => {
+        if(sortBy === "newest") return b.id > a.id ? 1 : (b.id < a.id ? -1 : 0)
+        if(sortBy === "oldest") return a.id > b.id ? 1 : (a.id < b.id ? -1 : 0)
+        if(sortBy === "name") {
+            var na = (a.display_name || a.filename || "").toLowerCase()
+            var nb = (b.display_name || b.filename || "").toLowerCase()
+            return na > nb ? 1 : (na < nb ? -1 : 0)
+        }
+        if(sortBy === "size") return (b.total_bytes || 0) - (a.total_bytes || 0)
+        return 0
+    })
     var totalCount = items.length
     var activeCount = items.filter((u) => u.state === "Downloading").length
     var doneCount = items.filter((u) => u.state === "Done").length
@@ -200,10 +242,27 @@
         </div>
 
         <div class="cdm-filterbar">
-            {["All", "Active", "Paused", "Done", "Failed"].map((f) => (
-                <button class={"cdm-filter-chip" + (filter === f ? " cdm-filter-chip-on" : "")}
-                    onClick={() => { filter = f }}>{f}</button>
-            ))}
+            <div class="cdm-filter-row">
+                {["All", "Active", "Paused", "Done", "Failed"].map((f) => (
+                    <button class={"cdm-filter-chip" + (filter === f ? " cdm-filter-chip-on" : "")}
+                        onClick={() => { filter = f }}>{f}</button>
+                ))}
+                <span class="cdm-filter-sep"></span>
+                {["All", "Other", "Documents", "Programs", "Video", "Music", "Compressed"].map((c) => (
+                    <button class={"cdm-filter-chip cdm-filter-cat" + (catFilter === c ? " cdm-filter-chip-on" : "")}
+                        onClick={() => { catFilter = c }}>{c}</button>
+                ))}
+            </div>
+            <div class="cdm-filter-row cdm-filter-secondary">
+                <input class="cdm-search-input" type="text" placeholder="Search filename or URL&#8230;"
+                    value={searchQuery} onChange={(e) => { searchQuery = e.target.value }} />
+                <select class="cdm-sort-select" value={sortBy} onChange={(e) => { sortBy = e.target.value }}>
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="name">Name A-Z</option>
+                    <option value="size">Largest first</option>
+                </select>
+            </div>
         </div>
 
         {showSettings && settings ? (
@@ -238,6 +297,34 @@
                                 <option value="2">Skip</option>
                             </select>
                         </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.enable_resume}
+                                    onChange={(e) => { settings.enable_resume = e.target.checked }} />
+                                Enable resume (HTTP Range)
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.allow_segments}
+                                    onChange={(e) => { settings.allow_segments = e.target.checked }} />
+                                Allow segmented downloads
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.use_categories}
+                                    onChange={(e) => { settings.use_categories = e.target.checked }} />
+                                Use category subfolders
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.auto_resume_failed}
+                                    onChange={(e) => { settings.auto_resume_failed = e.target.checked }} />
+                                Auto-resume failed downloads
+                            </label>
+                        </div>
                     </div>
                     <div class="cdm-dialog-footer">
                         <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>

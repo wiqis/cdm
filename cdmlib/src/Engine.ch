@@ -262,6 +262,12 @@ using std::vector;
         return v
     }
 
+    func locked_set_downloaded(rt : *mut TaskRuntime, n : i64) {
+        rt.info_mutex.lock()
+        rt.progress.downloaded_bytes = n
+        rt.info_mutex.unlock()
+    }
+
     func locked_set_speed(rt : *mut TaskRuntime, speed : i64) {
         rt.info_mutex.lock()
         rt.progress.speed_bytes_per_sec = speed
@@ -814,7 +820,7 @@ using std::vector;
                 // Server ignored our Range and restarted at byte 0; truncate the
                 // file and reset progress so the file stays consistent.
                 resume_from = 0
-                locked_set_total(rt, locked_get_total(rt))
+                locked_set_downloaded(rt, 0)
             }
 
             if(st == 200u || st == 206u) {
