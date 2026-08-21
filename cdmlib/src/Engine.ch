@@ -783,10 +783,26 @@ using std::vector;
 
             if(st == 200u || st == 206u) {
                 var cl_opt = rep.headers.get("Content-Length")
-                if(st == 200u && cl_opt is std::Option.Some) {
+                if(cl_opt is std::Option.Some) {
                     var Some(cl) = cl_opt else unreachable
                     var clen = parse_content_length(&cl)
-                    if(clen > 0) { locked_set_total(rt, clen) }
+                    if(clen > 0) {
+                        // For a 206 the Content-Length may only cover the
+                        // remaining range; keep the original total unless we
+                        // have none yet. For a 200 it is the whole file.
+                        if(st == 200u) {
+                            locked_set_total(rt, clen)
+                        } else if(locked_get_total(rt) <= 0) {
+                            var cr_opt = rep.headers.get("Content-Range")
+                            if(cr_opt is std::Option.Some) {
+                                var Some(cr) = cr_opt else unreachable
+                                var t = parse_content_range_total(&cr)
+                                if(t > 0) { locked_set_total(rt, t) }
+                            } else {
+                                locked_set_total(rt, clen)
+                            }
+                        }
+                    }
                 }
 
                 var ofile = open_output(path.data(), resume_from)
