@@ -478,5 +478,238 @@ public func CdmTheme(page : &mut HtmlPage) {
             accent-color: hsl(var(--primary));
             cursor: pointer;
         }
+        /* ---- YouTube download styles ---- */
+        .cdm-yt-btn {
+            padding: 10px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            color: hsl(var(--primary-foreground));
+            background: #ff0000;
+            border: none;
+            border-radius: calc(var(--radius) - 2px);
+            cursor: pointer;
+            transition: opacity 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .cdm-yt-btn:hover { opacity: 0.9; }
+        .cdm-yt-btn:disabled { opacity: 0.4; cursor: default; }
+        .cdm-yt-icon {
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .cdm-yt-info-card {
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: var(--radius);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .cdm-yt-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: hsl(var(--foreground));
+        }
+        .cdm-yt-meta {
+            font-size: 13px;
+            color: hsl(var(--muted-foreground));
+            display: flex;
+            gap: 12px;
+        }
+        .cdm-yt-formats {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid hsl(var(--border));
+            border-radius: calc(var(--radius) - 2px);
+            padding: 4px;
+        }
+        .cdm-yt-format-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-radius: calc(var(--radius) - 4px);
+            cursor: pointer;
+            transition: background 0.1s;
+            font-size: 13px;
+            color: hsl(var(--foreground));
+        }
+        .cdm-yt-format-item:hover { background: hsl(var(--secondary)); }
+        .cdm-yt-format-item-selected {
+            background: hsl(var(--primary) / 0.12);
+            border: 1px solid hsl(var(--primary) / 0.3);
+        }
+        .cdm-yt-format-label { flex: 1; }
+        .cdm-yt-format-size {
+            font-size: 12px;
+            color: hsl(var(--muted-foreground));
+            margin-left: 8px;
+        }
+        .cdm-yt-playlist-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            border-radius: calc(var(--radius) - 4px);
+            font-size: 13px;
+            color: hsl(var(--foreground));
+            border-bottom: 1px solid hsl(var(--border));
+        }
+        .cdm-yt-playlist-item:last-child { border-bottom: none; }
+        .cdm-yt-playlist-idx {
+            font-size: 12px;
+            color: hsl(var(--muted-foreground));
+            min-width: 30px;
+        }
+        .cdm-yt-playlist-title { flex: 1; }
+        .cdm-yt-playlist-dur {
+            font-size: 12px;
+            color: hsl(var(--muted-foreground));
+        }
+        .cdm-yt-tool-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: var(--radius);
+        }
+        .cdm-yt-tool-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .cdm-yt-tool-dot-ok { background: hsl(var(--success)); }
+        .cdm-yt-tool-dot-miss { background: hsl(var(--destructive)); }
+        .cdm-yt-tool-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: hsl(var(--foreground));
+        }
+        .cdm-yt-tool-ver {
+            font-size: 12px;
+            color: hsl(var(--muted-foreground));
+        }
+        .cdm-yt-tool-install {
+            margin-left: auto;
+        }
+        .cdm-yt-progress {
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .cdm-yt-progress-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+        .cdm-yt-progress-title {
+            font-weight: 600;
+            color: hsl(var(--foreground));
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cdm-yt-progress-status {
+            color: hsl(var(--muted-foreground));
+            font-size: 12px;
+        }
+        .cdm-yt-progress-bar {
+            height: 6px;
+            background: hsl(var(--muted));
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .cdm-yt-progress-fill {
+            height: 100%;
+            background: #ff0000;
+            border-radius: 999px;
+            transition: width 0.3s ease;
+        }
+        .cdm-yt-progress-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+            color: hsl(var(--muted-foreground));
+        }
+        .cdm-yt-progress-speed { color: hsl(var(--info)); }
+        .cdm-yt-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            padding: 12px 20px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            animation: cdm-toast-in 0.3s ease;
+            cursor: pointer;
+        }
+        .cdm-yt-toast-success {
+            background: hsl(var(--success));
+            color: white;
+        }
+        .cdm-yt-toast-error {
+            background: hsl(var(--destructive));
+            color: white;
+        }
+        .cdm-yt-toast-info {
+            background: hsl(var(--info));
+            color: white;
+        }
+        @keyframes cdm-toast-in {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .cdm-yt-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid hsl(var(--border));
+            border-top-color: hsl(var(--primary));
+            border-radius: 50%;
+            animation: cdm-spin 0.6s linear infinite;
+        }
+        @keyframes cdm-spin {
+            to { transform: rotate(360deg); }
+        }
+        .cdm-yt-quality-select {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .cdm-yt-quality-chip {
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: hsl(var(--muted-foreground));
+            background: transparent;
+            border: 1px solid hsl(var(--border));
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        .cdm-yt-quality-chip:hover { background: hsl(var(--secondary)); }
+        .cdm-yt-quality-chip-on {
+            color: hsl(var(--primary-foreground));
+            background: #ff0000;
+            border-color: #ff0000;
+        }
     """)
 }

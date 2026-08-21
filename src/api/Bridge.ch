@@ -337,6 +337,168 @@ using std::Option;
             popen(cmd.data(), "r")
             return ok_json()
         }
+        // ---- YouTube / yt-dlp methods ----
+        var m_yt_status = string_view::make_no_len("yt_status")
+        if(method.equals(&m_yt_status)) {
+            var status = check_tools_status()
+            return status.to_json()
+        }
+        var m_yt_install = string_view::make_no_len("yt_install")
+        if(method.equals(&m_yt_install)) {
+            var tool = json_field(args, string_view::make_no_len("tool"))
+            var err = string()
+            if(tool.equals_view(string_view::make_no_len("yt-dlp"))) {
+                err = ytdlp_download()
+            } else if(tool.equals_view(string_view::make_no_len("ffmpeg"))) {
+                err = ffmpeg_download()
+            } else {
+                var msg = string::make_no_len("unknown tool: ")
+                msg.append_string(&tool)
+                return err_json(&msg)
+            }
+            if(err.size() > 0) {
+                return err_json(&err)
+            }
+            return ok_json()
+        }
+        var m_yt_info = string_view::make_no_len("yt_info")
+        if(method.equals(&m_yt_info)) {
+            var url = json_field(args, string_view::make_no_len("url"))
+            if(url.size() == 0u) {
+                var msg = string::make_no_len("missing url")
+                return err_json(&msg)
+            }
+            // Validate URL.
+            var url_err = validate_url(string_view::make_view(&url))
+            if(!url_err.is_ok()) {
+                return err_json(&url_err.message)
+            }
+            // Check if it's a playlist.
+            if(is_youtube_playlist_url(string_view::make_view(&url))) {
+                var res = yt_extract_playlist_info(string_view::make_view(&url), true)
+                if(res is Result.Err) {
+                    var Err(e) = res else unreachable
+                    return err_json(&e)
+                }
+                var Ok(info) = res else unreachable
+                return info.to_json()
+            }
+            // Single video.
+            var res = yt_extract_video_info(string_view::make_view(&url))
+            if(res is Result.Err) {
+                var Err(e) = res else unreachable
+                return err_json(&e)
+            }
+            var Ok(info) = res else unreachable
+            return info.to_json()
+        }
+        var m_yt_download = string_view::make_no_len("yt_download")
+        if(method.equals(&m_yt_download)) {
+            var url = json_field(args, string_view::make_no_len("url"))
+            if(url.size() == 0u) {
+                var msg = string::make_no_len("missing url")
+                return err_json(&msg)
+            }
+            var format = json_field(args, string_view::make_no_len("format"))
+            var dir = json_field(args, string_view::make_no_len("dir"))
+            // Check tools are available.
+            if(!ytdlp_is_available()) {
+                var msg = string::make_no_len("yt-dlp is not installed. Use yt_install to set it up.")
+                return err_json(&msg)
+            }
+            // Build yt-dlp command.
+            var output_dir = dm.download_dir.copy()
+            if(dir.size() > 0) {
+                output_dir = dir.copy()
+            }
+            fs::create_dir_all(output_dir.data())
+            var args_vec = vector<string>()
+            args_vec.push_back(ytdlp_resolved_path())
+            args_vec.push_back(string::make_no_len("--no-warnings"))
+            args_vec.push_back(string::make_no_len("--newline"))
+            args_vec.push_back(string::make_no_len("--no-playlist"))
+            args_vec.push_back(string::make_no_len("--progress"))
+            // Output template.
+            var out_template = output_dir.copy()
+            out_template.append_view(string_view::make_no_len("/%(title)s.%(ext)s"))
+            args_vec.push_back(string::make_no_len("-o"))
+            args_vec.push_back(out_template.copy())
+            // Format.
+            if(format.size() > 0) {
+                args_vec.push_back(string::make_no_len("-f"))
+                args_vec.push_back(format.copy())
+            } else {
+                args_vec.push_back(string::make_no_len("-f"))
+                args_vec.push_back(string::make_no_len("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"))
+            }
+            if(ffmpeg_is_available()) {
+                args_vec.push_back(string::make_no_len("--merge-output-format"))
+                args_vec.push_back(string::make_no_len("mp4"))
+            }
+            args_vec.push_back(url.copy())
+            // Execute yt-dlp synchronously.
+            var cfg = process::ProcessConfig.default()
+            cfg.args = args_vec
+            cfg.capture_stdout = true
+            cfg.capture_stderr = true
+            var exec_res = process::execute(cfg)
+            if(exec_res is Result.Err) {
+                var Err(e) = exec_res else unreachable
+                return err_json(&e.message)
+            }
+            var Ok(pr) = exec_res else unreachable
+            if(!pr.success) {
+                var err_out = string()
+                for(var i = 0u; i < pr.output.stderr_data.size(); i++) {
+                    err_out.append(pr.output.stderr_data.get(i) as char)
+                }
+                if(err_out.empty()) {
+                    err_out = string::make_no_len("yt-dlp failed")
+                }
+                return err_json(&err_out)
+            }
+            return ok_json()
+        }
+        var m_yt_download_playlist = string_view::make_no_len("yt_download_playlist")
+        if(method.equals(&m_yt_download_playlist)) {
+            var url = json_field(args, string_view::make_no_len("url"))
+            if(url.size() == 0u) {
+                var msg = string::make_no_len("missing url")
+                return err_json(&msg)
+            }
+            var format = json_field(args, string_view::make_no_len("format"))
+            var dir = json_field(args, string_view::make_no_len("dir"))
+            var min_q = json_int_field(args, string_view::make_no_len("min_quality"), 0)
+            var max_q = json_int_field(args, string_view::make_no_len("max_quality"), 0)
+            if(!ytdlp_is_available()) {
+                var msg = string::make_no_len("yt-dlp is not installed")
+                return err_json(&msg)
+            }
+            var output_dir = dm.download_dir.copy()
+            if(dir.size() > 0) {
+                output_dir = dir.copy()
+            }
+            fs::create_dir_all(output_dir.data())
+            var args_vec = build_ytdlp_playlist_args(string_view::make_view(&url), string_view::make_view(&output_dir), string_view::make_view(&format), min_q, max_q)
+            var cfg = process::ProcessConfig.default()
+            cfg.args = args_vec
+            cfg.capture_stdout = true
+            cfg.capture_stderr = true
+            var exec_res = process::execute(cfg)
+            if(exec_res is Result.Err) {
+                var Err(e) = exec_res else unreachable
+                return err_json(&e.message)
+            }
+            var Ok(pr) = exec_res else unreachable
+            if(!pr.success) {
+                var err_out = string()
+                for(var i = 0u; i < pr.output.stderr_data.size(); i++) {
+                    err_out.append(pr.output.stderr_data.get(i) as char)
+                }
+                return err_json(&err_out)
+            }
+            return ok_json()
+        }
         var msg = string::make_no_len("unknown method: ")
         var mjs = json_string(method)
         msg.append_string(&mjs)

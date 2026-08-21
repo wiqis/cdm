@@ -3,7 +3,8 @@
 // the webview bridge every second and re-renders the live queue. 
 // Bridges (window.webview_bridge.call(method, argsJson) -> JSON):
 //   state, add, pause, resume, cancel, remove, remove_file, retry, restart,
-//   edit, settings_get, settings_set, open_file, show_in_folder
+//   edit, settings_get, settings_set, open_file, show_in_folder,
+//   yt_status, yt_install, yt_info, yt_download, yt_download_playlist
 
 #universal CdmApp(props) {
     state items = []
@@ -32,6 +33,27 @@
     state ctxX = 0
     state ctxY = 0
     state ctxItem = null
+    // YouTube download state
+    state ytOpen = false
+    state ytUrl = ""
+    state ytInfo = null           // fetched video/playlist info
+    state ytLoading = false
+    state ytError = ""
+    state ytSelectedFormat = ""
+    state ytDownloading = false
+    state ytMinQuality = 0
+    state ytMaxQuality = 0
+    state ytPlaylistEntries = []
+    state ytPlaylistSelected = []  // indices of selected entries
+    // Tool setup state
+    state ytToolsOpen = false
+    state ytTools = null           // {yt_dlp: {...}, ffmpeg: {...}}
+    state ytInstallingTool = ""
+    state ytInstallProgress = 0
+    // Toast state
+    state toastMsg = ""
+    state toastType = "info"      // info | success | error
+    state toastVisible = false
 
     var isUrl = (s) => {
         var t = s.trim().toLowerCase()
@@ -139,6 +161,136 @@
         showSettings = false
     }
 
+    // ---- YouTube functions ----
+    var showToast = (msg, type) => {
+        toastMsg = msg
+        toastType = type || "info"
+        toastVisible = true
+        setTimeout(() => { toastVisible = false }, 4000)
+    }
+
+    var refreshTools = () => {
+        ytTools = JSON.parse(window.webview_bridge.call("yt_status", "{}"))
+    }
+
+    var installTool = (toolName) => {
+        ytInstallingTool = toolName
+        showToast("Installing " + toolName + "...", "info")
+        var d = JSON.parse(window.webview_bridge.call("yt_install", JSON.stringify({ tool: toolName })))
+        ytInstallingTool = ""
+        if(d.ok) {
+            showToast(toolName + " installed successfully!", "success")
+            refreshTools()
+        } else {
+            showToast("Failed to install " + toolName + ": " + (d.error || "unknown error"), "error")
+        }
+    }
+
+    var openYtDownload = () => {
+        ytUrl = ""
+        ytInfo = null
+        ytError = ""
+        ytSelectedFormat = ""
+        ytDownloading = false
+        ytPlaylistEntries = []
+        ytPlaylistSelected = []
+        ytOpen = true
+        refreshTools()
+    }
+
+    var fetchYtInfo = () => {
+        var u = ytUrl.trim()
+        if(u === "") return
+        if(!ytTools || (!ytTools.yt_dlp || !ytTools.yt_dlp.status || ytTools.yt_dlp.status !== "installed")) {
+            ytError = "yt-dlp is not installed. Open Setup Tools to install it."
+            return
+        }
+        ytLoading = true
+        ytError = ""
+        ytInfo = null
+        // Use setTimeout to allow UI update before blocking call
+        setTimeout(() => {
+            var d = JSON.parse(window.webview_bridge.call("yt_info", JSON.stringify({ url: u })))
+            ytLoading = false
+            if(d.error) {
+                ytError = d.error
+                return
+            }
+            ytInfo = d
+            // Auto-select best format
+            if(d.formats && d.formats.length > 0) {
+                var best = d.formats.find(f => f.is_combined)
+                if(best) {
+                    ytSelectedFormat = best.format_id
+                } else {
+                    ytSelectedFormat = d.formats[0].format_id
+                }
+            }
+            // If playlist, select all entries
+            if(d.is_playlist && d.entries) {
+                ytPlaylistEntries = d.entries
+                ytPlaylistSelected = d.entries.map((_, i) => i)
+            }
+        }, 50)
+    }
+
+    var startYtDownload = () => {
+        if(!ytInfo) return
+        ytDownloading = true
+        ytError = ""
+        var u = ytUrl.trim()
+        if(ytInfo.is_playlist) {
+            // Download playlist
+            var fmt = ytSelectedFormat || "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+            var body = { url: u, format: fmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
+            setTimeout(() => {
+                var d = JSON.parse(window.webview_bridge.call("yt_download_playlist", JSON.stringify(body)))
+                ytDownloading = false
+                if(d.error) {
+                    ytError = d.error
+                    showToast("Playlist download failed: " + d.error, "error")
+                } else {
+                    showToast("Playlist download started!", "success")
+                    ytOpen = false
+                    refresh()
+                }
+            }, 50)
+        } else {
+            // Single video
+            var fmt = ytSelectedFormat || "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+            var body = { url: u, format: fmt }
+            setTimeout(() => {
+                var d = JSON.parse(window.webview_bridge.call("yt_download", JSON.stringify(body)))
+                ytDownloading = false
+                if(d.error) {
+                    ytError = d.error
+                    showToast("Download failed: " + d.error, "error")
+                } else {
+                    showToast("Video download started!", "success")
+                    ytOpen = false
+                    refresh()
+                }
+            }, 50)
+        }
+    }
+
+    var togglePlaylistEntry = (idx) => {
+        var pos = ytPlaylistSelected.indexOf(idx)
+        if(pos === -1) {
+            ytPlaylistSelected = ytPlaylistSelected.concat([idx])
+        } else {
+            ytPlaylistSelected = ytPlaylistSelected.filter(i => i !== idx)
+        }
+    }
+
+    var selectAllPlaylist = () => {
+        ytPlaylistSelected = ytPlaylistEntries.map((_, i) => i)
+    }
+
+    var deselectAllPlaylist = () => {
+        ytPlaylistSelected = []
+    }
+
     var fmtBytes = (b) => {
         if(b == null) b = 0
         if(b >= 1073741824) return (b / 1073741824).toFixed(2) + " GB"
@@ -238,6 +390,8 @@
                 <span class="cdm-stat">Done <b>{doneCount}</b></span>
                 <span class="cdm-stat">Total <b>{totalCount}</b></span>
                 <button class="cdm-btn cdm-btn-accent" onClick={pasteFromClipboard}>&#128203; Paste URL</button>
+                <button class="cdm-yt-btn" onClick={openYtDownload}>&#9654; YouTube</button>
+                <button class="cdm-btn" onClick={() => { ytToolsOpen = true; refreshTools() }}>&#128295; Tools</button>
                 <button class="cdm-btn" onClick={() => { showSettings = true; refreshSettings() }}>&#9881; Settings</button>
             </div>
         </header>
@@ -421,6 +575,174 @@
                         }}>Apply & Resume</button>
                     </div>
                 </div>
+            </div>
+        ) : null}
+
+        {/* YouTube Download Dialog */}
+        {ytOpen ? (
+            <div class="cdm-dialog-overlay" onClick={() => { if(!ytLoading && !ytDownloading) ytOpen = false }}>
+                <div class="cdm-dialog" style="max-width:560px;" onClick={(e) => { e.stopPropagation() }}>
+                    <div class="cdm-dialog-header">
+                        <div class="cdm-dialog-title">&#9654; YouTube Download</div>
+                        <button class="cdm-dialog-close" onClick={() => { if(!ytLoading && !ytDownloading) ytOpen = false }}>&#10005;</button>
+                    </div>
+                    <div class="cdm-dialog-body">
+                        {(!ytTools || !ytTools.yt_dlp || ytTools.yt_dlp.status !== "installed") ? (
+                            <div class="cdm-yt-tool-status">
+                                <div class="cdm-yt-tool-dot cdm-yt-tool-dot-miss"></div>
+                                <span class="cdm-yt-tool-name">yt-dlp not installed</span>
+                                <button class="cdm-btn cdm-btn-accent cdm-yt-tool-install" onClick={() => { ytToolsOpen = true; ytOpen = false }}>Setup Tools</button>
+                            </div>
+                        ) : null}
+
+                        <label>YouTube URL
+                            <input type="text" value={ytUrl}
+                                onChange={(e) => { ytUrl = e.target.value; ytInfo = null; ytError = "" }}
+                                placeholder="https://youtube.com/watch?v=..."
+                                disabled={ytLoading || ytDownloading}
+                                onKeyDown={(e) => { if(e.key === "Enter" && !ytLoading) fetchYtInfo() }} />
+                        </label>
+
+                        {ytLoading ? (
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span class="cdm-yt-spinner"></span>
+                                <span style="font-size:13px;color:hsl(var(--muted-foreground));">Fetching video info...</span>
+                            </div>
+                        ) : null}
+
+                        {ytError ? (
+                            <div class="cdm-alert" style="font-size:13px;">&#9888; {ytError}</div>
+                        ) : null}
+
+                        {!ytLoading && !ytInfo && ytUrl.trim() !== "" ? (
+                            <button class="cdm-add-btn" onClick={fetchYtInfo} style="align-self:flex-start;">Fetch Info</button>
+                        ) : null}
+
+                        {ytInfo ? (
+                            <div class="cdm-yt-info-card">
+                                <div class="cdm-yt-title">{ytInfo.title || "Unknown"}</div>
+                                <div class="cdm-yt-meta">
+                                    {ytInfo.duration_str ? <span>Duration: {ytInfo.duration_str}</span> : null}
+                                    {ytInfo.is_playlist ? <span>{ytInfo.entries ? ytInfo.entries.length : 0} videos</span> : null}
+                                </div>
+
+                                {/* Playlist entries */}
+                                {ytInfo.is_playlist && ytPlaylistEntries.length > 0 ? (
+                                    <div>
+                                        <div style="display:flex;gap:8px;margin-bottom:8px;">
+                                            <button class="cdm-btn" onClick={selectAllPlaylist} style="font-size:12px;">Select All</button>
+                                            <button class="cdm-btn" onClick={deselectAllPlaylist} style="font-size:12px;">Deselect All</button>
+                                            <span style="font-size:12px;color:hsl(var(--muted-foreground));align-self:center;">{ytPlaylistSelected.length} / {ytPlaylistEntries.length} selected</span>
+                                        </div>
+                                        <div class="cdm-yt-formats" style="max-height:160px;">
+                                            {ytPlaylistEntries.map((entry, i) => (
+                                                <div class="cdm-yt-playlist-item" onClick={() => togglePlaylistEntry(i)} style={{ cursor: "pointer", background: ytPlaylistSelected.indexOf(i) !== -1 ? "hsl(var(--primary) / 0.08)" : "" }}>
+                                                    <input type="checkbox" checked={ytPlaylistSelected.indexOf(i) !== -1} readOnly style={{ accentColor: "#ff0000" }} />
+                                                    <span class="cdm-yt-playlist-idx">{entry.index || (i+1)}</span>
+                                                    <span class="cdm-yt-playlist-title">{entry.title || "Unknown"}</span>
+                                                    <span class="cdm-yt-playlist-dur">{entry.duration_str || ""}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Quality filter for playlists */}
+                                        <div style="margin-top:8px;">
+                                            <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))" }}>Min Quality</label>
+                                            <div class="cdm-yt-quality-select">
+                                                {[0, 360, 480, 720, 1080, 1440, 2160].map((q) => (
+                                                    <button class={"cdm-yt-quality-chip" + (ytMinQuality === q ? " cdm-yt-quality-chip-on" : "")}
+                                                        onClick={() => { ytMinQuality = q }}>{q === 0 ? "Any" : q + "p"}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : null}
+
+                                {/* Format selection for single videos */}
+                                {!ytInfo.is_playlist && ytInfo.formats && ytInfo.formats.length > 0 ? (
+                                    <div>
+                                        <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", marginBottom: "4px", display: "block" }}>Quality</label>
+                                        <div class="cdm-yt-formats">
+                                            {ytInfo.formats.filter(f => f.is_combined || f.is_video_only).map((fmt) => (
+                                                <div class={"cdm-yt-format-item" + (ytSelectedFormat === fmt.format_id ? " cdm-yt-format-item-selected" : "")}
+                                                    onClick={() => { ytSelectedFormat = fmt.format_id }}>
+                                                    <span class="cdm-yt-format-label">{fmt.label}</span>
+                                                    <span class="cdm-yt-format-size">{fmt.format_id}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </div>
+                    <div class="cdm-dialog-footer">
+                        <button class="cdm-btn" onClick={() => { if(!ytLoading && !ytDownloading) ytOpen = false }}>Cancel</button>
+                        {ytInfo ? (
+                            <button class="cdm-yt-btn" onClick={startYtDownload} disabled={ytDownloading}>
+                                {ytDownloading ? <span class="cdm-yt-spinner"></span> : null}
+                                {ytDownloading ? "Downloading..." : "Download"}
+                            </button>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+        ) : null}
+
+        {/* Tool Setup Dialog */}
+        {ytToolsOpen ? (
+            <div class="cdm-dialog-overlay" onClick={() => { ytToolsOpen = false }}>
+                <div class="cdm-dialog" style="max-width:480px;" onClick={(e) => { e.stopPropagation() }}>
+                    <div class="cdm-dialog-header">
+                        <div class="cdm-dialog-title">&#128295; Setup Tools</div>
+                        <button class="cdm-dialog-close" onClick={() => { ytToolsOpen = false }}>&#10005;</button>
+                    </div>
+                    <div class="cdm-dialog-body">
+                        <p style={{ fontSize: "13px", color: "hsl(var(--muted-foreground))", margin: 0 }}>Required for YouTube/video downloads</p>
+
+                        {/* yt-dlp status */}
+                        <div class="cdm-yt-tool-status">
+                            <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.yt_dlp && ytTools.yt_dlp.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
+                            <div>
+                                <div class="cdm-yt-tool-name">yt-dlp</div>
+                                <div class="cdm-yt-tool-ver">{ytTools && ytTools.yt_dlp ? (ytTools.yt_dlp.version || ytTools.yt_dlp.status || "not installed") : "checking..."}</div>
+                            </div>
+                            <button class="cdm-btn cdm-yt-tool-install" disabled={ytInstallingTool === "yt-dlp"}
+                                onClick={() => installTool("yt-dlp")}>
+                                {ytInstallingTool === "yt-dlp" ? <span class="cdm-yt-spinner"></span> : null}
+                                {ytTools && ytTools.yt_dlp && ytTools.yt_dlp.status === "installed" ? "Update" : "Install"}
+                            </button>
+                        </div>
+
+                        {/* ffmpeg status */}
+                        <div class="cdm-yt-tool-status">
+                            <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.ffmpeg && ytTools.ffmpeg.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
+                            <div>
+                                <div class="cdm-yt-tool-name">ffmpeg</div>
+                                <div class="cdm-yt-tool-ver">{ytTools && ytTools.ffmpeg ? (ytTools.ffmpeg.version || ytTools.ffmpeg.status || "not installed") : "checking..."}</div>
+                            </div>
+                            <button class="cdm-btn cdm-yt-tool-install" disabled={ytInstallingTool === "ffmpeg"}
+                                onClick={() => installTool("ffmpeg")}>
+                                {ytInstallingTool === "ffmpeg" ? <span class="cdm-yt-spinner"></span> : null}
+                                {ytTools && ytTools.ffmpeg && ytTools.ffmpeg.status === "installed" ? "Update" : "Install"}
+                            </button>
+                        </div>
+
+                        <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: 0 }}>
+                            yt-dlp downloads videos. ffmpeg merges separate video+audio streams.
+                            Both are required for full YouTube support.
+                        </p>
+                    </div>
+                    <div class="cdm-dialog-footer">
+                        <button class="cdm-add-btn" onClick={() => { ytToolsOpen = false }}>Done</button>
+                    </div>
+                </div>
+            </div>
+        ) : null}
+
+        {/* Toast notification */}
+        {toastVisible ? (
+            <div class={"cdm-yt-toast cdm-yt-toast-" + toastType} onClick={() => { toastVisible = false }}>
+                {toastMsg}
             </div>
         ) : null}
 
