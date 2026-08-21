@@ -28,8 +28,7 @@ using std::mutex;
         var use_categories : bool
         var duplicate_action : int
         var auto_resume_failed : bool
-        var max_retries : int              // -1 = infinite retries
-        var retry_delay_ms : i64
+        var retry_policy : RetryPolicy
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -51,8 +50,7 @@ using std::mutex;
                 use_categories = false,
                 duplicate_action = 0,
                 auto_resume_failed = false,
-                max_retries = DEFAULT_MAX_RETRIES,
-                retry_delay_ms = DEFAULT_RETRY_DELAY_MS
+                retry_policy = RetryPolicy()
             }
         }
 
@@ -74,8 +72,8 @@ using std::mutex;
             self.use_categories = s.use_categories
             self.duplicate_action = s.duplicate_action
             self.auto_resume_failed = s.auto_resume_failed
-            self.max_retries = s.max_retries
-            self.retry_delay_ms = s.retry_delay_ms
+            self.retry_policy.max_retries = s.max_retries
+            self.retry_policy.delay_ms = s.retry_delay_ms
             if(s.download_dir.size() > 0) {
                 self.download_dir = s.download_dir.copy()
             }
@@ -160,8 +158,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             rt.max_segments = per_segments
             rt.allow_segments = dm.allow_segments
             rt.enable_resume = dm.enable_resume
-            rt.max_retries = dm.max_retries
-            rt.retry_delay_ms = dm.retry_delay_ms
+            rt.retry_policy.max_retries = dm.retry_policy.max_retries
+            rt.retry_policy.delay_ms = dm.retry_policy.delay_ms
 
             dm.runtimes.insert(it.id.copy(), rt)
             var url_v = string_view::make_view(&it.url)
@@ -441,7 +439,7 @@ var id = uuid::v4().to_string()
             if(it.was_interrupted) {
                 should_resume = true
             } else if(dm.auto_resume_failed && (it.state == STATE_FAILED || it.state == STATE_CANCELLED)) {
-                if(dm.max_retries < 0 || it.retry_count < dm.max_retries) {
+                if(dm.retry_policy.max_retries < 0 || it.retry_count < dm.retry_policy.max_retries) {
                     should_resume = true
                 }
             }

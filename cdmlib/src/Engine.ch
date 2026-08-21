@@ -64,8 +64,7 @@ using std::vector;
         var max_segments : int
         var supports_resume : bool
         var enable_resume : bool
-        var max_retries : int         // -1 = infinite
-        var retry_delay_ms : i64
+        var retry_policy : RetryPolicy
 
         @constructor func constructor(id_ : string) {
             return TaskRuntime {
@@ -85,8 +84,7 @@ using std::vector;
                 max_segments = DEFAULT_MAX_SEGMENTS,
                 supports_resume = false,
                 enable_resume = true,
-                max_retries = DEFAULT_MAX_RETRIES,
-                retry_delay_ms = DEFAULT_RETRY_DELAY_MS
+                retry_policy = RetryPolicy()
             }
         }
     }
@@ -334,7 +332,7 @@ using std::vector;
     // Compute the number of segments for a file of `total` bytes given the
     // configured maximum and the minimum segment size. Returns 0 when the file
     // is too small or unknown.
-    func compute_segment_count(total : i64, max_segments : int, min_size : i64) : int {
+    public func compute_segment_count(total : i64, max_segments : int, min_size : i64) : int {
         if(total <= 0) { return 0 }
         if(max_segments <= 1) { return 0 }
         var per = total / (max_segments as i64)
@@ -349,7 +347,7 @@ using std::vector;
     }
 
     // Split [0, total) into `count` contiguous segments.
-    func build_segments(fname : string_view, count : int, total : i64, part_dir : string_view) : vector<SegmentState> {
+    public func build_segments(fname : string_view, count : int, total : i64, part_dir : string_view) : vector<SegmentState> {
         var out = vector<SegmentState>()
         if(count <= 0) { return out }
         var base = total / (count as i64)
@@ -695,7 +693,7 @@ using std::vector;
             load_segment_state(rt)
         }
 
-        while(!done && (rt.max_retries < 0 || retries <= rt.max_retries)) {
+        while(!done && rt.retry_policy.should_retry(retries)) {
             if(should_cancel(rt)) {
                 locked_set_state(rt, STATE_CANCELLED)
                 return
@@ -760,7 +758,7 @@ using std::vector;
                     var msg = string::make_no_len("failed to assemble segments")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                    if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                     continue
                 }
 
@@ -791,7 +789,7 @@ using std::vector;
                     var msg = string::make_no_len("failed to assemble segments")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                    if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                     continue
                 }
 
@@ -808,15 +806,15 @@ using std::vector;
                     var msg = string::make_no_len("no segment started")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                    if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                     continue
                 }
                 // A segment failed (connection dropped) — retry the unfinished ones.
                 retries = retries + 1
-                if(rt.max_retries < 0 || retries <= rt.max_retries) {
+                if(rt.retry_policy.should_retry(retries)) {
                     // refresh segments' copied from disk (in case of partial writes)
                     load_segment_state(rt)
-                    std::concurrent.sleep_ms(rt.retry_delay_ms as ulong)
+                    rt.retry_policy.sleep_between_retries()
                 }
                 continue
             }
@@ -827,7 +825,7 @@ using std::vector;
                 var Err(e) = res else unreachable
                 locked_set_error(rt, &e)
                 retries = retries + 1
-                if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                 continue
             }
 
@@ -877,7 +875,7 @@ using std::vector;
                     locked_set_error(rt, &msg)
                     rep.body.close_socket()
                     retries = retries + 1
-                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                    if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                     continue
                 }
 
@@ -897,7 +895,7 @@ using std::vector;
                     var msg = string::make_no_len("connection lost while downloading")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                    if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                     continue
                 }
             } else if(st == 416u) {
@@ -912,7 +910,7 @@ using std::vector;
                 locked_set_error(rt, &msg)
                 rep.body.close_socket()
                 retries = retries + 1
-                if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                 continue
             } else {
                 var msg = string::make_no_len("unexpected HTTP status ")
@@ -926,7 +924,7 @@ using std::vector;
                     return
                 }
                 retries = retries + 1
-                if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
+                if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                 continue
             }
         }

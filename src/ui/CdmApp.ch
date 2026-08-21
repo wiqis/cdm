@@ -22,6 +22,7 @@
     state addName = ""
     state addCategory = "Other"
     state addPriority = "0"
+    state addSpeedLimit = "0"
     // Change URL dialog state
     state changeUrlOpen = false
     state changeUrlItem = null
@@ -49,6 +50,7 @@
                 addName = ""
                 addCategory = "Other"
                 addPriority = "0"
+                addSpeedLimit = "0"
                 addOpen = true
             } else if(text) {
                 alert = "Clipboard does not contain a URL"
@@ -106,9 +108,11 @@
         if(addCategory !== "Other") body.category = addCategory
         var p = parseInt(addPriority)
         if(!isNaN(p) && p >= 0) body.priority = p
+        var sl = parseInt(addSpeedLimit)
+        if(!isNaN(sl) && sl > 0) body.speed_limit_kbps = sl
         var d = call("add", body)
         if(d.ok) {
-            newUrl = ""; addUrl = ""; addDir = ""; addName = ""; addCategory = "Other"; addPriority = "0"
+            newUrl = ""; addUrl = ""; addDir = ""; addName = ""; addCategory = "Other"; addPriority = "0"; addSpeedLimit = "0"
             addOpen = false; alert = ""
         } else {
             alert = d.error || "Failed to add download"
@@ -378,6 +382,9 @@
                         </label>
                         <label>Priority (0 = highest)
                             <input type="number" min="0" value={addPriority} onChange={(e) => { addPriority = e.target.value }} />
+                        </label>
+                        <label>Per-task speed limit (KB/s, 0 = unlimited)
+                            <input type="number" min="0" value={addSpeedLimit} onChange={(e) => { addSpeedLimit = e.target.value }} />
                         </label>
                     </div>
                     <div class="cdm-dialog-footer">

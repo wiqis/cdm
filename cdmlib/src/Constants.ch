@@ -13,6 +13,30 @@ public namespace cdm {
     public const STATE_FAILED : int = 4
     public const STATE_CANCELLED : int = 5
 
+    // Retry policy — encapsulates retry behaviour so it can be shared between
+    // the manager (defaults) and per-task runtimes (overrides).
+    public struct RetryPolicy {
+        var max_retries : int        // -1 = infinite retries
+        var delay_ms : i64           // milliseconds between retries
+
+        @constructor func constructor() {
+            return RetryPolicy {
+                max_retries = DEFAULT_MAX_RETRIES,
+                delay_ms = DEFAULT_RETRY_DELAY_MS
+            }
+        }
+
+        public func should_retry(&self, attempt : int) : bool {
+            return self.max_retries < 0 || attempt <= self.max_retries
+        }
+
+        public func sleep_between_retries(&self) {
+            if(self.delay_ms > 0) {
+                std::concurrent.sleep_ms(self.delay_ms as ulong)
+            }
+        }
+    }
+
     // App-wide limits.
     public const MAX_REDIRECTS : int = 10
     public const DEFAULT_MAX_RETRIES : int = 3

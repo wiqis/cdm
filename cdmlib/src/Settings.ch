@@ -86,7 +86,7 @@ using std::ordered_map;
     }
 
     // Expand ~ to $HOME at runtime.
-    func expand_home(path : string_view) : string {
+    public func expand_home(path : string_view) : string {
         if(path.size() == 0 || path.get(0) != '~') {
             var s = string()
             s.append_view(&path)
@@ -263,12 +263,12 @@ func settings_dir() : string {
         return content.substring(start, end)
     }
 
-    func parse_bool(s : &string) : bool {
+    public func parse_bool(s : &string) : bool {
         return s.equals_view("true") || s.equals_view("1") || s.equals_view("yes")
     }
 
     // Parse a non-negative integer from a C string. Returns -1 on failure.
-    func parse_int_opt(s : *char) : int {
+    public func parse_int_opt(s : *char) : int {
         var p = s
         var val = 0
         var started = false
@@ -372,6 +372,91 @@ func settings_dir() : string {
             }
         }
         return true
+    }
+
+    // In-memory serialization (no filesystem I/O). Used by tests to verify
+    // round-trip correctness without touching disk.
+    public func save_settings_to_string(s : &CdmSettings) : string {
+        var out = string()
+        out.append_view("downloadFolder:")
+        out.append_string(&s.download_dir)
+        out.append_view("\n")
+        out.append_view("parallelDownloads:")
+        out.append_integer(s.max_concurrent as bigint)
+        out.append_view("\n")
+        out.append_view("maxSegments:")
+        out.append_integer(s.max_segments as bigint)
+        out.append_view("\n")
+        out.append_view("speedLimit:")
+        out.append_integer(s.speed_limit_kbps as bigint)
+        out.append_view("\n")
+        out.append_view("enableResume:")
+        if(s.enable_resume) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("allowSegments:")
+        if(s.allow_segments) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("useCategories:")
+        if(s.use_categories) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("duplicateAction:")
+        out.append_integer(s.duplicate_action as bigint)
+        out.append_view("\n")
+        out.append_view("autoResumeFailed:")
+        if(s.auto_resume_failed) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("maxRetries:")
+        out.append_integer(s.max_retries as bigint)
+        out.append_view("\n")
+        out.append_view("retryDelayMs:")
+        out.append_integer(s.retry_delay_ms as bigint)
+        out.append_view("\n")
+        return out
+    }
+
+    // In-memory parser: populate a CdmSettings from the serialized string
+    // produced by save_settings_to_string. No filesystem I/O.
+    public func parse_settings_string(content : string_view) : CdmSettings {
+        var s = CdmSettings()
+        // Copy to a string so we can use read_line (which needs &string).
+        var buf = string()
+        buf.append_view(&content)
+        var pos : usize = 0
+        while(pos < buf.size()) {
+            var line = read_line(&buf, &mut pos)
+            if(line.empty() || line.get(0) == '#') { continue }
+            var colon = line.find_last(std::string_view::make_no_len(":"))
+            if(colon == std::NPOS) { continue }
+            var key = line.substring(0u, colon)
+            var val = line.substring(colon + 1u, line.size())
+            var kh = fnv1_hash_view(string_view::make_view(&key))
+            if(kh == comptime_fnv1_hash("downloadFolder")) { s.download_dir = expand_home(string_view::make_view(&val)) }
+            else if(kh == comptime_fnv1_hash("parallelDownloads")) {
+                var n = parse_int_opt(val.data())
+                if(n > 0) { s.max_concurrent = n }
+            }
+            else if(kh == comptime_fnv1_hash("maxSegments")) {
+                var n = parse_int_opt(val.data())
+                if(n > 0) { s.max_segments = n }
+            }
+            else if(kh == comptime_fnv1_hash("speedLimit")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { s.speed_limit_kbps = n as i64 }
+            }
+            else if(kh == comptime_fnv1_hash("enableResume")) { s.enable_resume = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("allowSegments")) { s.allow_segments = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("useCategories")) { s.use_categories = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("duplicateAction")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { s.duplicate_action = n }
+            }
+            else if(kh == comptime_fnv1_hash("autoResumeFailed")) { s.auto_resume_failed = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("maxRetries")) {
+                var n = parse_int_opt(val.data())
+                if(n >= -1) { s.max_retries = n }
+            }
+            else if(kh == comptime_fnv1_hash("retryDelayMs")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { s.retry_delay_ms = n as i64 }
+            }
+        }
+        return s
     }
 
     // Queue file format: one line per entry, `url<TAB>id<TAB>dir`. Versioned

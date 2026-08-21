@@ -121,9 +121,9 @@ using std::Option;
         out.append_string(&string::make_no_len(",\"auto_resume_failed\":"))
         if(dm.auto_resume_failed) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"max_retries\":"))
-        out.append_integer(dm.max_retries as bigint)
+        out.append_integer(dm.retry_policy.max_retries as bigint)
         out.append_string(&string::make_no_len(",\"retry_delay_ms\":"))
-        out.append_integer(dm.retry_delay_ms as bigint)
+        out.append_integer(dm.retry_policy.delay_ms as bigint)
         out.append('}')
         return out
     }
@@ -171,6 +171,14 @@ using std::Option;
             if(id.size() == 0u) {
                 var msg = string::make_no_len("duplicate download skipped")
                 return err_json(&msg)
+            }
+            // Apply per-task speed limit if provided.
+            var sl = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), 0)
+            if(sl > 0) {
+                var idx = find_item_index(&*dm, &id)
+                if(idx < dm.items.size()) {
+                    dm.items.get_ptr(idx).speed_limit_kbps = sl as i64
+                }
             }
             var out = string::make_no_len("{\"ok\":true,\"id\":")
             out.append_string(&json_string(string_view::make_view(&id)))
@@ -234,9 +242,10 @@ using std::Option;
             var fname = json_field(args, string_view::make_no_len("filename"))
             var prio = json_int_field(args, string_view::make_no_len("priority"), 0)
             var segs = json_int_field(args, string_view::make_no_len("max_segments"), 0)
+            var sl = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), 0)
             var dirv = string_view::make_view(&dir)
             var fnamev = string_view::make_view(&fname)
-            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, 0, Category.Other)
+            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, sl as i64, Category.Other)
             if(!ok) {
                 var msg = string::make_no_len("cannot edit running item")
                 return err_json(&msg)
@@ -271,8 +280,8 @@ using std::Option;
             var al_segs = json_bool_field(args, string_view::make_no_len("allow_segments"), dm.allow_segments)
             var use_cats = json_bool_field(args, string_view::make_no_len("use_categories"), dm.use_categories)
             var auto_res = json_bool_field(args, string_view::make_no_len("auto_resume_failed"), dm.auto_resume_failed)
-            var retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.max_retries)
-            var delay = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_delay_ms as int)
+            var retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.retry_policy.max_retries)
+            var delay = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_policy.delay_ms as int)
             if(dl.size() > 0u) {
                 dm.download_dir = dl.copy()
             }
@@ -284,8 +293,8 @@ using std::Option;
             dm.allow_segments = al_segs
             dm.use_categories = use_cats
             dm.auto_resume_failed = auto_res
-            dm.max_retries = retries
-            if(delay >= 0) { dm.retry_delay_ms = delay as i64 }
+            dm.retry_policy.max_retries = retries
+            if(delay >= 0) { dm.retry_policy.delay_ms = delay as i64 }
             // Persist the settings for next launch.
             var settings = CdmSettings()
             settings.download_dir = dm.download_dir.copy()
@@ -297,8 +306,8 @@ using std::Option;
             settings.allow_segments = dm.allow_segments
             settings.use_categories = dm.use_categories
             settings.auto_resume_failed = dm.auto_resume_failed
-            settings.max_retries = dm.max_retries
-            settings.retry_delay_ms = dm.retry_delay_ms
+            settings.max_retries = dm.retry_policy.max_retries
+            settings.retry_delay_ms = dm.retry_policy.delay_ms
             save_settings(&settings)
             return ok_json()
         }
