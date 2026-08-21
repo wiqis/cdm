@@ -16,6 +16,15 @@ using std::mutex;
         var runtimes : ordered_map<string, *mut TaskRuntime>
         var download_dir : string
         var max_concurrent : int
+        var max_segments : int
+        var min_segment_size : i64
+        var speed_limit_kbps : i64
+        var proxy_host : string
+        var proxy_port : int
+        var enable_resume : bool
+        var allow_segments : bool
+        var save_interval_millis : i64
+        var last_save_millis : i64
 
         @constructor func constructor() {
             var dir = string::make_no_len(DEFAULT_DOWNLOAD_DIR)
@@ -24,8 +33,22 @@ using std::mutex;
                 items = vector<DownloadItem>(),
                 runtimes = ordered_map<string, *mut TaskRuntime>(),
                 download_dir = dir,
-                max_concurrent = DEFAULT_MAX_CONCURRENT
+                max_concurrent = DEFAULT_MAX_CONCURRENT,
+                max_segments = DEFAULT_MAX_SEGMENTS,
+                min_segment_size = DEFAULT_MIN_SEGMENT_SIZE,
+                speed_limit_kbps = 0,
+                proxy_host = string(),
+                proxy_port = 0,
+                enable_resume = true,
+                allow_segments = true,
+                save_interval_millis = 2000,
+                last_save_millis = 0
             }
+        }
+
+        // Configure the global speed limit (KB/s; 0 disables).
+        public func set_speed_limit_kbps(&mut self, kbps : i64) {
+            self.speed_limit_kbps = kbps
         }
     }
 
@@ -69,6 +92,11 @@ using std::mutex;
             var rt = new TaskRuntime(id_copy)
             if(rt == null) { continue }
 
+            rt.speed_limit_kbps = dm.speed_limit_kbps
+            rt.max_segments = dm.max_segments
+            rt.allow_segments = dm.allow_segments
+            rt.enable_resume = dm.enable_resume
+
             dm.runtimes.insert(it.id.copy(), rt)
             var url_v = string_view::make_view(&it.url)
             var dir_v = string_view::make_view(&it.dir)
@@ -87,6 +115,9 @@ using std::mutex;
     public func add_task(dm : &mut DownloadManager, url_str : string_view) : string {
         var suggested = suggested_filename(url_str)
         var id = uuid::v4().to_string()
+
+        // Ensure the destination directory exists before queueing.
+        fs::create_dir_all(dm.download_dir.data())
 
         var item = DownloadItem(id.copy(), string(url_str.data(), url_str.size()),
                                 dm.download_dir.copy(), suggested)

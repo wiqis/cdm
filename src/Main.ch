@@ -25,13 +25,66 @@ func build_ui_html() : string {
     return page.toString(string_view::make_no_len(""), string_view::make_no_len("dark"), string_view::make_no_len("chx-default"))
 }
 
-public func main() : int {
+public func main(argc : int, argv : **char) : int {
     fflush(null)
 
+    // Test mode: when launched with --test/--test-id/--comm-id the process is a
+    // child of the test runner. Dispatch to the shared test_runner before any
+    // other CLI handling so `./scripts/test.sh` can drive the suite.
+    var is_test = false
+    for(var i = 1; i < argc; i++) {
+        var a = argv[i]
+        if(a == null) { continue }
+        var h = fnv1_hash(a)
+        if(h == comptime_fnv1_hash("--test") || h == comptime_fnv1_hash("--test-id") || h == comptime_fnv1_hash("--comm-id") || h == comptime_fnv1_hash("--test-ids") || h == comptime_fnv1_hash("--test-names")) {
+            is_test = true
+            break
+        }
+    }
+    if(is_test) {
+        fflush(null)
+        return test_runner(argc, argv)
+    }
+
+    // Parse command-line arguments. Anything other than plain URLs opts into
+    // headless mode; "cdm" with no arguments opens the GUI.
+    var opts = cdm::CliOptions()
+    var parse_err = cdm::parse_cli(argc, argv, &mut opts)
+    if(parse_err != null) {
+        printf("cdm: %s\n", parse_err)
+        cdm::print_help()
+        return 1
+    }
+
+    if(opts.show_help) {
+        cdm::print_help()
+        return 0
+    }
+    if(opts.show_version) {
+        printf("ChemicalDM %s\n", cdm::CDM_VERSION)
+        return 0
+    }
+
+    var should_run_gui = opts.gui_forced || (opts.urls.size() == 0u && opts.batch_file.size() == 0u)
+    if(should_run_gui) {
+        return run_gui()
+    }
+
+    return cdm::run_headless(&opts)
+}
+
+// Open the desktop GUI (webview + bridge).
+func run_gui() : int {
     // Build the download manager. Lives for the whole run; the bridge handler
     // captures a pointer to it.
     var dm = cdm::DownloadManager()
     var dmp = &raw mut dm
+
+    // Restore previously queued downloads so a restart resumes them.
+    var restored = cdm::restore_queue(&mut dm)
+    if(restored > 0) {
+        printf("ChemicalDM: restored %d pending downloads\n", restored)
+    }
 
     // Render the UI before opening the window so the page is ready instantly.
     var ui_html = build_ui_html()
@@ -57,5 +110,6 @@ public func main() : int {
     webview::webview_destroy(&raw mut wv)
 
     cdm::shutdown(&mut dm)
+    cdm::save_queue(&dm)
     return 0
 }

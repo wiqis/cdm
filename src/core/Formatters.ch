@@ -25,7 +25,8 @@ using std::string;
         var s = string()
         s.append_double(value, 1)
         s.append(' ')
-        s.append(units.get(idx as uint))
+        // idx counts divisions; the unit index is idx-1 (K at 0 after one /1024).
+        s.append(units.get((idx - 1) as uint))
         s.append('B')
         return s
     }

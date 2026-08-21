@@ -1,0 +1,321 @@
+// ChemicalDM — command-line interface.
+//
+// The app can run headless from the terminal: `cdm <url> [url...]` downloads
+// the given URLs and prints progress to stdout. Without any arguments (or with
+// `--gui`) it opens the desktop GUI. Options mirror the settings the GUI can
+// change, so scripts and the UI share the same engine.
+
+public namespace cdm {
+
+using std::string;
+using std::string_view;
+using std::vector;
+using std::Result;
+using std::Option;
+
+    public struct CliOptions {
+        var urls : vector<string>
+        var download_dir : string        // empty => keep manager default
+        var output_name : string         // empty => auto-detect from URL
+        var segments : int               // 0 => keep configured default
+        var concurrent : int             // 0 => keep configured default
+        var speed_limit_kbps : i64       // 0 => unlimited
+        var quiet : bool
+        var show_help : bool
+        var show_version : bool
+        var batch_file : string          // empty => none
+        var gui_forced : bool            // --gui was passed
+        var start_gui : bool             // no urls and no batch => GUI
+
+        @constructor func constructor() {
+            return CliOptions {
+                urls = vector<string>(),
+                download_dir = string(),
+                output_name = string(),
+                segments = 0,
+                concurrent = 0,
+                speed_limit_kbps = 0,
+                quiet = false,
+                show_help = false,
+                show_version = false,
+                batch_file = string(),
+                gui_forced = false,
+                start_gui = false
+            }
+        }
+    }
+
+    // Parse a non-negative integer from a C string. Returns -1 on failure.
+    func cli_parse_int(s : *char) : int {
+        var p = s
+        var val = 0
+        var started = false
+        while(*p != 0) {
+            if(*p >= '0' && *p <= '9') {
+                val = val * 10 + (*p as int - '0' as int)
+                started = true
+            } else {
+                return -1
+            }
+            p = p + 1
+        }
+        if(!started) { return -1 }
+        return val
+    }
+
+    // Parse the command line into CliOptions. Returns an error string on
+    // failure (null when parsing succeeded).
+    public func parse_cli(argc : int, argv : **char, out : &mut CliOptions) : *char {
+        var i = 1
+        while(i < argc) {
+            var arg = argv[i]
+            if(arg == null) { i = i + 1; continue }
+            var h = fnv1_hash(arg)
+
+            if(h == comptime_fnv1_hash("--help") || h == comptime_fnv1_hash("-h")) {
+                out.show_help = true
+            } else if(h == comptime_fnv1_hash("--version") || h == comptime_fnv1_hash("-v")) {
+                out.show_version = true
+            } else if(h == comptime_fnv1_hash("--gui") || h == comptime_fnv1_hash("-g")) {
+                out.gui_forced = true
+            } else if(h == comptime_fnv1_hash("--quiet") || h == comptime_fnv1_hash("-q")) {
+                out.quiet = true
+            } else if(h == comptime_fnv1_hash("--dir") || h == comptime_fnv1_hash("-d")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--dir requires a directory argument" }
+                out.download_dir = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--output") || h == comptime_fnv1_hash("-o")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--output requires a filename argument" }
+                out.output_name = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--segments") || h == comptime_fnv1_hash("-p")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--segments requires a number" }
+                var n = cli_parse_int(argv[i])
+                if(n <= 0) { return "invalid segment count" }
+                out.segments = n
+            } else if(h == comptime_fnv1_hash("--concurrent") || h == comptime_fnv1_hash("-j")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--concurrent requires a number" }
+                var n = cli_parse_int(argv[i])
+                if(n <= 0) { return "invalid concurrent count" }
+                out.concurrent = n
+            } else if(h == comptime_fnv1_hash("--speed-limit") || h == comptime_fnv1_hash("--limit")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--speed-limit requires a number in KB/s" }
+                var n = cli_parse_int(argv[i])
+                if(n < 0) { return "invalid speed limit" }
+                out.speed_limit_kbps = n as i64
+            } else if(h == comptime_fnv1_hash("--file") || h == comptime_fnv1_hash("-f")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--file requires a path argument" }
+                out.batch_file = string::make_no_len(argv[i])
+            } else if(arg[0] == '-') {
+                return "unknown option"
+            } else {
+                // plain argument => a URL
+                out.urls.push_back(string::make_no_len(arg))
+            }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Read a batch file: one URL per line, blank lines and # comments skipped.
+    func read_batch_urls(path : string_view, out : &mut vector<string>) : bool {
+        var f = fopen(path.data(), "rb")
+        if(f == null) { return false }
+        var chunk : [4096u]u8
+        var content = string()
+        while(true) {
+            var n = fread(&raw mut chunk[0], 1, 4096u, f)
+            if(n == 0u) { break }
+            content.append_with_len(&raw mut chunk[0] as *char, n)
+        }
+        fclose(f)
+
+        var line = string()
+        var line_started = false
+        for(var i = 0u; i < content.size(); i++) {
+            var c = content.get(i)
+            if(c == '\n' || c == '\r') {
+                if(line_started) {
+                    if(line.empty() || line.get(0) != '#') {
+                        out.push_back(line.copy())
+                    }
+                    line = string()
+                    line_started = false
+                }
+            } else {
+                line.append(c)
+                line_started = true
+            }
+        }
+        if(line_started && (line.empty() || line.get(0) != '#')) {
+            out.push_back(line.copy())
+        }
+        return true
+    }
+
+    // Print a one-line progress summary for every item.
+    func print_progress(snap : &vector<DownloadItem>, quiet : bool) {
+        var buf = string()
+        for(var i = 0u; i < snap.size(); i++) {
+            var it = snap.get_ptr(i)
+            var pct : double = 0.0
+            if(it.total_bytes > 0) { pct = (it.downloaded_bytes as double) * 100.0 / (it.total_bytes as double) }
+            var line = string()
+            line.append_string(&it.id)
+            line.append(' ')
+            line.append_string(&format_state(it.state))
+            line.append(' ')
+            line.append_string(&format_bytes(it.downloaded_bytes))
+            line.append_string(&string::make_no_len("/"))
+            if(it.total_bytes > 0) { line.append_string(&format_bytes(it.total_bytes)) } else { line.append('#') }
+            line.append(' ')
+            if(it.state == STATE_DOWNLOADING) {
+                line.append_string(&format_speed(it.speed_bytes_per_sec))
+            }
+            if(it.error.size() > 0) {
+                line.append(' ')
+                line.append_string(&it.error)
+            }
+            if(buf.size() > 0) { buf.append('\n') }
+            buf.append_string(&line)
+        }
+        if(!quiet) {
+            printf("%s\n", buf.data())
+            fflush(null)
+        }
+    }
+
+    func is_terminal(state : int) : bool {
+        return state == STATE_DONE || state == STATE_FAILED || state == STATE_CANCELLED
+    }
+
+    // Headless runner: add the URLs, schedule them, and block until every task
+    // reaches a terminal state. Returns process exit code (0 = all succeeded).
+    public func run_headless(opts : &CliOptions) : int {
+        var dm = DownloadManager()
+
+        if(opts.download_dir.size() > 0) {
+            dm.download_dir = opts.download_dir.copy()
+        }
+        if(opts.concurrent > 0) {
+            dm.max_concurrent = opts.concurrent
+        }
+        if(opts.segments > 0) {
+            dm.max_segments = opts.segments
+        }
+        if(opts.speed_limit_kbps > 0) {
+            dm.set_speed_limit_kbps(opts.speed_limit_kbps)
+        }
+
+        // Make sure the destination directory exists.
+        var mk = fs::create_dir_all(dm.download_dir.data())
+        // create_dir_all's Result is not actionable here; ignore failures.
+
+        var batch = vector<string>()
+        if(opts.batch_file.size() > 0) {
+            var bv = string_view::make_view(&opts.batch_file)
+            if(!read_batch_urls(bv, &mut batch)) {
+                printf("cdm: cannot read batch file %s\n", opts.batch_file.data())
+                return 1
+            }
+        }
+
+        var total = opts.urls.size() + batch.size()
+        if(total == 0u) {
+            printf("cdm: nothing to download\n")
+            return 1
+        }
+
+        var added : i64 = 0
+        for(var i = 0u; i < opts.urls.size(); i++) {
+            var u = opts.urls.get_ref(i)
+            var uv = string_view::make_view(u)
+            var id = add_task(&mut dm, uv)
+            added = added + 1
+            if(!opts.quiet) {
+                printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())
+            }
+        }
+        for(var i = 0u; i < batch.size(); i++) {
+            var u = batch.get_ref(i)
+            var uv = string_view::make_view(u)
+            var id = add_task(&mut dm, uv)
+            added = added + 1
+            if(!opts.quiet) {
+                printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())
+            }
+        }
+
+        // Wait for completion. The manager auto-starts up to max_concurrent.
+        var all_done = false
+        while(!all_done) {
+            std::concurrent.sleep_ms(250)
+            var snap = snapshot(&mut dm)
+            all_done = true
+            for(var i = 0u; i < snap.size(); i++) {
+                var it = snap.get_ptr(i)
+                if(!is_terminal(it.state)) {
+                    all_done = false
+                    break
+                }
+            }
+            if(!opts.quiet) {
+                print_progress(&snap, opts.quiet)
+            }
+        }
+
+        // Final summary (from the live snapshot so states are authoritative).
+        var fail_count = 0
+        var done_count = 0
+        var final_snap = snapshot(&mut dm)
+        for(var i = 0u; i < final_snap.size(); i++) {
+            var it = final_snap.get_ptr(i)
+            var lpath = it.local_path()
+            if(it.state == STATE_DONE) {
+                done_count = done_count + 1
+                if(!opts.quiet) {
+                    printf("cdm: done %s -> %s\n", it.url.data(), lpath.data())
+                }
+            } else {
+                fail_count = fail_count + 1
+                if(!opts.quiet) {
+                    var st_s = format_state(it.state)
+                    var err_s = it.error.copy()
+                    printf("cdm: %s %s (%s)\n", st_s.data(), it.url.data(), err_s.data())
+                }
+            }
+        }
+        shutdown(&mut dm)
+
+        if(fail_count > 0) {
+            return 1
+        }
+        return 0
+    }
+
+    func print_help() {
+        printf("ChemicalDM %s\n", CDM_VERSION)
+        printf("\n")
+        printf("Usage:\n")
+        printf("  cdm [options] <url> [url...]   download URLs and exit\n")
+        printf("  cdm [options] --file <path>    download URLs listed in a file\n")
+        printf("  cdm (no arguments)             open the desktop GUI\n")
+        printf("\n")
+        printf("Options:\n")
+        printf("  -d, --dir <dir>       destination directory\n")
+        printf("  -o, --output <name>   output filename\n")
+        printf("  -p, --segments <n>    connections per download\n")
+        printf("  -j, --concurrent <n>  max concurrent downloads\n")
+        printf("      --speed-limit kb  global speed limit in KB/s\n")
+        printf("  -f, --file <path>     read URLs from a file\n")
+        printf("  -q, --quiet           don't print progress\n")
+        printf("  -g, --gui             force the GUI\n")
+        printf("  -v, --version         print version\n")
+        printf("  -h, --help            show this help\n")
+    }
+
+} // end namespace cdm

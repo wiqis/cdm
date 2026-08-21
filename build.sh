@@ -4,8 +4,8 @@
 # Usage:
 #   ./build.sh              build cdm binary into ./bin/
 #   ./build.sh --llvm       build with the LLVM/Clang backend (Compiler binary)
+#   ./build.sh --test       build with test resources + run the @test suite
 #   ./build.sh --run        build then launch
-#   ./build.sh --selftest   build then run the internal test suite
 #   ./build.sh --clean      remove build artifacts
 set -euo pipefail
 
@@ -16,7 +16,7 @@ cd "$HERE"
 BACKEND="--tcc"
 COMPILER="$ROOT/cmake-build-debug/TCCCompiler"
 RUN=false
-SELFTEST=false
+TEST_MODE=false
 CLEAN=false
 MODE="debug_quick"
 
@@ -24,7 +24,7 @@ for arg in "$@"; do
     case "$arg" in
         --llvm) BACKEND="--llvm"; COMPILER="$ROOT/cmake-build-debug/Compiler";;
         --run) RUN=true;;
-        --selftest) SELFTEST=true;;
+        --test) TEST_MODE=true;;
         --clean) CLEAN=true;;
         --debug_complete) MODE="debug_complete";;
         *) echo "unknown option: $arg" >&2; exit 1;;
@@ -44,16 +44,20 @@ fi
 mkdir -p bin
 
 echo "==> compiling chemicaldm (${BACKEND})"
-"$COMPILER" "chemical.mod" -o "bin/cdm" --mode "$MODE" --no-cache
+if [ "$TEST_MODE" = true ]; then
+    "$COMPILER" "chemical.mod" -o "bin/cdm" --mode "$MODE" --no-cache --test
+else
+    "$COMPILER" "chemical.mod" -o "bin/cdm" --mode "$MODE" --no-cache
+fi
+
+if [ "$TEST_MODE" = true ]; then
+    echo "==> running test suite"
+    exec ./bin/cdm --test
+fi
 
 if [ "$RUN" = true ]; then
     echo "==> launching chemicaldm"
     exec ./bin/cdm
-fi
-
-if [ "$SELFTEST" = true ]; then
-    echo "==> running self-tests"
-    ./bin/cdm --selftest
 fi
 
 echo "==> built: bin/cdm"

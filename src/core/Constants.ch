@@ -23,6 +23,11 @@ public namespace cdm {
     // Default settings.
     public const DEFAULT_DOWNLOAD_DIR : *char = "/tmp/cdm/downloads"
     public const DEFAULT_MAX_CONCURRENT : int = 3
+    public const DEFAULT_MAX_SEGMENTS : int = 4
+    public comptime const DEFAULT_MIN_SEGMENT_SIZE : i64 = 256 * 1024
     public const DEFAULT_WORKERS_PER_TASK : int = 1
+
+    // Persistent settings file (relative to $HOME).
+    public const SETTINGS_FILE : *char = ".chemicaldm/config.txt"
 
 } // end namespace cdm

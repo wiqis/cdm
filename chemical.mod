@@ -21,3 +21,8 @@ import components
 import webview
 import datetime
 import uuid
+import process
+import test
+import test_env
+
+source "tests" if test

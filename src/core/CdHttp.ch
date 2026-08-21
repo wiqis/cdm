@@ -33,7 +33,7 @@ using std::vector;
         }
     }
 
-    func parse_content_length(svc : &string) : i64 {
+    public func parse_content_length(svc : &string) : i64 {
         if(svc.size() == 0) { return -1 }
         var val : i64 = 0
         var neg = false
@@ -54,7 +54,7 @@ using std::vector;
 
     // Parse "bytes 0-0/total" (or trailing part after '/') into a total.
     // total may be "*" (unknown).
-    func parse_content_range_total(svc : &string) : i64 {
+    public func parse_content_range_total(svc : &string) : i64 {
         // find last '/'
         var idx = svc.size()
         var found = false
@@ -80,7 +80,7 @@ using std::vector;
     }
 
     // Extract a file name from a Content-Disposition header value.
-    func parse_content_disposition_name(cdv : &string) : Option<string> {
+    public func parse_content_disposition_name(cdv : &string) : Option<string> {
         // Look for filename= or filename*= at the end of the header.
         var i : usize = 0
         var best = string()
@@ -156,7 +156,10 @@ using std::vector;
 
     // Perform a request with redirect following. Returns the final response
     // (status, headers, streaming body). max_redirects guards against loops.
-    public func request(method : string_view, url_str : string_view, range_start : i64) : Result<http::Response, string> {
+    // range_start < 0 means no Range header. range_end < 0 means an open-ended
+    // range from range_start to EOF (`bytes=N-`). When range_end >= 0 an exact
+    // bounded range is requested (`bytes=N-M`) — used by the segmented engine.
+    public func request(method : string_view, url_str : string_view, range_start : i64, range_end : i64 = -1) : Result<http::Response, string> {
         var cl = build_client()
         var current = string(url_str.data(), url_str.size())
         var redirects = 0
@@ -168,7 +171,10 @@ using std::vector;
             }
             var Some(u) = url_opt else unreachable
 
-            var rb = http::RequestBuilder(method.data(), u)
+            // std::replace moves the URL out of `u` (leaving an empty URL) so the
+            // Option<URL> and the RequestBuilder never alias the same heap
+            // strings — both would otherwise free() them at scope exit.
+            var rb = http::RequestBuilder(method.data(), std::replace(&mut u, http::URL()))
             rb.timeout(SOCKET_TIMEOUT_SECS as long)
             rb.header("User-Agent", "ChemicalDM/0.1")
             rb.header("Accept", "*/*")
@@ -176,7 +182,10 @@ using std::vector;
             if(range_start >= 0) {
                 var rh = string::make_no_len("bytes=")
                 rh.append_integer(range_start as bigint)
-                rh.append_string(&string::make_no_len("-"))
+                rh.append('-')
+                if(range_end >= 0) {
+                    rh.append_integer(range_end as bigint)
+                }
                 rb.header("Range", rh.data())
             }
 
@@ -216,7 +225,7 @@ using std::vector;
             probe.filename = sanitize_filename(filename_hint)
         }
 
-        var res = request("GET", url_str, 0)
+        var res = request("GET", url_str, 0, 0)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
             probe.error = e.copy()
@@ -279,6 +288,13 @@ using std::vector;
     // (0 = beginning). The caller pulls from response.body.read().
     public func open_download(url_str : string_view, resume_from : i64) : Result<http::Response, string> {
         return request("GET", url_str, resume_from)
+    }
+
+    // Open a bounded download stream covering exactly [start, end] (inclusive).
+    // Used by the segmented engine so each segment only pulls its own bytes and
+    // a server that streams the whole file cannot wedge the connection.
+    public func open_download_range(url_str : string_view, start : i64, end : i64) : Result<http::Response, string> {
+        return request("GET", url_str, start, end)
     }
 
 } // end namespace cdm

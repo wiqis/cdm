@@ -17,7 +17,6 @@ using std::vector;
         var backslash_n = string::make_no_len("\\n")
         var backslash_r = string::make_no_len("\\r")
         var backslash_t = string::make_no_len("\\t")
-        var u000 = string::make_no_len("\\u000")
         var u00 = string::make_no_len("\\u00")
         var hexdigits = string::make_no_len("0123456789abcdef")
 
@@ -29,10 +28,11 @@ using std::vector;
             else if(c == '\r') { out.append_string(&backslash_r) }
             else if(c == '\t') { out.append_string(&backslash_t) }
             else if(c < 0x20 as char) {
+                // Four hex digits after "\u": e.g. 0x01 -> \u0001, 0x1F -> \u001F.
                 var u = c as uint
-                if(u < 16) { out.append_string(&u000) } else { out.append_string(&u00) }
-                out.append(hexdigits.get((u / 16) as uint))
-                out.append(hexdigits.get((u % 16) as uint))
+                out.append_string(&u00)
+                out.append(hexdigits.get(((u >> 4) & 0xF) as uint))
+                out.append(hexdigits.get((u & 0xF) as uint))
             } else {
                 out.append(c)
             }
