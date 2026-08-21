@@ -36,7 +36,7 @@ using std::ordered_map;
 
         @constructor func constructor() {
             return CdmSettings {
-                download_dir = string::make_no_len(DEFAULT_DOWNLOAD_DIR),
+                download_dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR)),
                 max_concurrent = DEFAULT_MAX_CONCURRENT,
                 max_segments = DEFAULT_MAX_SEGMENTS,
                 min_segment_size = DEFAULT_MIN_SEGMENT_SIZE,
@@ -49,7 +49,7 @@ using std::ordered_map;
                 category_dirs = ordered_map<string, string>(),
                 auto_start = false,
                 quiet = false,
-                use_categories = false,
+                use_categories = true,
                 duplicate_action = 0,
                 network_timeout = SOCKET_TIMEOUT_SECS,
                 auto_resume_failed = false,
@@ -79,6 +79,25 @@ using std::ordered_map;
             out.append_string(&sub)
             return out
         }
+    }
+
+    // Expand ~ to $HOME at runtime.
+    func expand_home(path : string_view) : string {
+        if(path.size() == 0 || path.get(0) != '~') {
+            var s = string()
+            s.append_view(&path)
+            return s
+        }
+        var home = string()
+        var opt = std::get_env(string_view::make_no_len("HOME"))
+        if(opt is Option.Some) {
+            var Some(h) = opt else unreachable
+            home = h.copy()
+        } else {
+            home = string::make_no_len(".")
+        }
+        home.append_view(&path.subview(1, path.size()))
+        return home
     }
 
     // Stable key used for per-category directory override persistence.

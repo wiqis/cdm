@@ -20,8 +20,8 @@ public namespace cdm {
     public const SOCKET_TIMEOUT_SECS : int = 30
     public const PROGRESS_UPDATE_INTERVAL_MILLIS : i64 = 200
 
-    // Default settings.
-    public const DEFAULT_DOWNLOAD_DIR : *char = "/tmp/cdm/downloads"
+    // Default settings. The "~" prefix is expanded at runtime to $HOME.
+    public const DEFAULT_DOWNLOAD_DIR : *char = "~/Downloads/cdm"
     public const DEFAULT_MAX_CONCURRENT : int = 3
     public const DEFAULT_MAX_SEGMENTS : int = 4
     public comptime const DEFAULT_MIN_SEGMENT_SIZE : i64 = 256 * 1024

@@ -19,6 +19,29 @@
     state addName = ""
     state addCategory = "Other"
     state addPriority = "0"
+    state clipboardMonitor = false
+    state lastClipboard = ""
+
+    var isUrl = (s) => {
+        var t = s.trim().toLowerCase()
+        return t.startsWith("http://") || t.startsWith("https://")
+    }
+
+    var checkClipboard = () => {
+        if(!clipboardMonitor) return
+        if(!navigator.clipboard) return
+        navigator.clipboard.readText().then((text) => {
+            if(text && text !== lastClipboard && isUrl(text)) {
+                lastClipboard = text
+                var d = call("add", { url: text.trim() })
+                if(d.ok) {
+                    alert = "Auto-added: " + text.trim()
+                }
+            } else if(text) {
+                lastClipboard = text
+            }
+        }).catch(() => {})
+    }
 
     var refresh = () => {
         var d = JSON.parse(window.webview_bridge.call("state", "{}"))
@@ -34,7 +57,8 @@
         refresh()
         refreshSettings()
         var t = setInterval(refresh, 1000)
-        return () => clearInterval(t)
+        var ct = setInterval(checkClipboard, 2000)
+        return () => { clearInterval(t); clearInterval(ct) }
     }, [])
 
     var post = (method, id, extra) => {
@@ -130,6 +154,7 @@
                 <span class="cdm-stat">Active <b>{activeCount}</b></span>
                 <span class="cdm-stat">Done <b>{doneCount}</b></span>
                 <span class="cdm-stat">Total <b>{totalCount}</b></span>
+                <button class="cdm-btn" onClick={() => { clipboardMonitor = !clipboardMonitor; if(!clipboardMonitor) lastClipboard = "" }} style={clipboardMonitor ? "background:#2563eb;color:#fff" : ""}>&#128203; {clipboardMonitor ? "Clip: On" : "Clip: Off"}</button>
                 <button class="cdm-btn" onClick={() => { showSettings = !showSettings; if(showSettings) refreshSettings() }}>&#9881; Settings</button>
             </div>
         </header>
