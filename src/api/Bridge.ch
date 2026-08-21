@@ -8,6 +8,8 @@ public namespace cdm {
 using std::string;
 using std::string_view;
 using std::Option;
+using std::Result;
+using std::vector;
 // json module types (JsonParser, ASTJsonHandler, JsonValue) are top-level.
 
     // Extract a single string field from a JSON object string { "key": "..." }.
@@ -444,7 +446,8 @@ using std::Option;
             var exec_res = process::execute(cfg)
             if(exec_res is Result.Err) {
                 var Err(e) = exec_res else unreachable
-                return err_json(&e.message)
+                var emsg = e.message()
+                return err_json(&emsg)
             }
             var Ok(pr) = exec_res else unreachable
             if(!pr.success) {
@@ -487,7 +490,8 @@ using std::Option;
             var exec_res = process::execute(cfg)
             if(exec_res is Result.Err) {
                 var Err(e) = exec_res else unreachable
-                return err_json(&e.message)
+                var emsg2 = e.message()
+                return err_json(&emsg2)
             }
             var Ok(pr) = exec_res else unreachable
             if(!pr.success) {

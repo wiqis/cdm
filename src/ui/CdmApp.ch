@@ -578,7 +578,6 @@
             </div>
         ) : null}
 
-        {/* YouTube Download Dialog */}
         {ytOpen ? (
             <div class="cdm-dialog-overlay" onClick={() => { if(!ytLoading && !ytDownloading) ytOpen = false }}>
                 <div class="cdm-dialog" style="max-width:560px;" onClick={(e) => { e.stopPropagation() }}>
@@ -626,7 +625,6 @@
                                     {ytInfo.is_playlist ? <span>{ytInfo.entries ? ytInfo.entries.length : 0} videos</span> : null}
                                 </div>
 
-                                {/* Playlist entries */}
                                 {ytInfo.is_playlist && ytPlaylistEntries.length > 0 ? (
                                     <div>
                                         <div style="display:flex;gap:8px;margin-bottom:8px;">
@@ -644,7 +642,6 @@
                                                 </div>
                                             ))}
                                         </div>
-                                        {/* Quality filter for playlists */}
                                         <div style="margin-top:8px;">
                                             <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))" }}>Min Quality</label>
                                             <div class="cdm-yt-quality-select">
@@ -657,7 +654,6 @@
                                     </div>
                                 ) : null}
 
-                                {/* Format selection for single videos */}
                                 {!ytInfo.is_playlist && ytInfo.formats && ytInfo.formats.length > 0 ? (
                                     <div>
                                         <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", marginBottom: "4px", display: "block" }}>Quality</label>
@@ -688,7 +684,6 @@
             </div>
         ) : null}
 
-        {/* Tool Setup Dialog */}
         {ytToolsOpen ? (
             <div class="cdm-dialog-overlay" onClick={() => { ytToolsOpen = false }}>
                 <div class="cdm-dialog" style="max-width:480px;" onClick={(e) => { e.stopPropagation() }}>
@@ -699,7 +694,6 @@
                     <div class="cdm-dialog-body">
                         <p style={{ fontSize: "13px", color: "hsl(var(--muted-foreground))", margin: 0 }}>Required for YouTube/video downloads</p>
 
-                        {/* yt-dlp status */}
                         <div class="cdm-yt-tool-status">
                             <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.yt_dlp && ytTools.yt_dlp.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
                             <div>
@@ -713,7 +707,6 @@
                             </button>
                         </div>
 
-                        {/* ffmpeg status */}
                         <div class="cdm-yt-tool-status">
                             <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.ffmpeg && ytTools.ffmpeg.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
                             <div>
@@ -739,7 +732,6 @@
             </div>
         ) : null}
 
-        {/* Toast notification */}
         {toastVisible ? (
             <div class={"cdm-yt-toast cdm-yt-toast-" + toastType} onClick={() => { toastVisible = false }}>
                 {toastMsg}

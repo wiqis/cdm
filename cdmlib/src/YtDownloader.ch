@@ -257,9 +257,7 @@ using std::mutex;
             var idx = self.find_index(id)
             if(idx < self.downloads.size()) {
                 var d = self.downloads.get_ptr(idx)
-                if(d.state == YtDownloadState.Downloading || d.state == YtDownloadState.FetchingInfo) {
-                    // Kill the yt-dlp process (stored in temp_dir as marker).
-                    // We signal via state; the worker thread checks this.
+                if(d.state == YtDownloadState.Downloading || d.state == YtDownloadState.FetchingInfo || d.state == YtDownloadState.Queued) {
                     d.state = YtDownloadState.Cancelled
                 }
             }
@@ -338,7 +336,8 @@ using std::mutex;
         update.has_progress = true
 
         // Parse percentage: "XX.X%"
-        var pct_idx = line.find(string_view::make_no_len("%"))
+        var pct_marker = string_view::make_no_len("%")
+        var pct_idx = line.find(&pct_marker)
         if(pct_idx != std::NPOS) {
             // Find the number before %
             var pct_end = pct_idx
@@ -351,25 +350,34 @@ using std::mutex;
         }
 
         // Parse speed: "at X.XXMiB/s" or "at X.XXKiB/s"
-        var at_idx = line.find(string_view::make_no_len(" at "))
-        if(at_idx != std::NPOS) {
-            var speed_start = at_idx + 4u
-            var speed_end = speed_start
-            while(speed_end < line.size() && line.get(speed_end) != ' ') {
-                speed_end = speed_end + 1u
+        // Manual search for " at " since find(&ref) may not work with inline temps.
+        var si : usize = 0
+        while(si + 3u < line.size()) {
+            if(line.get(si) == ' ' && line.get(si + 1u) == 'a' && line.get(si + 2u) == 't' && line.get(si + 3u) == ' ') {
+                var speed_start = si + 4u
+                var speed_end = speed_start
+                while(speed_end < line.size() && line.get(speed_end) != ' ') {
+                    speed_end = speed_end + 1u
+                }
+                update.speed = line.subview(speed_start, speed_end)
+                break
             }
-            update.speed = line.subview(speed_start, speed_end)
+            si = si + 1u
         }
 
         // Parse ETA: "ETA HH:MM" or "ETA MM:SS"
-        var eta_idx = line.find(string_view::make_no_len("ETA "))
-        if(eta_idx != std::NPOS) {
-            var eta_start = eta_idx + 4u
-            var eta_end = eta_start
-            while(eta_end < line.size() && line.get(eta_end) != ' ' && line.get(eta_end) != '\n' && line.get(eta_end) != '\r') {
-                eta_end = eta_end + 1u
+        var ei : usize = 0
+        while(ei + 3u < line.size()) {
+            if(line.get(ei) == 'E' && line.get(ei + 1u) == 'T' && line.get(ei + 2u) == 'A' && line.get(ei + 3u) == ' ') {
+                var eta_start = ei + 4u
+                var eta_end = eta_start
+                while(eta_end < line.size() && line.get(eta_end) != ' ' && line.get(eta_end) != '\n' && line.get(eta_end) != '\r') {
+                    eta_end = eta_end + 1u
+                }
+                update.eta = line.subview(eta_start, eta_end)
+                break
             }
-            update.eta = line.subview(eta_start, eta_end)
+            ei = ei + 1u
         }
 
         update.status = string(line.data(), line.size())
@@ -458,7 +466,7 @@ using std::mutex;
     }
 
     // Build yt-dlp args for a playlist download.
-    func build_ytdlp_playlist_args(url : string_view, output_dir : string_view, format : string_view, min_quality : int, max_quality : int) : vector<string> {
+    public func build_ytdlp_playlist_args(url : string_view, output_dir : string_view, format : string_view, min_quality : int, max_quality : int) : vector<string> {
         var args = vector<string>()
         args.push_back(ytdlp_resolved_path())
         args.push_back(string::make_no_len("--no-warnings"))
@@ -561,12 +569,14 @@ using std::mutex;
     // Detect if a URL is a YouTube playlist.
     public func is_youtube_playlist_url(url : string_view) : bool {
         // YouTube playlist URLs contain "list=" parameter.
-        var list_idx = url.find(string_view::make_no_len("list="))
+        var list_marker = string_view::make_no_len("list=")
+        var list_idx = url.find(&list_marker)
         if(list_idx != std::NPOS) {
             return true
         }
         // Also check for /playlist? path.
-        var pl_idx = url.find(string_view::make_no_len("/playlist"))
+        var pl_marker = string_view::make_no_len("/playlist")
+        var pl_idx = url.find(&pl_marker)
         if(pl_idx != std::NPOS) {
             return true
         }
@@ -583,8 +593,10 @@ using std::mutex;
             }
         }
         var lv = string_view::make_view(&lower)
-        if(lv.find(string_view::make_no_len("youtube.com")) != std::NPOS) { return true }
-        if(lv.find(string_view::make_no_len("youtu.be")) != std::NPOS) { return true }
+        var yt_marker = string_view::make_no_len("youtube.com")
+        var ytb_marker = string_view::make_no_len("youtu.be")
+        if(lv.find(&yt_marker) != std::NPOS) { return true }
+        if(lv.find(&ytb_marker) != std::NPOS) { return true }
         return false
     }
 

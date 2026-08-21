@@ -1,4 +1,4 @@
-// ChemicalDM — typed error codes and bridge result helpers.
+// ChemicalDM — typed error codes.
 //
 // Instead of scattering raw error strings across the bridge, callers
 // produce a CdmError which carries both a code and a human-readable
@@ -56,13 +56,6 @@ using std::string_view;
         public func is_ok(&self) : bool {
             return self.code == CdmErrorCode.Ok
         }
-
-        public func to_json(&self) : string {
-            if(self.code == CdmErrorCode.Ok) {
-                return ok_json()
-            }
-            return err_json(&self.message)
-        }
     }
 
     // Convenience: create an Ok result (no error).
@@ -79,8 +72,6 @@ using std::string_view;
     public func cdm_err_msg(msg : string) : CdmError {
         return CdmError.make(CdmErrorCode.InvalidParameter, msg)
     }
-
-    // ---- Human-readable state names (for UI consumption) ----
 
     // Map a CdmErrorCode to a user-facing label.
     public func error_code_name(c : CdmErrorCode) : string {
@@ -101,39 +92,6 @@ using std::string_view;
         if(c == CdmErrorCode.SettingsSaveFailed) { return string::make_no_len("settings_save_failed") }
         if(c == CdmErrorCode.SettingsLoadFailed) { return string::make_no_len("settings_load_failed") }
         return string::make_no_len("unknown")
-    }
-
-    // ---- JSON response helpers ----
-
-    func ok_json() : string {
-        return string::make_no_len("{\"ok\":true}")
-    }
-
-    func err_json(msg : &string) : string {
-        var out = string::make_no_len("{\"ok\":false,\"error\":")
-        out.append_string(&json_string(string_view::make_view(msg)))
-        out.append('}')
-        return out
-    }
-
-    // Build a success JSON with an extra field: {"ok":true,"id":"..."}.
-    func ok_json_with_id(id : &string) : string {
-        var out = string::make_no_len("{\"ok\":true,\"id\":")
-        out.append_string(&json_string(string_view::make_view(id)))
-        out.append('}')
-        return out
-    }
-
-    // Build a success JSON with an extra integer field.
-    func ok_json_with_int(key : string_view, value : int) : string {
-        var out = string::make_no_len("{\"ok\":true,\"")
-        out.append_view(&key)
-        out.append_string(&string::make_no_len("\":"))
-        var vs = string()
-        vs.append_integer(value as bigint)
-        out.append_string(&vs)
-        out.append('}')
-        return out
     }
 
 } // end namespace cdm

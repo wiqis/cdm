@@ -97,10 +97,12 @@ public func CDM_yt_parse_progress_percentage(env : &mut TestEnv) {
 
 @test
 public func CDM_yt_parse_progress_speed(env : &mut TestEnv) {
-    var line = string::make_no_len("[download]  12.5% of   50.00MiB at  1.50MiB/s ETA 00:30")
+    var line = string::make_no_len("[download] 12.5% of 50.00MiB at 1.50MiB/s ETA 00:30")
     var update = cdm::parse_yt_progress(string_view::make_view(&line))
     if(!update.has_progress) { env.error("should have progress"); return }
     if(update.speed.size() == 0) { env.error("should have speed"); return }
+    var eta = string(update.eta.data(), update.eta.size())
+    if(eta.size() == 0) { env.error("should have eta"); return }
 }
 
 @test
