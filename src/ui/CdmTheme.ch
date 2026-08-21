@@ -329,6 +329,12 @@ public func CdmTheme(page : &mut HtmlPage) {
             padding: 12px 20px 16px;
             border-top: 1px solid hsl(var(--border));
         }
+        .cdm-dialog-info {
+            font-size: 12.5px;
+            color: hsl(var(--muted-foreground));
+            margin: 0;
+            padding: 2px 0;
+        }
         .cdm-item-meta-line {
             display: flex;
             gap: 10px;

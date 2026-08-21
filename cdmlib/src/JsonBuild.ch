@@ -130,6 +130,11 @@ using std::vector;
         json_kv(&mut out, "duplicate_suffix", &dup_s, &mut first)
         json_kv(&mut out, "percent", &percent_s, &mut first)
         json_kv(&mut out, "eta", &eta_s, &mut first)
+        var retry_s = json_int(item.retry_count)
+        json_kv(&mut out, "retry_count", &retry_s, &mut first)
+        var interrupted_s = if(item.was_interrupted) "true" else "false"
+        var interrupted_sv = string::make_no_len(interrupted_s)
+        json_kv(&mut out, "was_interrupted", &interrupted_sv, &mut first)
         if(!item.segments_json.empty()) {
             json_kv_raw(&mut out, "segments", &item.segments_json, &mut first)
         }

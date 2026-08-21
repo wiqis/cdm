@@ -22,6 +22,10 @@
     state addName = ""
     state addCategory = "Other"
     state addPriority = "0"
+    // Change URL dialog state
+    state changeUrlOpen = false
+    state changeUrlItem = null
+    state changeUrlValue = ""
     // Context menu state
     state ctxOpen = false
     state ctxX = 0
@@ -122,7 +126,9 @@
             enable_resume: settings.enable_resume,
             allow_segments: settings.allow_segments,
             use_categories: settings.use_categories,
-            auto_resume_failed: settings.auto_resume_failed
+            auto_resume_failed: settings.auto_resume_failed,
+            max_retries: settings.max_retries,
+            retry_delay_ms: settings.retry_delay_ms
         }
         call("settings_set", body)
         alert = "Settings saved"
@@ -325,6 +331,14 @@
                                 Auto-resume failed downloads
                             </label>
                         </div>
+                        <label>Max retries (-1 = infinite, 0 = no retry)
+                            <input type="number" min="-1" value={settings.max_retries}
+                                onChange={(e) => { settings.max_retries = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Retry delay (ms)
+                            <input type="number" min="0" value={settings.retry_delay_ms}
+                                onChange={(e) => { settings.retry_delay_ms = parseInt(e.target.value) || 0 }} />
+                        </label>
                     </div>
                     <div class="cdm-dialog-footer">
                         <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>
@@ -374,6 +388,35 @@
             </div>
         ) : null}
 
+        {changeUrlOpen && changeUrlItem ? (
+            <div class="cdm-dialog-overlay" onClick={() => { changeUrlOpen = false }}>
+                <div class="cdm-dialog" onClick={(e) => { e.stopPropagation() }}>
+                    <div class="cdm-dialog-header">
+                        <div class="cdm-dialog-title">&#128279; Change URL</div>
+                        <button class="cdm-dialog-close" onClick={() => { changeUrlOpen = false }}>&#10005;</button>
+                    </div>
+                    <div class="cdm-dialog-body">
+                        <p class="cdm-dialog-info">Current file: {changeUrlItem.display_name || changeUrlItem.filename}</p>
+                        <p class="cdm-dialog-info">Downloaded: {changeUrlItem.downloaded_bytes} bytes</p>
+                        <label>New URL
+                            <input type="text" value={changeUrlValue}
+                                onChange={(e) => { changeUrlValue = e.target.value }}
+                                placeholder="Paste the new download URL" />
+                        </label>
+                    </div>
+                    <div class="cdm-dialog-footer">
+                        <button class="cdm-btn" onClick={() => { changeUrlOpen = false }}>Cancel</button>
+                        <button class="cdm-add-btn" onClick={() => {
+                            if(changeUrlValue.trim() !== "" && changeUrlItem) {
+                                call("change_url", { id: changeUrlItem.id, url: changeUrlValue.trim() })
+                                changeUrlOpen = false; changeUrlItem = null; changeUrlValue = ""
+                            }
+                        }}>Apply & Resume</button>
+                    </div>
+                </div>
+            </div>
+        ) : null}
+
         {ctxOpen && ctxItem ? (
             <div class="cdm-ctx-menu" style={"left:" + ctxX + "px;top:" + ctxY + "px;"} onClick={(e) => { e.stopPropagation() }}>
                 {(ctxItem.state === "Done" || ctxItem.state === "Failed" || ctxItem.state === "Cancelled") ? (
@@ -387,6 +430,9 @@
                 {ctxItem.state === "Paused" ? (
                     <div class="cdm-ctx-item" onClick={() => ctxAction("resume")}>&#9654; Resume</div>
                 ) : null}
+                {ctxItem.state === "Cancelled" && ctxItem.downloaded_bytes > 0 ? (
+                    <div class="cdm-ctx-item" onClick={() => ctxAction("resume")}>&#9654; Resume</div>
+                ) : null}
                 {ctxItem.state === "Failed" ? (
                     <div class="cdm-ctx-item" onClick={() => ctxAction("retry")}>&#10227; Retry</div>
                 ) : null}
@@ -398,6 +444,12 @@
                 ) : null}
                 <div class="cdm-ctx-sep"></div>
                 <div class="cdm-ctx-item cdm-ctx-danger" onClick={() => ctxAction("remove")}>&#128465; Remove</div>
+                {ctxItem.state !== "Downloading" && ctxItem.state !== "Queued" ? (
+                    <div class="cdm-ctx-item" onClick={() => {
+                        ctxOpen = false
+                        changeUrlItem = ctxItem; changeUrlValue = ctxItem.url; changeUrlOpen = true
+                    }}>&#128279; Change URL</div>
+                ) : null}
             </div>
         ) : null}
 
@@ -471,14 +523,20 @@
                         {item.state === "Downloading" || item.state === "Queued" ? (
                             <button class="cdm-btn" onClick={() => post("pause", item.id)}>Pause</button>
                         ) : null}
-                        {item.state === "Paused" ? (
+                        {(item.state === "Paused" || (item.state === "Failed" && item.error === "interrupted by shutdown")) ? (
                             <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
                         ) : null}
-                        {item.state === "Failed" ? (
+                        {item.state === "Failed" && item.error !== "interrupted by shutdown" ? (
                             <button class="cdm-btn" onClick={() => post("retry", item.id)}>Retry</button>
+                        ) : null}
+                        {item.state === "Cancelled" && item.downloaded_bytes > 0 ? (
+                            <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
                         ) : null}
                         {item.state === "Done" || item.state === "Failed" || item.state === "Cancelled" ? (
                             <button class="cdm-btn" onClick={() => post("restart", item.id)}>&#10227; Restart</button>
+                        ) : null}
+                        {item.state !== "Downloading" && item.state !== "Queued" ? (
+                            <button class="cdm-btn" onClick={() => { changeUrlItem = item; changeUrlValue = item.url; changeUrlOpen = true }}>Change URL</button>
                         ) : null}
                         {running ? (
                             <button class="cdm-btn cdm-btn-danger" onClick={() => post("cancel", item.id)}>Cancel</button>

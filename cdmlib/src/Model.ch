@@ -30,6 +30,7 @@ using std::string_view;
         var retry_count : int
         var duplicate_suffix : int    // 0 = original name; 1,2,.. = "name (N).ext"
         var segments_json : string    // pre-serialized JSON array of segment states
+        var was_interrupted : bool    // true if download was active when app closed
 
         @constructor func constructor(id_ : string, url_ : string, dir_ : string, filename_ : string) {
             return DownloadItem {
@@ -53,7 +54,8 @@ using std::string_view;
                 speed_limit_kbps = 0,
                 retry_count = 0,
                 duplicate_suffix = 0,
-                segments_json = string()
+                segments_json = string(),
+                was_interrupted = false
             }
         }
 
@@ -107,6 +109,7 @@ using std::string_view;
             c.retry_count = self.retry_count
             c.duplicate_suffix = self.duplicate_suffix
             c.segments_json = self.segments_json.copy()
+            c.was_interrupted = self.was_interrupted
             return c
         }
     }

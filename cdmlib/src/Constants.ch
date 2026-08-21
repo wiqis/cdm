@@ -15,8 +15,8 @@ public namespace cdm {
 
     // App-wide limits.
     public const MAX_REDIRECTS : int = 10
-    public const MAX_RETRIES : int = 3
-    public const RETRY_DELAY_MILLIS : i64 = 1000
+    public const DEFAULT_MAX_RETRIES : int = 3
+    public const DEFAULT_RETRY_DELAY_MS : i64 = 1000
     public const SOCKET_TIMEOUT_SECS : int = 30
     public const PROGRESS_UPDATE_INTERVAL_MILLIS : i64 = 200
 

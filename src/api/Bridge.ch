@@ -120,6 +120,10 @@ using std::Option;
         out.append_integer(dm.duplicate_action as bigint)
         out.append_string(&string::make_no_len(",\"auto_resume_failed\":"))
         if(dm.auto_resume_failed) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"max_retries\":"))
+        out.append_integer(dm.max_retries as bigint)
+        out.append_string(&string::make_no_len(",\"retry_delay_ms\":"))
+        out.append_integer(dm.retry_delay_ms as bigint)
         out.append('}')
         return out
     }
@@ -239,6 +243,21 @@ using std::Option;
             }
             return ok_json()
         }
+        var m_change_url = string_view::make_no_len("change_url")
+        if(method.equals(&m_change_url)) {
+            var id = json_field(args, string_view::make_no_len("id"))
+            var new_url = json_field(args, string_view::make_no_len("url"))
+            if(id.size() == 0u || new_url.size() == 0u) {
+                var msg = string::make_no_len("missing id or url")
+                return err_json(&msg)
+            }
+            var ok = change_url(&mut *dm, &id, string_view::make_view(&new_url))
+            if(!ok) {
+                var msg = string::make_no_len("cannot change url (item may be running)")
+                return err_json(&msg)
+            }
+            return ok_json()
+        }
         if(method.equals(&m_settings_get)) {
             return settings_json(&mut *dm)
         }
@@ -252,6 +271,8 @@ using std::Option;
             var al_segs = json_bool_field(args, string_view::make_no_len("allow_segments"), dm.allow_segments)
             var use_cats = json_bool_field(args, string_view::make_no_len("use_categories"), dm.use_categories)
             var auto_res = json_bool_field(args, string_view::make_no_len("auto_resume_failed"), dm.auto_resume_failed)
+            var retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.max_retries)
+            var delay = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_delay_ms as int)
             if(dl.size() > 0u) {
                 dm.download_dir = dl.copy()
             }
@@ -263,6 +284,8 @@ using std::Option;
             dm.allow_segments = al_segs
             dm.use_categories = use_cats
             dm.auto_resume_failed = auto_res
+            dm.max_retries = retries
+            if(delay >= 0) { dm.retry_delay_ms = delay as i64 }
             // Persist the settings for next launch.
             var settings = CdmSettings()
             settings.download_dir = dm.download_dir.copy()
@@ -274,6 +297,8 @@ using std::Option;
             settings.allow_segments = dm.allow_segments
             settings.use_categories = dm.use_categories
             settings.auto_resume_failed = dm.auto_resume_failed
+            settings.max_retries = dm.max_retries
+            settings.retry_delay_ms = dm.retry_delay_ms
             save_settings(&settings)
             return ok_json()
         }

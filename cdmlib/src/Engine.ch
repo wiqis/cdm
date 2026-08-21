@@ -64,6 +64,8 @@ using std::vector;
         var max_segments : int
         var supports_resume : bool
         var enable_resume : bool
+        var max_retries : int         // -1 = infinite
+        var retry_delay_ms : i64
 
         @constructor func constructor(id_ : string) {
             return TaskRuntime {
@@ -82,7 +84,9 @@ using std::vector;
                 allow_segments = true,
                 max_segments = DEFAULT_MAX_SEGMENTS,
                 supports_resume = false,
-                enable_resume = true
+                enable_resume = true,
+                max_retries = DEFAULT_MAX_RETRIES,
+                retry_delay_ms = DEFAULT_RETRY_DELAY_MS
             }
         }
     }
@@ -390,7 +394,8 @@ using std::vector;
     // Stream the response body to `ofile`, respecting byte limits, pause and
     // cancel. Returns: 1 complete, 2 paused, 0 error (retryable).
     // When max_bytes >= 0, stops after that many bytes have been written.
-    func stream_body(rt : *mut TaskRuntime, body : &mut http::Body, ofile : *mut FILE, max_bytes : i64) : int {
+    // When written_out != null, updates it with bytes written (for segment progress).
+    func stream_body(rt : *mut TaskRuntime, body : &mut http::Body, ofile : *mut FILE, max_bytes : i64, written_out : *mut i64) : int {
         var buf : [STREAM_BUF_SIZE]u8
         var sample_start = now_millis()
         var sample_bytes : i64 = 0
@@ -448,6 +453,7 @@ using std::vector;
                 sample_bytes = 0
             }
             locked_add_downloaded(rt, n)
+            if(written_out != null) { *written_out = *written_out + n }
             throttle(rt, n)
             if(max_bytes >= 0 && written >= max_bytes) {
                 fflush(ofile)
@@ -490,7 +496,9 @@ using std::vector;
     // Worker for one byte range. Opens a bounded range request covering exactly
     // [start, end] and streams the partial content into the segment's .part
     // file. Returns 1 on completion, 2 on pause, 0 on failure.
-    func raw_download_segment(rt : *mut TaskRuntime, url : string_view, part_path : *char, start : i64, end : i64, total : i64, copied_in : i64) : int {
+    // seg_copied_out, when non-null, is updated with bytes written so the
+    // segment's progress is visible in the UI during download.
+    func raw_download_segment(rt : *mut TaskRuntime, url : string_view, part_path : *char, start : i64, end : i64, total : i64, copied_in : i64, seg_copied_out : *mut i64) : int {
         var resume_from = start + copied_in
         var res = open_download_range(url, resume_from, end)
         if(res is Result.Err) {
@@ -507,7 +515,7 @@ using std::vector;
             }
             var ofile = open_output(part_path, 0)
             if(ofile == null) { rep.body.close_socket(); return 0 }
-            var code = stream_body(rt, &mut rep.body, ofile, -1)
+            var code = stream_body(rt, &mut rep.body, ofile, -1, seg_copied_out)
             fclose(ofile)
             rep.body.close_socket()
             if(code == 1) {
@@ -525,7 +533,7 @@ using std::vector;
         if(ofile == null) { rep.body.close_socket(); return 0 }
         var remaining = end - resume_from + 1
         if(remaining < 0) { remaining = 0 }
-        var code = stream_body(rt, &mut rep.body, ofile, remaining)
+        var code = stream_body(rt, &mut rep.body, ofile, remaining, seg_copied_out)
         fclose(ofile)
         rep.body.close_socket()
         if(code == 1) {
@@ -541,8 +549,24 @@ using std::vector;
         var part = segment_part_path(string_view::make_view(&job.dir),
                                      string_view::make_view(&job.filename), job.index)
         var copied = job.copied
+        // Locate the segment state so we can track progress live.
+        var seg_ptr : *mut SegmentState = null
+        job.rt.info_mutex.lock()
+        for(var i = 0u; i < job.rt.segments.size(); i++) {
+            var s = job.rt.segments.get_ptr(i)
+            if(s.index == job.index) {
+                seg_ptr = s
+                break
+            }
+        }
+        job.rt.info_mutex.unlock()
+        // Pass a pointer to seg.copied so stream_body updates it during download.
+        var seg_copied_out : *mut i64 = null
+        if(seg_ptr != null) {
+            seg_copied_out = &raw mut seg_ptr.copied
+        }
         var res = raw_download_segment(job.rt, string_view::make_view(&job.url),
-                                       part.data(), job.start, job.end, job.total, copied)
+                                       part.data(), job.start, job.end, job.total, copied, seg_copied_out)
         if(res == 1) {
             job.rt.info_mutex.lock()
             for(var i = 0u; i < job.rt.segments.size(); i++) {
@@ -671,7 +695,7 @@ using std::vector;
             load_segment_state(rt)
         }
 
-        while(!done && retries <= MAX_RETRIES) {
+        while(!done && (rt.max_retries < 0 || retries <= rt.max_retries)) {
             if(should_cancel(rt)) {
                 locked_set_state(rt, STATE_CANCELLED)
                 return
@@ -736,7 +760,7 @@ using std::vector;
                     var msg = string::make_no_len("failed to assemble segments")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                     continue
                 }
 
@@ -767,7 +791,7 @@ using std::vector;
                     var msg = string::make_no_len("failed to assemble segments")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                     continue
                 }
 
@@ -784,15 +808,15 @@ using std::vector;
                     var msg = string::make_no_len("no segment started")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                     continue
                 }
                 // A segment failed (connection dropped) — retry the unfinished ones.
                 retries = retries + 1
-                if(retries <= MAX_RETRIES) {
+                if(rt.max_retries < 0 || retries <= rt.max_retries) {
                     // refresh segments' copied from disk (in case of partial writes)
                     load_segment_state(rt)
-                    std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong)
+                    std::concurrent.sleep_ms(rt.retry_delay_ms as ulong)
                 }
                 continue
             }
@@ -803,7 +827,7 @@ using std::vector;
                 var Err(e) = res else unreachable
                 locked_set_error(rt, &e)
                 retries = retries + 1
-                if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                 continue
             }
 
@@ -853,11 +877,11 @@ using std::vector;
                     locked_set_error(rt, &msg)
                     rep.body.close_socket()
                     retries = retries + 1
-                    if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                     continue
                 }
 
-                var code = stream_body(rt, &mut rep.body, ofile, -1)
+                var code = stream_body(rt, &mut rep.body, ofile, -1, null)
                 fclose(ofile)
                 if(code == 1) {
                     locked_set_state(rt, STATE_DONE)
@@ -873,7 +897,7 @@ using std::vector;
                     var msg = string::make_no_len("connection lost while downloading")
                     locked_set_error(rt, &msg)
                     retries = retries + 1
-                    if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                    if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                     continue
                 }
             } else if(st == 416u) {
@@ -888,7 +912,7 @@ using std::vector;
                 locked_set_error(rt, &msg)
                 rep.body.close_socket()
                 retries = retries + 1
-                if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                 continue
             } else {
                 var msg = string::make_no_len("unexpected HTTP status ")
@@ -902,7 +926,7 @@ using std::vector;
                     return
                 }
                 retries = retries + 1
-                if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
+                if(rt.max_retries < 0 || retries <= rt.max_retries) { std::concurrent.sleep_ms(rt.retry_delay_ms as ulong) }
                 continue
             }
         }

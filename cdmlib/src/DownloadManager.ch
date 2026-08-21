@@ -28,6 +28,8 @@ using std::mutex;
         var use_categories : bool
         var duplicate_action : int
         var auto_resume_failed : bool
+        var max_retries : int              // -1 = infinite retries
+        var retry_delay_ms : i64
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -48,7 +50,9 @@ using std::mutex;
                 last_save_millis = 0,
                 use_categories = false,
                 duplicate_action = 0,
-                auto_resume_failed = false
+                auto_resume_failed = false,
+                max_retries = DEFAULT_MAX_RETRIES,
+                retry_delay_ms = DEFAULT_RETRY_DELAY_MS
             }
         }
 
@@ -70,6 +74,8 @@ using std::mutex;
             self.use_categories = s.use_categories
             self.duplicate_action = s.duplicate_action
             self.auto_resume_failed = s.auto_resume_failed
+            self.max_retries = s.max_retries
+            self.retry_delay_ms = s.retry_delay_ms
             if(s.download_dir.size() > 0) {
                 self.download_dir = s.download_dir.copy()
             }
@@ -154,6 +160,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             rt.max_segments = per_segments
             rt.allow_segments = dm.allow_segments
             rt.enable_resume = dm.enable_resume
+            rt.max_retries = dm.max_retries
+            rt.retry_delay_ms = dm.retry_delay_ms
 
             dm.runtimes.insert(it.id.copy(), rt)
             var url_v = string_view::make_view(&it.url)
@@ -341,6 +349,28 @@ var id = uuid::v4().to_string()
         it.downloaded_bytes = 0
         it.total_bytes = 0
         it.retry_count = it.retry_count + 1
+        it.was_interrupted = false
+        start_pending(dm)
+        return true
+    }
+
+    // Change the URL of an existing download. Only allowed for non-running
+    // items. Clears progress so the download restarts with the new URL.
+    public func change_url(dm : &mut DownloadManager, id : &string, new_url : string_view) : bool {
+        var idx = find_item_index(dm, id)
+        if(idx == dm.items.size()) { return false }
+        var it = dm.items.get_ptr(idx)
+        var rtpp = dm.runtimes.get_ptr(&it.id)
+        if(rtpp != null && *rtpp != null) {
+            return false
+        }
+        it.url = string(new_url.data(), new_url.size())
+        it.state = STATE_QUEUED
+        it.error = string()
+        it.downloaded_bytes = 0
+        it.total_bytes = 0
+        it.retry_count = 0
+        it.was_interrupted = false
         start_pending(dm)
         return true
     }
@@ -398,24 +428,33 @@ var id = uuid::v4().to_string()
         }
     }
 
-    // Re-queue any failed items when auto-resume is enabled (called by the UI
-    // poller / headless loop). Returns how many were re-queued.
+    // Re-queue interrupted downloads (items that were downloading when the app
+    // closed). Failed downloads are NOT auto-resumed — the user must manually
+    // retry or resume them. Returns how many were re-queued.
     public func poll_auto_resume(dm : &mut DownloadManager) : int {
-        if(!dm.auto_resume_failed) { return 0 }
         var requeued = 0
         for(var i = 0u; i < dm.items.size(); i++) {
             var it = dm.items.get_ptr(i)
-            if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) {
-                var rtpp = dm.runtimes.get_ptr(&it.id)
-                if(rtpp != null && *rtpp != null) { continue }
-                if(it.retry_count >= MAX_RETRIES) { continue }
-                it.state = STATE_QUEUED
-                it.error = string()
-                // Preserve downloaded_bytes / total_bytes so the worker can
-                // resume from the last written position on disk.
-                it.retry_count = it.retry_count + 1
-                requeued = requeued + 1
+            // Resume items that were interrupted (app closed during download)
+            // or items explicitly marked for auto-resume.
+            var should_resume = false
+            if(it.was_interrupted) {
+                should_resume = true
+            } else if(dm.auto_resume_failed && (it.state == STATE_FAILED || it.state == STATE_CANCELLED)) {
+                if(dm.max_retries < 0 || it.retry_count < dm.max_retries) {
+                    should_resume = true
+                }
             }
+            if(!should_resume) { continue }
+            var rtpp = dm.runtimes.get_ptr(&it.id)
+            if(rtpp != null && *rtpp != null) { continue }
+            it.state = STATE_QUEUED
+            it.error = string()
+            it.was_interrupted = false
+            // Preserve downloaded_bytes / total_bytes so the worker can
+            // resume from the last written position on disk.
+            it.retry_count = it.retry_count + 1
+            requeued = requeued + 1
         }
         start_pending(dm)
         return requeued
@@ -450,6 +489,11 @@ var id = uuid::v4().to_string()
             resume_runtime(*rtpp)
         } else if(it.state == STATE_PAUSED || it.state == STATE_QUEUED) {
             it.state = STATE_QUEUED
+        } else if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) {
+            // Resume a failed/cancelled download with existing progress.
+            it.state = STATE_QUEUED
+            it.error = string()
+            it.was_interrupted = false
         }
         start_pending(dm)
     }
@@ -563,7 +607,9 @@ var id = uuid::v4().to_string()
         return out
     }
 
-    // Join and release every worker thread (called on shutdown).
+    // Join and release every worker thread (called on shutdown). Mark any
+    // items that were still downloading as interrupted so auto-resume can
+    // pick them up on next launch.
     public func shutdown(dm : &mut DownloadManager) {
         for(var i = 0u; i < dm.items.size(); i++) {
             var it = dm.items.get_ptr(i)
@@ -573,6 +619,13 @@ var id = uuid::v4().to_string()
                 request_cancel(rt)
                 if(rt.running) {
                     join_task(rt)
+                }
+                // Mark as interrupted so auto-resume can restart it later.
+                if(it.state == STATE_DOWNLOADING) {
+                    it.state = STATE_FAILED
+                    it.was_interrupted = true
+                    var msg = string::make_no_len("interrupted by shutdown")
+                    it.error = msg
                 }
                 delete rt
             }

@@ -32,6 +32,8 @@ using std::ordered_map;
         var duplicate_action : int        // 0 = rename, 1 = overwrite, 2 = skip
         var network_timeout : int         // seconds
         var auto_resume_failed : bool
+        var max_retries : int
+        var retry_delay_ms : i64
         var temporary_folder : string
 
         @constructor func constructor() {
@@ -53,6 +55,8 @@ using std::ordered_map;
                 duplicate_action = 0,
                 network_timeout = SOCKET_TIMEOUT_SECS,
                 auto_resume_failed = false,
+                max_retries = DEFAULT_MAX_RETRIES,
+                retry_delay_ms = DEFAULT_RETRY_DELAY_MS,
                 temporary_folder = string()
             }
         }
@@ -201,6 +205,12 @@ func settings_dir() : string {
         out.append_view("\n")
         out.append_view("autoResumeFailed:")
         if(s.auto_resume_failed) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("maxRetries:")
+        out.append_integer(s.max_retries as bigint)
+        out.append_view("\n")
+        out.append_view("retryDelayMs:")
+        out.append_integer(s.retry_delay_ms as bigint)
+        out.append_view("\n")
         out.append_view("temporaryFolder:")
         out.append_string(&s.temporary_folder)
         out.append_view("\n")
@@ -336,6 +346,14 @@ func settings_dir() : string {
                 if(n > 0) { out.network_timeout = n }
             }
             else if(kh == comptime_fnv1_hash("autoResumeFailed")) { out.auto_resume_failed = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("maxRetries")) {
+                var n = parse_int_opt(val.data())
+                if(n >= -1) { out.max_retries = n }
+            }
+            else if(kh == comptime_fnv1_hash("retryDelayMs")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { out.retry_delay_ms = n as i64 }
+            }
             else if(kh == comptime_fnv1_hash("temporaryFolder")) { out.temporary_folder = val.copy() }
             else if(kh == comptime_fnv1_hash("categoryDocuments")) {
                 out.category_dirs.insert(string::make_no_len("documents"), val.copy())
