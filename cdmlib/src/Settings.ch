@@ -300,7 +300,7 @@ func settings_dir() : string {
             var val = line.substring(colon + 1u, line.size())
 
             var kh = fnv1_hash_view(string_view::make_view(&key))
-            if(kh == comptime_fnv1_hash("downloadFolder")) { out.download_dir = val.copy() }
+            if(kh == comptime_fnv1_hash("downloadFolder")) { out.download_dir = expand_home(string_view::make_view(&val)) }
             else if(kh == comptime_fnv1_hash("parallelDownloads")) {
                 var n = parse_int_opt(val.data())
                 if(n > 0) { out.max_concurrent = n }

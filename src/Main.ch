@@ -87,6 +87,9 @@ func run_gui() : int {
         dm.apply_settings(&settings)
     }
 
+    // Ensure the root download directory exists before any task is added.
+    fs::create_dir_all(dm.download_dir.data())
+
     // Restore previously queued downloads so a restart resumes them.
     var restored = cdm::restore_queue(&mut dm)
     if(restored > 0) {

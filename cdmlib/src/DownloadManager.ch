@@ -30,7 +30,7 @@ using std::mutex;
         var auto_resume_failed : bool
 
         @constructor func constructor() {
-            var dir = string::make_no_len(DEFAULT_DOWNLOAD_DIR)
+            var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
             return DownloadManager {
                 items_mutex = mutex(),
                 items = vector<DownloadItem>(),

@@ -596,6 +596,11 @@ using std::vector;
                     rt.supports_resume = true
                     rt.info_mutex.unlock()
                 }
+            } else if(!p.error.empty()) {
+                // Probe failed (non-retryable HTTP error, DNS, etc.).
+                locked_set_error(rt, &p.error)
+                locked_set_state(rt, STATE_FAILED)
+                return
             }
         }
         total0 = locked_get_total(rt)
@@ -853,6 +858,12 @@ using std::vector;
                 msg.append_uinteger(st as ubigint)
                 locked_set_error(rt, &msg)
                 rep.body.close_socket()
+                // Permanent client errors (4xx except 429 rate-limit) are not
+                // recoverable; fail immediately instead of retrying.
+                if(st >= 400u && st < 500u && st != 429u) {
+                    locked_set_state(rt, STATE_FAILED)
+                    return
+                }
                 retries = retries + 1
                 if(retries <= MAX_RETRIES) { std::concurrent.sleep_ms(RETRY_DELAY_MILLIS as ulong) }
                 continue
