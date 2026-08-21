@@ -189,6 +189,37 @@ using std::vector;
         return p
     }
 
+    // Serialize the live segment array under the lock. Returns an empty
+    // string when the download is not segmented (no segments vector).
+    public func snapshot_segments_json(rt : *mut TaskRuntime) : string {
+        rt.info_mutex.lock()
+        if(rt.segments.empty()) {
+            rt.info_mutex.unlock()
+            return string()
+        }
+        var out = string::make_no_len("[")
+        for(var i = 0u; i < rt.segments.size(); i++) {
+            var s = rt.segments.get_ptr(i)
+            if(i > 0u) { out.append(',') }
+            out.append_string(&string::make_no_len("{\"index\":"))
+            out.append_integer(s.index as bigint)
+            out.append_string(&string::make_no_len(",\"start\":"))
+            out.append_integer(s.start as bigint)
+            out.append_string(&string::make_no_len(",\"end\":"))
+            out.append_integer(s.end as bigint)
+            out.append_string(&string::make_no_len(",\"total\":"))
+            out.append_integer(s.total as bigint)
+            out.append_string(&string::make_no_len(",\"copied\":"))
+            out.append_integer(s.copied as bigint)
+            out.append_string(&string::make_no_len(",\"done\":"))
+            if(s.done) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+            out.append('}')
+        }
+        out.append(']')
+        rt.info_mutex.unlock()
+        return out
+    }
+
     // ---- task thread (internals) ----
 
     func locked_set_state(rt : *mut TaskRuntime, state : int) {

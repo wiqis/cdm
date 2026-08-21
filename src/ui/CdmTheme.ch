@@ -200,6 +200,18 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-btn:hover { background: hsl(var(--secondary)); }
         .cdm-btn-danger { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.4); }
         .cdm-btn-danger:hover { background: hsl(var(--destructive) / 0.1); }
+        .cdm-btn-accent {
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            color: hsl(var(--primary-foreground));
+            background: hsl(var(--primary));
+            border: 1px solid hsl(var(--primary));
+            border-radius: calc(var(--radius) - 2px);
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .cdm-btn-accent:hover { opacity: 0.85; }
         .cdm-filterbar {
             display: flex;
             gap: 6px;
@@ -222,28 +234,79 @@ public func CdmTheme(page : &mut HtmlPage) {
             background: hsl(var(--primary));
             border-color: hsl(var(--primary));
         }
-        .cdm-settings {
+        .cdm-dialog-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+            animation: cdm-fade-in 0.15s ease;
+        }
+        @keyframes cdm-fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .cdm-dialog {
             background: hsl(var(--card));
             border: 1px solid hsl(var(--border));
-            border-radius: var(--radius);
-            padding: 16px;
+            border-radius: calc(var(--radius) + 2px);
+            width: 90%;
+            max-width: 480px;
+            max-height: 85vh;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+            animation: cdm-dialog-in 0.18s ease;
         }
-        .cdm-settings-title {
-            font-size: 15px;
+        @keyframes cdm-dialog-in {
+            from { opacity: 0; transform: scale(0.96) translateY(8px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .cdm-dialog-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px 12px;
+            border-bottom: 1px solid hsl(var(--border));
+        }
+        .cdm-dialog-title {
+            font-size: 16px;
             font-weight: 700;
         }
-        .cdm-settings label {
+        .cdm-dialog-close {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            color: hsl(var(--muted-foreground));
+            background: transparent;
+            border: none;
+            border-radius: calc(var(--radius) - 2px);
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .cdm-dialog-close:hover { background: hsl(var(--secondary)); }
+        .cdm-dialog-body {
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            overflow-y: auto;
+        }
+        .cdm-dialog-body label {
             display: flex;
             flex-direction: column;
             gap: 4px;
             font-size: 12.5px;
             color: hsl(var(--muted-foreground));
         }
-        .cdm-settings input,
-        .cdm-settings select {
+        .cdm-dialog-body input,
+        .cdm-dialog-body select {
             padding: 8px 10px;
             font-size: 13.5px;
             font-family: var(--font-mono);
@@ -252,16 +315,19 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: 1px solid hsl(var(--input));
             border-radius: calc(var(--radius) - 2px);
             outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
         }
-        .cdm-settings input:focus,
-        .cdm-settings select:focus {
+        .cdm-dialog-body input:focus,
+        .cdm-dialog-body select:focus {
             border-color: hsl(var(--ring));
             box-shadow: 0 0 0 3px hsl(var(--ring) / 0.25);
         }
-        .cdm-settings-actions {
+        .cdm-dialog-footer {
             display: flex;
             gap: 8px;
             justify-content: flex-end;
+            padding: 12px 20px 16px;
+            border-top: 1px solid hsl(var(--border));
         }
         .cdm-item-meta-line {
             display: flex;
@@ -285,6 +351,61 @@ public func CdmTheme(page : &mut HtmlPage) {
             text-overflow: ellipsis;
             white-space: nowrap;
             opacity: 0.75;
+        }
+        .cdm-ctx-menu {
+            position: fixed;
+            z-index: 2000;
+            min-width: 180px;
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: var(--radius);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+            padding: 4px 0;
+            animation: cdm-ctx-in 0.1s ease;
+        }
+        @keyframes cdm-ctx-in {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .cdm-ctx-item {
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            color: hsl(var(--foreground));
+            transition: background 0.1s;
+        }
+        .cdm-ctx-item:hover { background: hsl(var(--secondary)); }
+        .cdm-ctx-danger { color: hsl(var(--destructive)); }
+        .cdm-ctx-danger:hover { background: hsl(var(--destructive) / 0.08); }
+        .cdm-ctx-sep {
+            height: 1px;
+            margin: 4px 0;
+            background: hsl(var(--border));
+        }
+        .cdm-segments {
+            display: flex;
+            gap: 2px;
+            height: 6px;
+        }
+        .cdm-seg {
+            position: relative;
+            background: hsl(var(--muted));
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .cdm-seg-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.4s ease;
+        }
+        .cdm-seg-done .cdm-seg-fill {
+            background: hsl(var(--success));
+        }
+        .cdm-seg-active .cdm-seg-fill {
+            background: linear-gradient(90deg, hsl(var(--info)), hsl(var(--ring)));
+        }
+        .cdm-seg-pending .cdm-seg-fill {
+            background: hsl(var(--muted));
         }
     """)
 }

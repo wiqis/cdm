@@ -3,7 +3,7 @@
 // the webview bridge every second and re-renders the live queue. 
 // Bridges (window.webview_bridge.call(method, argsJson) -> JSON):
 //   state, add, pause, resume, cancel, remove, remove_file, retry, restart,
-//   edit, settings_get, settings_set
+//   edit, settings_get, settings_set, open_file, show_in_folder
 
 #universal CdmApp(props) {
     state items = []
@@ -19,28 +19,36 @@
     state addName = ""
     state addCategory = "Other"
     state addPriority = "0"
-    state clipboardMonitor = false
-    state lastClipboard = ""
+    // Context menu state
+    state ctxOpen = false
+    state ctxX = 0
+    state ctxY = 0
+    state ctxItem = null
 
     var isUrl = (s) => {
         var t = s.trim().toLowerCase()
         return t.startsWith("http://") || t.startsWith("https://")
     }
 
-    var checkClipboard = () => {
-        if(!clipboardMonitor) return
-        if(!navigator.clipboard) return
+    var pasteFromClipboard = () => {
+        if(!navigator.clipboard) {
+            alert = "Clipboard not available"
+            return
+        }
         navigator.clipboard.readText().then((text) => {
-            if(text && text !== lastClipboard && isUrl(text)) {
-                lastClipboard = text
-                var d = call("add", { url: text.trim() })
-                if(d.ok) {
-                    alert = "Auto-added: " + text.trim()
-                }
+            if(text && isUrl(text)) {
+                addUrl = text.trim()
+                addDir = ""
+                addName = ""
+                addCategory = "Other"
+                addPriority = "0"
+                addOpen = true
             } else if(text) {
-                lastClipboard = text
+                alert = "Clipboard does not contain a URL"
+            } else {
+                alert = "Clipboard is empty"
             }
-        }).catch(() => {})
+        }).catch(() => { alert = "Could not read clipboard" })
     }
 
     var refresh = () => {
@@ -57,8 +65,9 @@
         refresh()
         refreshSettings()
         var t = setInterval(refresh, 1000)
-        var ct = setInterval(checkClipboard, 2000)
-        return () => { clearInterval(t); clearInterval(ct) }
+        var closeCtx = (e) => { if(ctxOpen) ctxOpen = false }
+        document.addEventListener("click", closeCtx)
+        return () => { clearInterval(t); document.removeEventListener("click", closeCtx) }
     }, [])
 
     var post = (method, id, extra) => {
@@ -136,6 +145,28 @@
         return true
     }
 
+    var openContextMenu = (e, item) => {
+        e.preventDefault()
+        e.stopPropagation()
+        ctxX = e.clientX
+        ctxY = e.clientY
+        ctxItem = item
+        ctxOpen = true
+    }
+
+    var ctxAction = (method) => {
+        if(!ctxItem) return
+        if(method === "open_file") {
+            var path = ctxItem.dir + "/" + (ctxItem.display_name || ctxItem.filename)
+            call("open_file", { path: path })
+        } else if(method === "show_in_folder") {
+            call("show_in_folder", { path: ctxItem.dir })
+        } else {
+            post(method, ctxItem.id)
+        }
+        ctxOpen = false
+    }
+
     var visibleItems = items.filter((u) => filterMatches(u.state))
     var totalCount = items.length
     var activeCount = items.filter((u) => u.state === "Downloading").length
@@ -154,14 +185,14 @@
                 <span class="cdm-stat">Active <b>{activeCount}</b></span>
                 <span class="cdm-stat">Done <b>{doneCount}</b></span>
                 <span class="cdm-stat">Total <b>{totalCount}</b></span>
-                <button class="cdm-btn" onClick={() => { clipboardMonitor = !clipboardMonitor; if(!clipboardMonitor) lastClipboard = "" }} style={clipboardMonitor ? "background:#2563eb;color:#fff" : ""}>&#128203; {clipboardMonitor ? "Clip: On" : "Clip: Off"}</button>
-                <button class="cdm-btn" onClick={() => { showSettings = !showSettings; if(showSettings) refreshSettings() }}>&#9881; Settings</button>
+                <button class="cdm-btn cdm-btn-accent" onClick={pasteFromClipboard}>&#128203; Paste URL</button>
+                <button class="cdm-btn" onClick={() => { showSettings = true; refreshSettings() }}>&#9881; Settings</button>
             </div>
         </header>
 
         <div class="cdm-toolbar">
             <input class="cdm-url-input" type="text" spellcheck="false" autocomplete="off"
-                placeholder="Paste a download URL and press Enter&#8230;" value={newUrl}
+                placeholder="Type or paste a download URL and press Enter&#8230;" value={newUrl}
                 onChange={(e) => { newUrl = e.target.value }}
                 onKeyDown={(e) => { if(e.key === "Enter") addDownload() }} />
             <button class="cdm-add-btn" onClick={addDownload} disabled={newUrl.trim() === ""}>Add Download</button>
@@ -176,69 +207,110 @@
         </div>
 
         {showSettings && settings ? (
-            <div class="cdm-settings">
-                <div class="cdm-settings-title">Settings</div>
-                <label>Download folder
-                    <input type="text" value={settings.download_dir}
-                        onChange={(e) => { settings.download_dir = e.target.value }} />
-                </label>
-                <label>Max concurrent downloads
-                    <input type="number" min="1" value={settings.max_concurrent}
-                        onChange={(e) => { settings.max_concurrent = parseInt(e.target.value) || 1 }} />
-                </label>
-                <label>Max segments per download
-                    <input type="number" min="1" value={settings.max_segments}
-                        onChange={(e) => { settings.max_segments = parseInt(e.target.value) || 1 }} />
-                </label>
-                <label>Global speed limit (KB/s, 0 = unlimited)
-                    <input type="number" min="0" value={settings.speed_limit_kbps}
-                        onChange={(e) => { settings.speed_limit_kbps = parseInt(e.target.value) || 0 }} />
-                </label>
-                <label>Duplicate files basis
-                    <select value={settings.duplicate_action}
-                        onChange={(e) => { settings.duplicate_action = parseInt(e.target.value) || 0 }}>
-                        <option value="0">Rename (report (1).pdf)</option>
-                        <option value="1">Overwrite</option>
-                        <option value="2">Skip</option>
-                    </select>
-                </label>
-                <div class="cdm-settings-actions">
-                    <button class="cdm-add-btn" onClick={applySettings}>Save</button>
-                    <button class="cdm-btn" onClick={() => { showSettings = false }}>Close</button>
+            <div class="cdm-dialog-overlay" onClick={() => { showSettings = false }}>
+                <div class="cdm-dialog" onClick={(e) => { e.stopPropagation() }}>
+                    <div class="cdm-dialog-header">
+                        <div class="cdm-dialog-title">&#9881; Settings</div>
+                        <button class="cdm-dialog-close" onClick={() => { showSettings = false }}>&#10005;</button>
+                    </div>
+                    <div class="cdm-dialog-body">
+                        <label>Download folder
+                            <input type="text" value={settings.download_dir}
+                                onChange={(e) => { settings.download_dir = e.target.value }} />
+                        </label>
+                        <label>Max concurrent downloads
+                            <input type="number" min="1" value={settings.max_concurrent}
+                                onChange={(e) => { settings.max_concurrent = parseInt(e.target.value) || 1 }} />
+                        </label>
+                        <label>Max segments per download
+                            <input type="number" min="1" value={settings.max_segments}
+                                onChange={(e) => { settings.max_segments = parseInt(e.target.value) || 1 }} />
+                        </label>
+                        <label>Global speed limit (KB/s, 0 = unlimited)
+                            <input type="number" min="0" value={settings.speed_limit_kbps}
+                                onChange={(e) => { settings.speed_limit_kbps = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Duplicate files handling
+                            <select value={settings.duplicate_action}
+                                onChange={(e) => { settings.duplicate_action = parseInt(e.target.value) || 0 }}>
+                                <option value="0">Rename (report (1).pdf)</option>
+                                <option value="1">Overwrite</option>
+                                <option value="2">Skip</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="cdm-dialog-footer">
+                        <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>
+                        <button class="cdm-add-btn" onClick={applySettings}>Save Settings</button>
+                    </div>
                 </div>
             </div>
         ) : null}
 
         {addOpen ? (
-            <div class="cdm-settings">
-                <div class="cdm-settings-title">Add download</div>
-                <label>URL
-                    <input type="text" value={addUrl} onChange={(e) => { addUrl = e.target.value }} />
-                </label>
-                <label>Save to folder (blank = default / category)
-                    <input type="text" placeholder={settings ? settings.download_dir : "/tmp"} value={addDir}
-                        onChange={(e) => { addDir = e.target.value }} />
-                </label>
-                <label>File name (blank = auto)
-                    <input type="text" value={addName} onChange={(e) => { addName = e.target.value }} />
-                </label>
-                <label>Category
-                    <select value={addCategory} onChange={(e) => { addCategory = e.target.value }}>
-                        <option value="Other">Other</option>
-                        <option value="Documents">Documents</option>
-                        <option value="Programs">Programs</option>
-                        <option value="Video">Video</option>
-                        <option value="Music">Music</option>
-                        <option value="Compressed">Compressed</option>
-                    </select>
-                </label>
-                <label>Priority (0 = highest)
-                    <input type="number" min="0" value={addPriority} onChange={(e) => { addPriority = e.target.value }} />
-                </label>
-                <div class="cdm-settings-actions">
-                    <button class="cdm-add-btn" onClick={addDownload}>Add</button>
-                    <button class="cdm-btn" onClick={() => { addOpen = false }}>Cancel</button>
+            <div class="cdm-dialog-overlay" onClick={() => { addOpen = false }}>
+                <div class="cdm-dialog" onClick={(e) => { e.stopPropagation() }}>
+                    <div class="cdm-dialog-header">
+                        <div class="cdm-dialog-title">&#10010; Add Download</div>
+                        <button class="cdm-dialog-close" onClick={() => { addOpen = false }}>&#10005;</button>
+                    </div>
+                    <div class="cdm-dialog-body">
+                        <label>URL
+                            <input type="text" value={addUrl} onChange={(e) => { addUrl = e.target.value }} />
+                        </label>
+                        <label>Save to folder (blank = default / category)
+                            <input type="text" placeholder={settings ? settings.download_dir : "/tmp"} value={addDir}
+                                onChange={(e) => { addDir = e.target.value }} />
+                        </label>
+                        <label>File name (blank = auto-detect)
+                            <input type="text" value={addName} onChange={(e) => { addName = e.target.value }} />
+                        </label>
+                        <label>Category
+                            <select value={addCategory} onChange={(e) => { addCategory = e.target.value }}>
+                                <option value="Other">Other</option>
+                                <option value="Documents">Documents</option>
+                                <option value="Programs">Programs</option>
+                                <option value="Video">Video</option>
+                                <option value="Music">Music</option>
+                                <option value="Compressed">Compressed</option>
+                            </select>
+                        </label>
+                        <label>Priority (0 = highest)
+                            <input type="number" min="0" value={addPriority} onChange={(e) => { addPriority = e.target.value }} />
+                        </label>
+                    </div>
+                    <div class="cdm-dialog-footer">
+                        <button class="cdm-btn" onClick={() => { addOpen = false }}>Cancel</button>
+                        <button class="cdm-add-btn" onClick={addDownload}>Start Download</button>
+                    </div>
                 </div>
+            </div>
+        ) : null}
+
+        {ctxOpen && ctxItem ? (
+            <div class="cdm-ctx-menu" style={"left:" + ctxX + "px;top:" + ctxY + "px;"} onClick={(e) => { e.stopPropagation() }}>
+                {(ctxItem.state === "Done" || ctxItem.state === "Failed" || ctxItem.state === "Cancelled") ? (
+                    <div class="cdm-ctx-item" onClick={() => ctxAction("open_file")}>&#128194; Open</div>
+                ) : null}
+                <div class="cdm-ctx-item" onClick={() => ctxAction("show_in_folder")}>&#128193; Show in Folder</div>
+                <div class="cdm-ctx-sep"></div>
+                {ctxItem.state === "Downloading" || ctxItem.state === "Queued" ? (
+                    <div class="cdm-ctx-item" onClick={() => ctxAction("pause")}>&#9208; Pause</div>
+                ) : null}
+                {ctxItem.state === "Paused" ? (
+                    <div class="cdm-ctx-item" onClick={() => ctxAction("resume")}>&#9654; Resume</div>
+                ) : null}
+                {ctxItem.state === "Failed" ? (
+                    <div class="cdm-ctx-item" onClick={() => ctxAction("retry")}>&#10227; Retry</div>
+                ) : null}
+                {ctxItem.state === "Done" || ctxItem.state === "Failed" || ctxItem.state === "Cancelled" ? (
+                    <div class="cdm-ctx-item" onClick={() => ctxAction("restart")}>&#10227; Restart</div>
+                ) : null}
+                {ctxItem.state === "Downloading" || ctxItem.state === "Queued" ? (
+                    <div class="cdm-ctx-item cdm-ctx-danger" onClick={() => ctxAction("cancel")}>&#9209; Cancel</div>
+                ) : null}
+                <div class="cdm-ctx-sep"></div>
+                <div class="cdm-ctx-item cdm-ctx-danger" onClick={() => ctxAction("remove")}>&#128465; Remove</div>
             </div>
         ) : null}
 
@@ -250,7 +322,7 @@
             <div class="cdm-empty">
                 <div class="cdm-empty-icon">&#128229;</div>
                 <p>{items.length === 0 ? "No downloads yet." : "No downloads match this filter."}</p>
-                <p class="cdm-empty-sub">Paste a URL above to start downloading.</p>
+                <p class="cdm-empty-sub">Paste a URL above, or click the Paste button to grab one from your clipboard.</p>
             </div>
         ) : null}
 
@@ -264,7 +336,14 @@
                 var failed = item.state === "Failed" || item.state === "Cancelled"
                 var running = item.state === "Downloading" || item.state === "Queued"
                 var name = item.display_name || item.filename
-                return <div class={"cdm-item" + (failed ? " cdm-item-error" : "")}>
+                // Parse segments JSON for per-segment progress display
+                var segs = []
+                if(item.segments && item.segments.length > 0) {
+                    segs = item.segments
+                }
+                var hasSegs = segs.length > 1
+                return <div class={"cdm-item" + (failed ? " cdm-item-error" : "")}
+                    onContextMenu={(e) => openContextMenu(e, item)}>
                     <div class="cdm-item-head">
                         <div class="cdm-item-name" title={item.url}>{name}</div>
                         <span class={stateClass(item.state)}>{item.state}</span>
@@ -279,6 +358,19 @@
                     {showProgress ? (
                         <div class="cdm-progress">
                             <div class="cdm-progress-fill" style={"width: " + pct + "%;"}></div>
+                        </div>
+                    ) : null}
+                    {showProgress && hasSegs ? (
+                        <div class="cdm-segments">
+                            {segs.map((seg) => {
+                                var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
+                                var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
+                                return <div class={"cdm-seg " + segClass}
+                                    title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
+                                    style={"width:" + (100 / segs.length) + "%;"}>
+                                    <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
+                                </div>
+                            })}
                         </div>
                     ) : null}
                     <div class="cdm-item-meta">

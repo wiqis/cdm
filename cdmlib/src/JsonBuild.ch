@@ -69,6 +69,15 @@ using std::vector;
         out.append_string(value)
     }
 
+    // Append `"key":pre_serialized_json` — the value is already valid JSON.
+    func json_kv_raw(out : &mut string, key : string_view, value : &string, first : &mut bool) {
+        if(!*first) { out.append(',') }
+        *first = false
+        out.append_string(&json_string(key))
+        out.append(':')
+        out.append_string(value)
+    }
+
     // Serialize one download item as a JSON object.
     public func item_to_json(item : &DownloadItem) : string {
         var id_s = json_string(string_view::make_view(&item.id))
@@ -121,6 +130,9 @@ using std::vector;
         json_kv(&mut out, "duplicate_suffix", &dup_s, &mut first)
         json_kv(&mut out, "percent", &percent_s, &mut first)
         json_kv(&mut out, "eta", &eta_s, &mut first)
+        if(!item.segments_json.empty()) {
+            json_kv_raw(&mut out, "segments", &item.segments_json, &mut first)
+        }
         out.append('}')
         return out
     }

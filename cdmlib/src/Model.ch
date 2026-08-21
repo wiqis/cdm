@@ -29,6 +29,7 @@ using std::string_view;
         var speed_limit_kbps : i64    // 0 = no per-item limit
         var retry_count : int
         var duplicate_suffix : int    // 0 = original name; 1,2,.. = "name (N).ext"
+        var segments_json : string    // pre-serialized JSON array of segment states
 
         @constructor func constructor(id_ : string, url_ : string, dir_ : string, filename_ : string) {
             return DownloadItem {
@@ -51,7 +52,8 @@ using std::string_view;
                 max_segments = 0,
                 speed_limit_kbps = 0,
                 retry_count = 0,
-                duplicate_suffix = 0
+                duplicate_suffix = 0,
+                segments_json = string()
             }
         }
 
@@ -104,6 +106,7 @@ using std::string_view;
             c.speed_limit_kbps = self.speed_limit_kbps
             c.retry_count = self.retry_count
             c.duplicate_suffix = self.duplicate_suffix
+            c.segments_json = self.segments_json.copy()
             return c
         }
     }

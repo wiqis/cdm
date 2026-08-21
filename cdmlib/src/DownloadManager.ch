@@ -532,6 +532,7 @@ var id = uuid::v4().to_string()
                 copy.speed_bytes_per_sec = p.speed_bytes_per_sec
                 copy.state = p.state
                 copy.error = p.error.copy()
+                copy.segments_json = snapshot_segments_json(*rtpp)
             }
             out.push_back(copy)
         }

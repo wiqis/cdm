@@ -242,6 +242,32 @@ using std::Option;
             save_settings(&settings)
             return ok_json()
         }
+        var m_open_file = string_view::make_no_len("open_file")
+        if(method.equals(&m_open_file)) {
+            var path = json_field(args, string_view::make_no_len("path"))
+            if(path.size() == 0u) {
+                var msg = string::make_no_len("missing path")
+                return err_json(&msg)
+            }
+            var cmd = string::make_no_len("xdg-open \"")
+            cmd.append_string(&path)
+            cmd.append('"')
+            popen(cmd.data(), "r")
+            return ok_json()
+        }
+        var m_show_folder = string_view::make_no_len("show_in_folder")
+        if(method.equals(&m_show_folder)) {
+            var path = json_field(args, string_view::make_no_len("path"))
+            if(path.size() == 0u) {
+                var msg = string::make_no_len("missing path")
+                return err_json(&msg)
+            }
+            var cmd = string::make_no_len("xdg-open \"")
+            cmd.append_string(&path)
+            cmd.append('"')
+            popen(cmd.data(), "r")
+            return ok_json()
+        }
         var msg = string::make_no_len("unknown method: ")
         var mjs = json_string(method)
         msg.append_string(&mjs)
