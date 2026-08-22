@@ -537,18 +537,17 @@ using std::mutex;
     // on success, empty string on failure.
     public func ffmpeg_merge(video_path : string_view, audio_path : string_view, output_path : string_view) : string {
         var ffmpeg = ffmpeg_resolved_path()
-        var cfg = process::ProcessConfig.default()
-        cfg.args.push_back(ffmpeg.copy())
-        cfg.args.push_back(string::make_no_len("-i"))
-        cfg.args.push_back(string(video_path.data(), video_path.size()))
-        cfg.args.push_back(string::make_no_len("-i"))
-        cfg.args.push_back(string(audio_path.data(), audio_path.size()))
-        cfg.args.push_back(string::make_no_len("-c"))
-        cfg.args.push_back(string::make_no_len("copy"))
-        cfg.args.push_back(string::make_no_len("-y"))
-        cfg.args.push_back(string(output_path.data(), output_path.size()))
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var merge_args = vector<string>()
+        merge_args.push_back(ffmpeg.copy())
+        merge_args.push_back(string::make_no_len("-i"))
+        merge_args.push_back(string(video_path.data(), video_path.size()))
+        merge_args.push_back(string::make_no_len("-i"))
+        merge_args.push_back(string(audio_path.data(), audio_path.size()))
+        merge_args.push_back(string::make_no_len("-c"))
+        merge_args.push_back(string::make_no_len("copy"))
+        merge_args.push_back(string::make_no_len("-y"))
+        merge_args.push_back(string(output_path.data(), output_path.size()))
+        var cfg = make_exec_cfg_args(merge_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return string()

@@ -125,6 +125,25 @@ using std::vector;
         return path
     }
 
+    // Build a ProcessConfig for a simple command execution.
+    func make_exec_cfg(cmd : string_view) : process::ProcessConfig {
+        var cfg = process::ProcessConfig.default()
+        cfg.args = vector<string>()
+        cfg.args.push_back(string(cmd.data(), cmd.size()))
+        cfg.capture_stdout = true
+        cfg.capture_stderr = true
+        return cfg
+    }
+
+    // Build a ProcessConfig with multiple args.
+    func make_exec_cfg_args(args_ : vector<string>) : process::ProcessConfig {
+        var cfg = process::ProcessConfig.default()
+        cfg.args = args_
+        cfg.capture_stdout = true
+        cfg.capture_stderr = true
+        return cfg
+    }
+
     // Check if yt-dlp is available (bundled binary exists and is executable,
     // or system yt-dlp is on PATH).
     public func ytdlp_is_available() : bool {
@@ -134,11 +153,10 @@ using std::vector;
             return true
         }
         // Fall back to system PATH.
-        var cfg = process::ProcessConfig.default()
-        cfg.args.push_back(string::make_no_len("yt-dlp"))
-        cfg.args.push_back(string::make_no_len("--version"))
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var args = vector<string>()
+        args.push_back(string::make_no_len("yt-dlp"))
+        args.push_back(string::make_no_len("--version"))
+        var cfg = make_exec_cfg_args(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return false
@@ -157,10 +175,7 @@ using std::vector;
             args.push_back(string::make_no_len("yt-dlp"))
         }
         args.push_back(string::make_no_len("--version"))
-        var cfg = process::ProcessConfig.default()
-        cfg.args = args
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var cfg = make_exec_cfg_args(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return string()
@@ -211,17 +226,16 @@ using std::vector;
         var target = ytdlp_path()
 
         // Use curl to download the binary.
-        var cfg = process::ProcessConfig.default()
-        cfg.args.push_back(string::make_no_len("curl"))
-        cfg.args.push_back(string::make_no_len("-L"))
-        cfg.args.push_back(string::make_no_len("-o"))
-        cfg.args.push_back(target.copy())
-        cfg.args.push_back(string::make_no_len("--fail"))
-        cfg.args.push_back(string::make_no_len("--silent"))
-        cfg.args.push_back(string::make_no_len("--show-error"))
-        cfg.args.push_back(url.copy())
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var curl_args = vector<string>()
+        curl_args.push_back(string::make_no_len("curl"))
+        curl_args.push_back(string::make_no_len("-L"))
+        curl_args.push_back(string::make_no_len("-o"))
+        curl_args.push_back(target.copy())
+        curl_args.push_back(string::make_no_len("--fail"))
+        curl_args.push_back(string::make_no_len("--silent"))
+        curl_args.push_back(string::make_no_len("--show-error"))
+        curl_args.push_back(url.copy())
+        var cfg = make_exec_cfg_args(curl_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
@@ -238,11 +252,11 @@ using std::vector;
 
         // Make executable on Unix.
         if(!def.windows) {
-            var chmod_cfg = process::ProcessConfig.default()
-            chmod_cfg.args.push_back(string::make_no_len("chmod"))
-            chmod_cfg.args.push_back(string::make_no_len("+x"))
-            chmod_cfg.args.push_back(target.copy())
-            process::execute(chmod_cfg)
+            var chmod_args = vector<string>()
+            chmod_args.push_back(string::make_no_len("chmod"))
+            chmod_args.push_back(string::make_no_len("+x"))
+            chmod_args.push_back(target.copy())
+            process::execute(make_exec_cfg_args(chmod_args))
         }
 
         // Verify the downloaded binary works.
@@ -283,11 +297,10 @@ using std::vector;
             return true
         }
         // Fall back to system PATH.
-        var cfg = process::ProcessConfig.default()
-        cfg.args.push_back(string::make_no_len("ffmpeg"))
-        cfg.args.push_back(string::make_no_len("-version"))
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var ff_args = vector<string>()
+        ff_args.push_back(string::make_no_len("ffmpeg"))
+        ff_args.push_back(string::make_no_len("-version"))
+        var cfg = make_exec_cfg_args(ff_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return false
@@ -306,10 +319,7 @@ using std::vector;
             args.push_back(string::make_no_len("ffmpeg"))
         }
         args.push_back(string::make_no_len("-version"))
-        var cfg = process::ProcessConfig.default()
-        cfg.args = args
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var cfg = make_exec_cfg_args(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return string()
@@ -381,17 +391,16 @@ using std::vector;
         }
         var target = ffmpeg_path()
 
-        var cfg = process::ProcessConfig.default()
-        cfg.args.push_back(string::make_no_len("curl"))
-        cfg.args.push_back(string::make_no_len("-L"))
-        cfg.args.push_back(string::make_no_len("-o"))
-        cfg.args.push_back(target.copy())
-        cfg.args.push_back(string::make_no_len("--fail"))
-        cfg.args.push_back(string::make_no_len("--silent"))
-        cfg.args.push_back(string::make_no_len("--show-error"))
-        cfg.args.push_back(url.copy())
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var curl_args = vector<string>()
+        curl_args.push_back(string::make_no_len("curl"))
+        curl_args.push_back(string::make_no_len("-L"))
+        curl_args.push_back(string::make_no_len("-o"))
+        curl_args.push_back(target.copy())
+        curl_args.push_back(string::make_no_len("--fail"))
+        curl_args.push_back(string::make_no_len("--silent"))
+        curl_args.push_back(string::make_no_len("--show-error"))
+        curl_args.push_back(url.copy())
+        var cfg = make_exec_cfg_args(curl_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
@@ -408,11 +417,11 @@ using std::vector;
 
         // Make executable.
         if(!def.windows) {
-            var chmod_cfg = process::ProcessConfig.default()
-            chmod_cfg.args.push_back(string::make_no_len("chmod"))
-            chmod_cfg.args.push_back(string::make_no_len("+x"))
-            chmod_cfg.args.push_back(target.copy())
-            process::execute(chmod_cfg)
+            var chmod_args = vector<string>()
+            chmod_args.push_back(string::make_no_len("chmod"))
+            chmod_args.push_back(string::make_no_len("+x"))
+            chmod_args.push_back(target.copy())
+            process::execute(make_exec_cfg_args(chmod_args))
         }
 
         var ver = ffmpeg_version()

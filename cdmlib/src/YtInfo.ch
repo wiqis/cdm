@@ -369,14 +369,13 @@ using std::unordered_map;
     // Extract info for a single video URL. Blocks until done.
     public func yt_extract_video_info(url : string_view) : Result<YtVideoInfo, string> {
         var path = ytdlp_resolved_path()
-        var cfg = process::ProcessConfig.default()
-        cfg.args.push_back(path.copy())
-        cfg.args.push_back(string::make_no_len("--dump-json"))
-        cfg.args.push_back(string::make_no_len("--no-warnings"))
-        cfg.args.push_back(string::make_no_len("--no-playlist"))
-        cfg.args.push_back(string(url.data(), url.size()))
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        var args = vector<string>()
+        args.push_back(path.copy())
+        args.push_back(string::make_no_len("--dump-json"))
+        args.push_back(string::make_no_len("--no-warnings"))
+        args.push_back(string::make_no_len("--no-playlist"))
+        args.push_back(string(url.data(), url.size()))
+        var cfg = make_exec_cfg_args(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
@@ -405,16 +404,15 @@ using std::unordered_map;
     // Extract info for a playlist URL. flat=true for fast enumeration.
     public func yt_extract_playlist_info(url : string_view, flat : bool) : Result<YtPlaylistInfo, string> {
         var path = ytdlp_resolved_path()
-        var cfg = process::ProcessConfig.default()
-        cfg.args.push_back(path.copy())
-        cfg.args.push_back(string::make_no_len("--dump-json"))
-        cfg.args.push_back(string::make_no_len("--no-warnings"))
+        var args = vector<string>()
+        args.push_back(path.copy())
+        args.push_back(string::make_no_len("--dump-json"))
+        args.push_back(string::make_no_len("--no-warnings"))
         if(flat) {
-            cfg.args.push_back(string::make_no_len("--flat-playlist"))
+            args.push_back(string::make_no_len("--flat-playlist"))
         }
-        cfg.args.push_back(string(url.data(), url.size()))
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
+        args.push_back(string(url.data(), url.size()))
+        var cfg = make_exec_cfg_args(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
