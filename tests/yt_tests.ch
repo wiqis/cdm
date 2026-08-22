@@ -593,3 +593,45 @@ public func CDM_validation_error_messages(env : &mut TestEnv) {
     var v4 = cdm::validate_max_concurrent(100)
     if(v4.message.find("at most 64") == std::NPOS) { env.error("high concurrent error"); return }
 }
+
+using std::vector;
+
+// ---- Process execution tests (exercises the crash path in make_exec_cfg) ----
+
+@test
+public func CDM_yt_make_exec_cfg_runs(env : &mut TestEnv) {
+    var args = vector<string>()
+    args.push_back(string::make_no_len("echo"))
+    args.push_back(string::make_no_len("hello_from_cdm"))
+    var cfg = cdm::make_exec_cfg(args)
+    var res = process::execute(cfg)
+    if(res is std::Result.Err) { env.error("execute should not error"); return }
+    var Ok(pr) = res else unreachable
+    if(pr.status.code != 0) { env.error("echo exit code should be 0"); return }
+}
+
+@test
+public func CDM_yt_check_tools_status_runs(env : &mut TestEnv) {
+    var status = cdm::check_tools_status()
+    var json = status.to_json()
+    if(json.find("yt_dlp") == std::NPOS) { env.error("status JSON missing yt_dlp"); return }
+    if(json.find("ffmpeg") == std::NPOS) { env.error("status JSON missing ffmpeg"); return }
+}
+
+@test
+public func CDM_yt_ytdlp_is_available_no_crash(env : &mut TestEnv) {
+    var result = cdm::ytdlp_is_available()
+    if(result) {
+        var info = cdm::ytdlp_tool_info()
+        if(!info.is_available()) { env.error("ytdlp tool info should be available"); return }
+    }
+}
+
+@test
+public func CDM_yt_ffmpeg_is_available_no_crash(env : &mut TestEnv) {
+    var result = cdm::ffmpeg_is_available()
+    if(result) {
+        var info = cdm::ffmpeg_tool_info()
+        if(!info.is_available()) { env.error("ffmpeg tool info should be available"); return }
+    }
+}

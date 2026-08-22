@@ -375,7 +375,7 @@ using std::unordered_map;
         args.push_back(string::make_no_len("--no-warnings"))
         args.push_back(string::make_no_len("--no-playlist"))
         args.push_back(string(url.data(), url.size()))
-        var cfg = make_exec_cfg_args(args)
+        var cfg = make_exec_cfg(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
@@ -412,7 +412,7 @@ using std::unordered_map;
             args.push_back(string::make_no_len("--flat-playlist"))
         }
         args.push_back(string(url.data(), url.size()))
-        var cfg = make_exec_cfg_args(args)
+        var cfg = make_exec_cfg(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable

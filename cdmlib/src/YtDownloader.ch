@@ -547,7 +547,7 @@ using std::mutex;
         merge_args.push_back(string::make_no_len("copy"))
         merge_args.push_back(string::make_no_len("-y"))
         merge_args.push_back(string(output_path.data(), output_path.size()))
-        var cfg = make_exec_cfg_args(merge_args)
+        var cfg = make_exec_cfg(merge_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return string()

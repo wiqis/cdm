@@ -125,20 +125,16 @@ using std::vector;
         return path
     }
 
-    // Build a ProcessConfig for a simple command execution.
-    func make_exec_cfg(cmd : string_view) : process::ProcessConfig {
+    // Build a ProcessConfig for a single command + args. Uses push instead of
+    // vector assignment to avoid triggering delete on the compound-literal
+    // returned vectors from ProcessConfig.default() (TCC codegen issue).
+    public func make_exec_cfg(args_ : vector<string>) : process::ProcessConfig {
         var cfg = process::ProcessConfig.default()
-        cfg.args = vector<string>()
-        cfg.args.push_back(string(cmd.data(), cmd.size()))
-        cfg.capture_stdout = true
-        cfg.capture_stderr = true
-        return cfg
-    }
-
-    // Build a ProcessConfig with multiple args.
-    func make_exec_cfg_args(args_ : vector<string>) : process::ProcessConfig {
-        var cfg = process::ProcessConfig.default()
-        cfg.args = args_
+        var i = 0u
+        while(i < args_.size()) {
+            cfg.args.push_back(args_.get(i).copy())
+            i = i + 1u
+        }
         cfg.capture_stdout = true
         cfg.capture_stderr = true
         return cfg
@@ -156,7 +152,7 @@ using std::vector;
         var args = vector<string>()
         args.push_back(string::make_no_len("yt-dlp"))
         args.push_back(string::make_no_len("--version"))
-        var cfg = make_exec_cfg_args(args)
+        var cfg = make_exec_cfg(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return false
@@ -175,7 +171,7 @@ using std::vector;
             args.push_back(string::make_no_len("yt-dlp"))
         }
         args.push_back(string::make_no_len("--version"))
-        var cfg = make_exec_cfg_args(args)
+        var cfg = make_exec_cfg(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return string()
@@ -235,7 +231,7 @@ using std::vector;
         curl_args.push_back(string::make_no_len("--silent"))
         curl_args.push_back(string::make_no_len("--show-error"))
         curl_args.push_back(url.copy())
-        var cfg = make_exec_cfg_args(curl_args)
+        var cfg = make_exec_cfg(curl_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
@@ -256,7 +252,7 @@ using std::vector;
             chmod_args.push_back(string::make_no_len("chmod"))
             chmod_args.push_back(string::make_no_len("+x"))
             chmod_args.push_back(target.copy())
-            process::execute(make_exec_cfg_args(chmod_args))
+            process::execute(make_exec_cfg(chmod_args))
         }
 
         // Verify the downloaded binary works.
@@ -300,7 +296,7 @@ using std::vector;
         var ff_args = vector<string>()
         ff_args.push_back(string::make_no_len("ffmpeg"))
         ff_args.push_back(string::make_no_len("-version"))
-        var cfg = make_exec_cfg_args(ff_args)
+        var cfg = make_exec_cfg(ff_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return false
@@ -319,7 +315,7 @@ using std::vector;
             args.push_back(string::make_no_len("ffmpeg"))
         }
         args.push_back(string::make_no_len("-version"))
-        var cfg = make_exec_cfg_args(args)
+        var cfg = make_exec_cfg(args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             return string()
@@ -400,7 +396,7 @@ using std::vector;
         curl_args.push_back(string::make_no_len("--silent"))
         curl_args.push_back(string::make_no_len("--show-error"))
         curl_args.push_back(url.copy())
-        var cfg = make_exec_cfg_args(curl_args)
+        var cfg = make_exec_cfg(curl_args)
         var res = process::execute(cfg)
         if(res is Result.Err) {
             var Err(e) = res else unreachable
@@ -421,7 +417,7 @@ using std::vector;
             chmod_args.push_back(string::make_no_len("chmod"))
             chmod_args.push_back(string::make_no_len("+x"))
             chmod_args.push_back(target.copy())
-            process::execute(make_exec_cfg_args(chmod_args))
+            process::execute(make_exec_cfg(chmod_args))
         }
 
         var ver = ffmpeg_version()

@@ -439,10 +439,7 @@ using std::vector;
             }
             args_vec.push_back(url.copy())
             // Execute yt-dlp synchronously.
-            var cfg = process::ProcessConfig.default()
-            cfg.args = args_vec
-            cfg.capture_stdout = true
-            cfg.capture_stderr = true
+            var cfg = cdm::make_exec_cfg(args_vec)
             var exec_res = process::execute(cfg)
             if(exec_res is Result.Err) {
                 var Err(e) = exec_res else unreachable
@@ -483,10 +480,7 @@ using std::vector;
             }
             fs::create_dir_all(output_dir.data())
             var args_vec = build_ytdlp_playlist_args(string_view::make_view(&url), string_view::make_view(&output_dir), string_view::make_view(&format), min_q, max_q)
-            var cfg = process::ProcessConfig.default()
-            cfg.args = args_vec
-            cfg.capture_stdout = true
-            cfg.capture_stderr = true
+            var cfg = cdm::make_exec_cfg(args_vec)
             var exec_res = process::execute(cfg)
             if(exec_res is Result.Err) {
                 var Err(e) = exec_res else unreachable
