@@ -349,9 +349,9 @@ using std::vector;
             var tool = json_field(args, string_view::make_no_len("tool"))
             var err = string()
             if(tool.equals_view(string_view::make_no_len("yt-dlp"))) {
-                err = ytdlp_download()
+                err = ytdlp_download_async()
             } else if(tool.equals_view(string_view::make_no_len("ffmpeg"))) {
-                err = ffmpeg_download()
+                err = ffmpeg_download_async()
             } else {
                 var msg = string::make_no_len("unknown tool: ")
                 msg.append_string(&tool)

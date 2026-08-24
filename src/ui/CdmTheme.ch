@@ -711,5 +711,39 @@ public func CdmTheme(page : &mut HtmlPage) {
             background: #ff0000;
             border-color: #ff0000;
         }
+        .cdm-yt-tool-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: calc(var(--radius) - 2px);
+        }
+        .cdm-yt-tool-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .cdm-yt-tool-dot-ok {
+            background: hsl(var(--success));
+        }
+        .cdm-yt-tool-dot-miss {
+            background: hsl(var(--muted-foreground) / 0.4);
+        }
+        .cdm-yt-tool-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: hsl(var(--foreground));
+        }
+        .cdm-yt-tool-ver {
+            font-size: 12px;
+            color: hsl(var(--muted-foreground));
+        }
+        .cdm-yt-tool-install {
+            margin-left: auto;
+            flex-shrink: 0;
+        }
     """)
 }

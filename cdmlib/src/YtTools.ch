@@ -246,6 +246,126 @@ using std::vector;
         return info
     }
 
+    // ---- Async tool download with progress ----
+
+    public var g_tool_dl_progress : double = 0.0
+    public var g_tool_dl_status : int = 0  // 0=idle, 1=downloading(yt-dlp), 2=downloading(ffmpeg), 10=done, 11=error
+
+    public func tool_download_in_progress() : bool {
+        return g_tool_dl_status == 1 || g_tool_dl_status == 2
+    }
+
+    func parse_curl_pct(line : string_view, out_pct : *mut double) : bool {
+        var i = 0u
+        while(i < line.size()) {
+            var c = line.get(i)
+            if(c >= '0' && c <= '9') {
+                var val = 0.0
+                var div = 1.0
+                var in_dec = false
+                var j = i
+                while(j < line.size()) {
+                    var cc = line.get(j)
+                    if(cc == '.') { in_dec = true }
+                    else if(cc >= '0' && cc <= '9') {
+                        var digit = (cc as double) - ('0' as double)
+                        if(in_dec) { div = div * 10.0; val = val + digit / div }
+                        else { val = val * 10.0 + digit }
+                    } else { break }
+                    j = j + 1u
+                }
+                if(j < line.size() && line.get(j) == '%') {
+                    *out_pct = val
+                    return true
+                }
+            }
+            i = i + 1u
+        }
+        return false
+    }
+
+    func download_tool_bg(url : string_view, target : string_view) : string {
+        ensure_tools_dir()
+        var cmd = string()
+        cmd.append_view(string_view::make_no_len("curl -L --fail -s -o \""))
+        cmd.append_view(&target)
+        cmd.append_view(string_view::make_no_len("\" \""))
+        cmd.append_view(&url)
+        cmd.append_view(string_view::make_no_len("\" 2>&1"))
+        var f = popen(cmd.data(), "r")
+        if(f == null) { return string::make_no_len("failed to start curl") }
+        var line_buf = string()
+        while(true) {
+            unsafe var c_buf : [1u]char
+            var n = fread(&raw mut c_buf[0], 1, 1u, f)
+            if(n == 0u) { break }
+            var c = c_buf[0]
+            if(c == '\r' || c == '\n') {
+                if(line_buf.size() > 0) {
+                    var pct = 0.0
+                    if(parse_curl_pct(string_view::make_view(&line_buf), &raw mut pct)) {
+                        g_tool_dl_progress = pct / 100.0
+                    }
+                }
+                line_buf = string()
+            } else {
+                line_buf.append(c)
+            }
+        }
+        var rc = pclose(f)
+        if(rc != 0) { return string::make_no_len("curl failed") }
+        return string()
+    }
+
+    func tool_download_thread(arg : *void) : *void {
+        var err = string()
+        var is_yt = (g_tool_dl_status == 1)
+        if(is_yt) {
+            var url = string::make_no_len(YTDLP_LINUX_URL)
+            if(def.macos) { url = string::make_no_len(YTDLP_MACOS_URL) }
+            if(def.windows) { url = string::make_no_len(YTDLP_WIN_URL) }
+            err = download_tool_bg(string_view::make_view(&url), string_view::make_view(&ytdlp_path()))
+            if(err.empty() && !def.windows) {
+                var ca = vector<string>()
+                ca.push_back(string::make_no_len("chmod"))
+                ca.push_back(string::make_no_len("+x"))
+                ca.push_back(ytdlp_path().copy())
+                process::execute(make_exec_cfg(ca))
+            }
+            if(err.empty()) { var ver = ytdlp_version(); if(ver.empty()) { err = string::make_no_len("binary not functional") } }
+        } else {
+            var url = string::make_no_len(FFMPEG_LINUX_URL)
+            if(def.macos) { url = string::make_no_len(FFMPEG_MACOS_URL) }
+            if(def.windows) { url = string::make_no_len(FFMPEG_WIN_URL) }
+            err = download_tool_bg(string_view::make_view(&url), string_view::make_view(&ffmpeg_path()))
+            if(err.empty() && !def.windows) {
+                var ca = vector<string>()
+                ca.push_back(string::make_no_len("chmod"))
+                ca.push_back(string::make_no_len("+x"))
+                ca.push_back(ffmpeg_path().copy())
+                process::execute(make_exec_cfg(ca))
+            }
+            if(err.empty()) { var ver = ffmpeg_version(); if(ver.empty()) { err = string::make_no_len("binary not functional") } }
+        }
+        if(err.empty()) { g_tool_dl_status = 10; g_tool_dl_progress = 1.0 }
+        else { g_tool_dl_status = 11 }
+        return null
+    }
+
+    public func ytdlp_download_async() : string {
+        if(tool_download_in_progress()) { return string::make_no_len("download already in progress") }
+        g_tool_dl_status = 1; g_tool_dl_progress = 0.0
+        var t = std::concurrent::spawn(tool_download_thread, null)
+        return string()
+    }
+
+    public func ffmpeg_download_async() : string {
+        if(tool_download_in_progress()) { return string::make_no_len("download already in progress") }
+        g_tool_dl_status = 2; g_tool_dl_progress = 0.0
+        var t = std::concurrent::spawn(tool_download_thread, null)
+        return string()
+    }
+
     // Download yt-dlp binary. This blocks until complete. Returns an error
     // message on failure, empty string on success.
     public func ytdlp_download() : string {
@@ -524,23 +644,63 @@ using std::vector;
         var ff_avail = ffmpeg_is_available()
         var yt_ver = string()
         var ff_ver = string()
-        var yt_path = ytdlp_resolved_path()
-        var ff_path = ffmpeg_resolved_path()
-        if(yt_avail) {
-            yt_ver = ytdlp_version()
-        }
-        if(ff_avail) {
-            ff_ver = ffmpeg_version()
-        }
+        var yt_p = ytdlp_resolved_path()
+        var ff_p = ffmpeg_resolved_path()
+        if(yt_avail) { yt_ver = ytdlp_version() }
+        if(ff_avail) { ff_ver = ffmpeg_version() }
+
+        var dl_active = tool_download_in_progress()
+        var dl_done = (g_tool_dl_status == 10)
+        var dl_err = (g_tool_dl_status == 11)
+        var dl_pct = g_tool_dl_progress
+        var dl_is_yt = (g_tool_dl_status == 1)
+        var dl_is_ff = (g_tool_dl_status == 2)
+
+        // Build yt_dlp entry
+        var yt_json = string::make_no_len("{\"name\":\"yt-dlp\",\"status\":\"")
+        if(dl_is_yt && (dl_active || dl_done || dl_err)) {
+            if(dl_active) { yt_json.append_view(string_view::make_no_len("downloading")) }
+            else if(dl_done) { yt_json.append_view(string_view::make_no_len("installed")) }
+            else { yt_json.append_view(string_view::make_no_len("error")) }
+        } else if(yt_avail) { yt_json.append_view(string_view::make_no_len("installed")) }
+        else { yt_json.append_view(string_view::make_no_len("not_installed")) }
+        yt_json.append_view(string_view::make_no_len("\",\"version\":\""))
+        yt_json.append_string(&json_string(string_view::make_view(&yt_ver)))
+        yt_json.append_view(string_view::make_no_len("\",\"path\":\""))
+        yt_json.append_string(&json_string(string_view::make_view(&yt_p)))
+        yt_json.append_view(string_view::make_no_len("\",\"error\":\"\",\"progress\":"))
+        var pstr_yt = string()
+        if(dl_is_yt) { pstr_yt.append_double(dl_pct * 100.0, 1) } else { pstr_yt.append_double(0.0, 1) }
+        yt_json.append_string(&pstr_yt)
+        yt_json.append_view(string_view::make_no_len(",\"speed\":\"\"}"))
+
+        // Build ffmpeg entry
+        var ff_json = string::make_no_len("{\"name\":\"ffmpeg\",\"status\":\"")
+        if(dl_is_ff && (dl_active || dl_done || dl_err)) {
+            if(dl_active) { ff_json.append_view(string_view::make_no_len("downloading")) }
+            else if(dl_done) { ff_json.append_view(string_view::make_no_len("installed")) }
+            else { ff_json.append_view(string_view::make_no_len("error")) }
+        } else if(ff_avail) { ff_json.append_view(string_view::make_no_len("installed")) }
+        else { ff_json.append_view(string_view::make_no_len("not_installed")) }
+        ff_json.append_view(string_view::make_no_len("\",\"version\":\""))
+        ff_json.append_string(&json_string(string_view::make_view(&ff_ver)))
+        ff_json.append_view(string_view::make_no_len("\",\"path\":\""))
+        ff_json.append_string(&json_string(string_view::make_view(&ff_p)))
+        ff_json.append_view(string_view::make_no_len("\",\"error\":\"\",\"progress\":"))
+        var pstr_ff = string()
+        if(dl_is_ff) { pstr_ff.append_double(dl_pct * 100.0, 1) } else { pstr_ff.append_double(0.0, 1) }
+        ff_json.append_string(&pstr_ff)
+        ff_json.append_view(string_view::make_no_len(",\"speed\":\"\"}"))
+
         var out = string::make_no_len("{\"yt_dlp\":")
-        out.append_string(&tool_info_json(string_view::make_no_len("yt-dlp"), yt_avail, string_view::make_view(&yt_ver), string_view::make_view(&yt_path)))
-        out.append_string(&string::make_no_len(",\"ffmpeg\":"))
-        out.append_string(&tool_info_json(string_view::make_no_len("ffmpeg"), ff_avail, string_view::make_view(&ff_ver), string_view::make_view(&ff_path)))
-        out.append_string(&string::make_no_len(",\"both_ready\":"))
-        if(yt_avail && ff_avail) {
-            out.append_string(&string::make_no_len("true"))
+        out.append_string(&yt_json)
+        out.append_view(string_view::make_no_len(",\"ffmpeg\":"))
+        out.append_string(&ff_json)
+        out.append_view(string_view::make_no_len(",\"both_ready\":"))
+        if(yt_avail && ff_avail && !dl_active) {
+            out.append_view(string_view::make_no_len("true"))
         } else {
-            out.append_string(&string::make_no_len("false"))
+            out.append_view(string_view::make_no_len("false"))
         }
         out.append('}')
         return out

@@ -182,17 +182,57 @@
         }
     }
 
+    var pollToolProgress = null
+
     var installTool = (toolName) => {
         ytInstallingTool = toolName
+        ytInstallProgress = 0
         showToast("Installing " + toolName + "...", "info")
+        // The bridge call returns immediately (async download).
         var d = JSON.parse(window.webview_bridge.call("yt_install", JSON.stringify({ tool: toolName })))
-        ytInstallingTool = ""
-        if(d.ok) {
-            showToast(toolName + " installed successfully!", "success")
-            refreshTools()
-        } else {
+        if(!d.ok) {
+            // Immediate failure (e.g. another download in progress)
+            ytInstallingTool = ""
             showToast("Failed to install " + toolName + ": " + (d.error || "unknown error"), "error")
+            return
         }
+        // Start polling for progress every 500ms.
+        if(pollToolProgress) { clearInterval(pollToolProgress) }
+        pollToolProgress = setInterval(() => {
+            try {
+                var status = JSON.parse(window.webview_bridge.call("yt_status", "{}"))
+                var toolInfo = null
+                if(toolName === "yt-dlp" && status.yt_dlp) toolInfo = status.yt_dlp
+                if(toolName === "ffmpeg" && status.ffmpeg) toolInfo = status.ffmpeg
+                if(!toolInfo) {
+                    // Tool info not available yet, keep polling
+                    return
+                }
+                if(toolInfo.status === "downloading") {
+                    ytInstallProgress = toolInfo.progress || 0
+                    ytTools = status
+                } else if(toolInfo.status === "installed") {
+                    // Download completed successfully
+                    clearInterval(pollToolProgress)
+                    pollToolProgress = null
+                    ytInstallingTool = ""
+                    ytInstallProgress = 0
+                    ytTools = status
+                    showToast(toolName + " installed successfully!", "success")
+                    refreshTools()
+                } else if(toolInfo.status === "error") {
+                    // Download failed
+                    clearInterval(pollToolProgress)
+                    pollToolProgress = null
+                    ytInstallingTool = ""
+                    ytInstallProgress = 0
+                    ytTools = status
+                    showToast("Failed to install " + toolName + ": " + (toolInfo.error || "unknown error"), "error")
+                }
+            } catch(e) {
+                // Polling error — ignore, keep trying
+            }
+        }, 500)
     }
 
     var openYtDownload = () => {
@@ -705,9 +745,23 @@
 
                         <div class="cdm-yt-tool-status">
                             <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.yt_dlp && ytTools.yt_dlp.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
-                            <div>
+                            <div style="flex:1;">
                                 <div class="cdm-yt-tool-name">yt-dlp</div>
                                 <div class="cdm-yt-tool-ver">{ytTools && ytTools.yt_dlp ? (ytTools.yt_dlp.version || ytTools.yt_dlp.status || "not installed") : "checking..."}</div>
+                                {ytInstallingTool === "yt-dlp" ? (
+                                    <div style="margin-top:6px;">
+                                        <div class="cdm-progress" style="height:6px;">
+                                            <div class="cdm-progress-fill" style={{ width: (ytInstallProgress || 0) + "%" }}></div>
+                                        </div>
+                                        <div style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", marginTop: "2px" }}>
+                                            {ytTools && ytTools.yt_dlp && ytTools.yt_dlp.speed ? ytTools.yt_dlp.speed : "Starting download..."}
+                                            {ytInstallProgress > 0 ? " — " + ytInstallProgress.toFixed(1) + "%" : ""}
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {ytTools && ytTools.yt_dlp && ytTools.yt_dlp.error ? (
+                                    <div style={{ fontSize: "11px", color: "hsl(var(--destructive))", marginTop: "2px" }}>{ytTools.yt_dlp.error}</div>
+                                ) : null}
                             </div>
                             <button class="cdm-btn cdm-yt-tool-install" disabled={ytInstallingTool === "yt-dlp"}
                                 onClick={() => installTool("yt-dlp")}>
@@ -718,9 +772,23 @@
 
                         <div class="cdm-yt-tool-status">
                             <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.ffmpeg && ytTools.ffmpeg.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
-                            <div>
+                            <div style="flex:1;">
                                 <div class="cdm-yt-tool-name">ffmpeg</div>
                                 <div class="cdm-yt-tool-ver">{ytTools && ytTools.ffmpeg ? (ytTools.ffmpeg.version || ytTools.ffmpeg.status || "not installed") : "checking..."}</div>
+                                {ytInstallingTool === "ffmpeg" ? (
+                                    <div style={{ marginTop: "6px" }}>
+                                        <div class="cdm-progress" style={{ height: "6px" }}>
+                                            <div class="cdm-progress-fill" style={{ width: (ytInstallProgress || 0) + "%" }}></div>
+                                        </div>
+                                        <div style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", marginTop: "2px" }}>
+                                            {ytTools && ytTools.ffmpeg && ytTools.ffmpeg.speed ? ytTools.ffmpeg.speed : "Starting download..."}
+                                            {ytInstallProgress > 0 ? " \u2014 " + ytInstallProgress.toFixed(1) + "%" : ""}
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {ytTools && ytTools.ffmpeg && ytTools.ffmpeg.error ? (
+                                    <div style={{ fontSize: "11px", color: "hsl(var(--destructive))", marginTop: "2px" }}>{ytTools.ffmpeg.error}</div>
+                                ) : null}
                             </div>
                             <button class="cdm-btn cdm-yt-tool-install" disabled={ytInstallingTool === "ffmpeg"}
                                 onClick={() => installTool("ffmpeg")}>
