@@ -342,16 +342,16 @@ using std::vector;
         // ---- YouTube / yt-dlp methods ----
         var m_yt_status = string_view::make_no_len("yt_status")
         if(method.equals(&m_yt_status)) {
-            return check_tools_status_json()
+            return check_tools_status_json(&mut *dm)
         }
         var m_yt_install = string_view::make_no_len("yt_install")
         if(method.equals(&m_yt_install)) {
             var tool = json_field(args, string_view::make_no_len("tool"))
             var err = string()
             if(tool.equals_view(string_view::make_no_len("yt-dlp"))) {
-                err = ytdlp_download_async()
+                err = ytdlp_download_async(&mut *dm)
             } else if(tool.equals_view(string_view::make_no_len("ffmpeg"))) {
-                err = ffmpeg_download_async()
+                err = ffmpeg_download_async(&mut *dm)
             } else {
                 var msg = string::make_no_len("unknown tool: ")
                 msg.append_string(&tool)

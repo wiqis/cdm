@@ -612,9 +612,11 @@ public func CDM_yt_make_exec_cfg_runs(env : &mut TestEnv) {
 
 @test
 public func CDM_yt_check_tools_status_runs(env : &mut TestEnv) {
-    var json = cdm::check_tools_status_json()
+    var dm = cdm::DownloadManager()
+    var json = cdm::check_tools_status_json(&mut dm)
     if(json.find("yt_dlp") == std::NPOS) { env.error("status JSON missing yt_dlp"); return }
     if(json.find("ffmpeg") == std::NPOS) { env.error("status JSON missing ffmpeg"); return }
+    cdm::shutdown(&mut dm)
 }
 
 @test
