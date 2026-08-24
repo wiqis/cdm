@@ -82,14 +82,26 @@
         }).catch(() => { alert = "Could not read clipboard" })
     }
 
+    // Async bridge helper: calls webview_bridge.call and handles the Promise.
+    var asyncBridge = (method, body, onResult) => {
+        window.webview_bridge.call(method, body || "{}").then(function(v) {
+            onResult(v)
+        }).catch(function(e) {
+            console.error("[CDM-JS] bridge error for " + method + ": " + e)
+        })
+    }
+
     var refresh = () => {
-        var d = JSON.parse(window.webview_bridge.call("state", "{}"))
-        items = d.items
-        loading = false
+        asyncBridge("state", "{}", function(d) {
+            if(d && d.items) { items = d.items }
+            loading = false
+        })
     }
 
     var refreshSettings = () => {
-        settings = JSON.parse(window.webview_bridge.call("settings_get", "{}"))
+        asyncBridge("settings_get", "{}", function(d) {
+            if(d) { settings = d }
+        })
     }
 
     useEffect(() => {
@@ -98,7 +110,6 @@
         var t = setInterval(refresh, 1000)
         var closeCtx = (e) => {
             if(!ctxOpen) return
-            // Don't close if clicking inside the context menu itself.
             var menuEl = e.target.closest && e.target.closest('.cdm-ctx-menu')
             if(menuEl) return
             ctxOpen = false
@@ -110,15 +121,16 @@
     var post = (method, id, extra) => {
         var body = extra || {}
         body.id = id
-        var d = JSON.parse(window.webview_bridge.call(method, JSON.stringify(body)))
-        if(!d.ok) { alert = d.error || "Operation failed" }
-        refresh()
+        asyncBridge(method, JSON.stringify(body), function(d) {
+            if(d && !d.ok) { alert = d.error || "Operation failed" }
+            refresh()
+        })
     }
 
     var call = (method, body) => {
-        var d = JSON.parse(window.webview_bridge.call(method, JSON.stringify(body || {})))
-        refresh()
-        return d
+        asyncBridge(method, JSON.stringify(body || {}), function(d) {
+            refresh()
+        })
     }
 
     var addDownload = () => {
@@ -132,13 +144,15 @@
         if(!isNaN(p) && p >= 0) body.priority = p
         var sl = parseInt(addSpeedLimit)
         if(!isNaN(sl) && sl > 0) body.speed_limit_kbps = sl
-        var d = call("add", body)
-        if(d.ok) {
-            newUrl = ""; addUrl = ""; addDir = ""; addName = ""; addCategory = "Other"; addPriority = "0"; addSpeedLimit = "0"
-            addOpen = false; alert = ""
-        } else {
-            alert = d.error || "Failed to add download"
-        }
+        asyncBridge("add", JSON.stringify(body), function(d) {
+            if(d && d.ok) {
+                newUrl = ""; addUrl = ""; addDir = ""; addName = ""; addCategory = "Other"; addPriority = "0"; addSpeedLimit = "0"
+                addOpen = false; alert = ""
+            } else {
+                alert = (d && d.error) || "Failed to add download"
+            }
+            refresh()
+        })
     }
 
     var applySettings = () => {
@@ -170,69 +184,61 @@
     }
 
     var refreshTools = () => {
-        try {
-            var r = window.webview_bridge.call("yt_status", "{}")
-            if(r && r.length > 0) {
-                ytTools = JSON.parse(r)
+        asyncBridge("yt_status", "{}", function(r) {
+            if(r) {
+                ytTools = r
             } else {
                 ytTools = { yt_dlp: { name: "yt-dlp", status: "not_installed", version: "", path: "", error: "", progress: 0 }, ffmpeg: { name: "ffmpeg", status: "not_installed", version: "", path: "", error: "", progress: 0 }, both_ready: false }
             }
-        } catch(e) {
-            ytTools = { yt_dlp: { name: "yt-dlp", status: "not_installed", version: "", path: "", error: "", progress: 0 }, ffmpeg: { name: "ffmpeg", status: "not_installed", version: "", path: "", error: "", progress: 0 }, both_ready: false }
-        }
+        })
     }
 
     var pollToolProgress = null
 
     var installTool = (toolName) => {
+        console.log("[CDM-JS] installTool called for: " + toolName)
         ytInstallingTool = toolName
         ytInstallProgress = 0
         showToast("Installing " + toolName + "...", "info")
-        // The bridge call returns immediately (async download).
-        var d = JSON.parse(window.webview_bridge.call("yt_install", JSON.stringify({ tool: toolName })))
-        if(!d.ok) {
-            // Immediate failure (e.g. another download in progress)
-            ytInstallingTool = ""
-            showToast("Failed to install " + toolName + ": " + (d.error || "unknown error"), "error")
-            return
-        }
-        // Start polling for progress every 500ms.
-        if(pollToolProgress) { clearInterval(pollToolProgress) }
-        pollToolProgress = setInterval(() => {
-            try {
-                var status = JSON.parse(window.webview_bridge.call("yt_status", "{}"))
-                var toolInfo = null
-                if(toolName === "yt-dlp" && status.yt_dlp) toolInfo = status.yt_dlp
-                if(toolName === "ffmpeg" && status.ffmpeg) toolInfo = status.ffmpeg
-                if(!toolInfo) {
-                    // Tool info not available yet, keep polling
-                    return
-                }
-                if(toolInfo.status === "downloading") {
-                    ytInstallProgress = toolInfo.progress || 0
-                    ytTools = status
-                } else if(toolInfo.status === "installed") {
-                    // Download completed successfully
-                    clearInterval(pollToolProgress)
-                    pollToolProgress = null
-                    ytInstallingTool = ""
-                    ytInstallProgress = 0
-                    ytTools = status
-                    showToast(toolName + " installed successfully!", "success")
-                    refreshTools()
-                } else if(toolInfo.status === "error") {
-                    // Download failed
-                    clearInterval(pollToolProgress)
-                    pollToolProgress = null
-                    ytInstallingTool = ""
-                    ytInstallProgress = 0
-                    ytTools = status
-                    showToast("Failed to install " + toolName + ": " + (toolInfo.error || "unknown error"), "error")
-                }
-            } catch(e) {
-                // Polling error — ignore, keep trying
+        console.log("[CDM-JS] calling yt_install bridge...")
+        asyncBridge("yt_install", JSON.stringify({ tool: toolName }), function(d) {
+            console.log("[CDM-JS] yt_install returned: " + JSON.stringify(d))
+            if(!d || !d.ok) {
+                ytInstallingTool = ""
+                showToast("Failed to install " + toolName + ": " + ((d && d.error) || "unknown error"), "error")
+                return
             }
-        }, 500)
+            console.log("[CDM-JS] starting poll...")
+            if(pollToolProgress) { clearInterval(pollToolProgress) }
+            pollToolProgress = setInterval(() => {
+                asyncBridge("yt_status", "{}", function(status) {
+                    console.log("[CDM-JS] poll status: " + JSON.stringify(status))
+                    var toolInfo = null
+                    if(toolName === "yt-dlp" && status.yt_dlp) toolInfo = status.yt_dlp
+                    if(toolName === "ffmpeg" && status.ffmpeg) toolInfo = status.ffmpeg
+                    if(!toolInfo) { return }
+                    if(toolInfo.status === "downloading") {
+                        ytInstallProgress = toolInfo.progress || 0
+                        ytTools = status
+                    } else if(toolInfo.status === "installed") {
+                        clearInterval(pollToolProgress)
+                        pollToolProgress = null
+                        ytInstallingTool = ""
+                        ytInstallProgress = 0
+                        ytTools = status
+                        showToast(toolName + " installed successfully!", "success")
+                        refreshTools()
+                    } else if(toolInfo.status === "error") {
+                        clearInterval(pollToolProgress)
+                        pollToolProgress = null
+                        ytInstallingTool = ""
+                        ytInstallProgress = 0
+                        ytTools = status
+                        showToast("Failed to install " + toolName + ": " + (toolInfo.error || "unknown error"), "error")
+                    }
+                })
+            }, 500)
+        })
     }
 
     var openYtDownload = () => {
@@ -259,7 +265,7 @@
         ytInfo = null
         // Use setTimeout to allow UI update before blocking call
         setTimeout(() => {
-            var d = JSON.parse(window.webview_bridge.call("yt_info", JSON.stringify({ url: u })))
+            asyncBridge("yt_info", JSON.stringify({ url: u }), function(d) {
             ytLoading = false
             if(d.error) {
                 ytError = d.error
@@ -280,6 +286,7 @@
                 ytPlaylistEntries = d.entries
                 ytPlaylistSelected = d.entries.map((_, i) => i)
             }
+            })
         }, 50)
     }
 
@@ -293,7 +300,7 @@
             var fmt = ytSelectedFormat || "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             var body = { url: u, format: fmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
             setTimeout(() => {
-                var d = JSON.parse(window.webview_bridge.call("yt_download_playlist", JSON.stringify(body)))
+                asyncBridge("yt_download_playlist", JSON.stringify(body), function(d) {
                 ytDownloading = false
                 if(d.error) {
                     ytError = d.error
@@ -303,13 +310,14 @@
                     ytOpen = false
                     refresh()
                 }
+                })
             }, 50)
         } else {
             // Single video
             var fmt = ytSelectedFormat || "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             var body = { url: u, format: fmt }
             setTimeout(() => {
-                var d = JSON.parse(window.webview_bridge.call("yt_download", JSON.stringify(body)))
+                asyncBridge("yt_download", JSON.stringify(body), function(d) {
                 ytDownloading = false
                 if(d.error) {
                     ytError = d.error
@@ -319,6 +327,7 @@
                     ytOpen = false
                     refresh()
                 }
+                })
             }, 50)
         }
     }

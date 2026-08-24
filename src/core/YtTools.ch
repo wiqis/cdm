@@ -611,12 +611,16 @@ using std::vector;
         var ff_ver = string()
         var yt_p = ytdlp_resolved_path()
         var ff_p = ffmpeg_resolved_path()
-        if(yt_avail) { yt_ver = ytdlp_version() }
-        if(ff_avail) { ff_ver = ffmpeg_version() }
+        // NOTE: We intentionally skip ytdlp_version()/ffmpeg_version() here.
+        // Those call process::execute() which blocks the UI thread and can
+        // deadlock in WebKitGTK (fork in multi-threaded process). Version
+        // strings are empty — the UI shows "installed" without a version.
 
         var dl_active = tool_download_in_progress()
         var dl_is_yt = (g_tool_dl_status == 1)
         var dl_is_ff = (g_tool_dl_status == 2)
+
+        fprintf(stderr, "[CDM-POLL] dl_active=%d dl_is_yt=%d dl_is_ff=%d status=%d tid_len=%d\n", dl_active, dl_is_yt, dl_is_ff, g_tool_dl_status, g_tool_dl_task_id_len)
 
         // Poll the DownloadManager snapshot for tool download progress.
         var dl_pct = 0.0
@@ -625,11 +629,15 @@ using std::vector;
         var dl_error_msg = string()
         if(dl_active) {
             var tid = get_task_id()
+            fprintf(stderr, "[CDM-POLL] looking for task in snapshot\n")
             if(tid.size() > 0u) {
                 var snap = snapshot(dm)
+                fprintf(stderr, "[CDM-POLL] snapshot has items\n")
                 for(var i = 0u; i < snap.size(); i++) {
                     var it = snap.get_ptr(i)
+                    fprintf(stderr, "[CDM-POLL] item state=%d total=%lld downloaded=%lld\n", it.state, it.total_bytes, it.downloaded_bytes)
                     if(!it.id.equals(&tid)) { continue }
+                    fprintf(stderr, "[CDM-POLL] MATCHED task! state=%d total=%lld downloaded=%lld\n", it.state, it.total_bytes, it.downloaded_bytes)
                     // Found the task in the DM snapshot.
                     if(it.total_bytes > 0) {
                         dl_pct = (it.downloaded_bytes as double) / (it.total_bytes as double)
@@ -641,25 +649,25 @@ using std::vector;
                         g_tool_dl_status = 10
                         g_tool_dl_progress = 1.0
                         dl_pct = 1.0
+                        // Build the tool file path for verification.
+                        var fpath = tools_dir()
+                        fpath.append('/')
+                        if(dl_is_yt) { fpath.append_view(string_view::make_no_len("yt-dlp")) }
+                        else { fpath.append_view(string_view::make_no_len("ffmpeg")) }
                         // Make executable on Unix after download completes.
                         if(!def.windows) {
-                            var fpath = tools_dir()
-                            fpath.append('/')
-                            if(dl_is_yt) { fpath.append_view(string_view::make_no_len("yt-dlp")) }
-                            else { fpath.append_view(string_view::make_no_len("ffmpeg")) }
                             var ca = vector<string>()
                             ca.push_back(string::make_no_len("chmod"))
                             ca.push_back(string::make_no_len("+x"))
                             ca.push_back(fpath.copy())
                             process::execute(make_exec_cfg(ca))
                         }
-                        // Verify the tool works.
-                        if(dl_is_yt) {
-                            var ver = ytdlp_version()
-                            if(ver.empty()) { dl_error_msg = string::make_no_len("downloaded binary is not functional"); dl_done = false; dl_err = true; g_tool_dl_status = 11 }
-                        } else {
-                            var ver = ffmpeg_version()
-                            if(ver.empty()) { dl_error_msg = string::make_no_len("downloaded binary is not functional"); dl_done = false; dl_err = true; g_tool_dl_status = 11 }
+                        // Verify the tool file exists on disk (non-blocking).
+                        if(!fs::exists(fpath.data())) {
+                            dl_error_msg = string::make_no_len("downloaded binary not found on disk")
+                            dl_done = false
+                            dl_err = true
+                            g_tool_dl_status = 11
                         }
                         // Remove from download queue so it doesn't clutter the UI.
                         if(!dl_err) { remove_task(dm, &tid) }
@@ -685,8 +693,6 @@ using std::vector;
         if(dl_done) {
             yt_avail = ytdlp_is_available()
             ff_avail = ffmpeg_is_available()
-            if(dl_is_yt && yt_avail) { yt_ver = ytdlp_version() }
-            if(dl_is_ff && ff_avail) { ff_ver = ffmpeg_version() }
         }
 
         // Build yt_dlp entry

@@ -104,6 +104,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
     // first) and the original queue order as a tie-breaker.
     public func start_pending(dm : &mut DownloadManager) {
         var active = count_active(dm)
+        fprintf(stderr, "[CDM] start_pending: active=%d max=%d\n", active, dm.max_concurrent)
         var started_any = true
         while(started_any) {
             if(active >= dm.max_concurrent) { return }
@@ -122,6 +123,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             }
             if(best_idx == dm.items.size()) { return }
             var it = dm.items.get_ptr(best_idx)
+            fprintf(stderr, "[CDM] start_pending: picking task prio=%d\n", it.priority)
 
             var id_copy = it.id.copy()
             var rt = new TaskRuntime(id_copy)

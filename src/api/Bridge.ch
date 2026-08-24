@@ -34,12 +34,46 @@ using std::Result;
         return out
     }
 
-    // Extract a single string field from a JSON object string { "key": "..." }.
-    // Returns an empty string when the field is absent or the args are invalid.
-    func json_field(args : string_view, key : string_view) : string {
+    // Resolve the args from the webview bridge into a JSON object string.
+    // The bridge JS wraps every call body in a params array:
+    //   {id, method, params: [body]}
+    // so `args` arrives as ["{...}"] or [{...}] (array wrapping).
+    // This helper extracts the first array element (when it's a string)
+    // and re-parses it, or returns the original args if already an object.
+    func resolve_bridge_args(args : string_view) : string {
         var parser = JsonParser(128, 4096)
         var ph = ASTJsonHandler.make()
         parser.parse(args.data(), args.size(), &mut ph)
+        // If already a JSON object, return as-is.
+        if(ph.root is JsonValue.Object) {
+            return string(args.data(), args.size())
+        }
+        // If an array, extract element 0 (the stringified body).
+        if(ph.root is JsonValue.Array) {
+            var Array(arr) = ph.root else unreachable
+            if(arr.size() > 0) {
+                var elem = arr.get_ptr(0)
+                if(elem is JsonValue.String) {
+                    var String(s) = *elem else unreachable
+                    return s.copy()
+                }
+                // Element is an object (not stringified) — serialize back.
+                if(elem is JsonValue.Object) {
+                    // Fall through and return original; caller will handle.
+                }
+            }
+        }
+        return string(args.data(), args.size())
+    }
+
+    // Extract a single string field from a JSON object string { "key": "..." }.
+    // Returns an empty string when the field is absent or the args are invalid.
+    func json_field(args : string_view, key : string_view) : string {
+        var resolved = resolve_bridge_args(args)
+        var rview = string_view::make_view(&resolved)
+        var parser = JsonParser(128, 4096)
+        var ph = ASTJsonHandler.make()
+        parser.parse(rview.data(), rview.size(), &mut ph)
         if(ph.root is JsonValue.Object) {
             var Object(map) = ph.root else unreachable
             var k = string(key.data(), key.size())
@@ -54,9 +88,11 @@ using std::Result;
 
     // Extract an integer field; returns `def` when absent or not numeric.
     func json_int_field(args : string_view, key : string_view, def : int) : int {
+        var resolved = resolve_bridge_args(args)
+        var rview = string_view::make_view(&resolved)
         var parser = JsonParser(128, 4096)
         var ph = ASTJsonHandler.make()
-        parser.parse(args.data(), args.size(), &mut ph)
+        parser.parse(rview.data(), rview.size(), &mut ph)
         if(ph.root is JsonValue.Object) {
             var Object(map) = ph.root else unreachable
             var k = string(key.data(), key.size())
@@ -91,9 +127,11 @@ using std::Result;
 
     // Extract a boolean field; returns `def` when absent.
     func json_bool_field(args : string_view, key : string_view, def : bool) : bool {
+        var resolved = resolve_bridge_args(args)
+        var rview = string_view::make_view(&resolved)
         var parser = JsonParser(128, 4096)
         var ph = ASTJsonHandler.make()
-        parser.parse(args.data(), args.size(), &mut ph)
+        parser.parse(rview.data(), rview.size(), &mut ph)
         if(ph.root is JsonValue.Object) {
             var Object(map) = ph.root else unreachable
             var k = string(key.data(), key.size())
@@ -378,6 +416,7 @@ using std::Result;
         var m_yt_install = string_view::make_no_len("yt_install")
         if(method.equals(&m_yt_install)) {
             var tool = json_field(args, string_view::make_no_len("tool"))
+            fprintf(stderr, "[CDM-BRIDGE] yt_install called\n")
             var err = string()
             if(tool.equals_view(string_view::make_no_len("yt-dlp"))) {
                 err = ytdlp_download_async(&mut *dm)
@@ -389,8 +428,10 @@ using std::Result;
                 return err_json(&msg)
             }
             if(err.size() > 0) {
+                fprintf(stderr, "[CDM-BRIDGE] yt_install FAILED\n")
                 return err_json(&err)
             }
+            fprintf(stderr, "[CDM-BRIDGE] yt_install OK\n")
             return ok_json()
         }
         var m_yt_info = string_view::make_no_len("yt_info")
