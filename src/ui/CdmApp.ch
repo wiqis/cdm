@@ -170,7 +170,16 @@
     }
 
     var refreshTools = () => {
-        ytTools = JSON.parse(window.webview_bridge.call("yt_status", "{}"))
+        try {
+            var r = window.webview_bridge.call("yt_status", "{}")
+            if(r && r.length > 0) {
+                ytTools = JSON.parse(r)
+            } else {
+                ytTools = { yt_dlp: { name: "yt-dlp", status: "not_installed", version: "", path: "", error: "", progress: 0 }, ffmpeg: { name: "ffmpeg", status: "not_installed", version: "", path: "", error: "", progress: 0 }, both_ready: false }
+            }
+        } catch(e) {
+            ytTools = { yt_dlp: { name: "yt-dlp", status: "not_installed", version: "", path: "", error: "", progress: 0 }, ffmpeg: { name: "ffmpeg", status: "not_installed", version: "", path: "", error: "", progress: 0 }, both_ready: false }
+        }
     }
 
     var installTool = (toolName) => {

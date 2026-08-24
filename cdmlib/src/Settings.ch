@@ -292,7 +292,7 @@ func settings_dir() : string {
         if(f == null) { return false }
 
         var content = string()
-        var chunk : [4096u]u8
+        unsafe var chunk : [4096u]u8
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 4096u, f)
             if(n == 0u) { break }
@@ -480,7 +480,7 @@ func settings_dir() : string {
         var f = fopen(path.data(), "rb")
         if(f == null) { return 0 }
         var content = string()
-        var chunk : [8192u]u8
+        unsafe var chunk : [8192u]u8
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 8192u, f)
             if(n == 0u) { break }

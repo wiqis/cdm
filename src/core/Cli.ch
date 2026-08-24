@@ -141,7 +141,7 @@ using std::Option;
     func read_batch_urls(path : string_view, out : &mut vector<string>) : bool {
         var f = fopen(path.data(), "rb")
         if(f == null) { return false }
-        var chunk : [4096u]u8
+        unsafe var chunk : [4096u]u8
         var content = string()
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 4096u, f)

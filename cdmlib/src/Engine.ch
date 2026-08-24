@@ -394,7 +394,7 @@ using std::vector;
     // When max_bytes >= 0, stops after that many bytes have been written.
     // When written_out != null, updates it with bytes written (for segment progress).
     func stream_body(rt : *mut TaskRuntime, body : &mut http::Body, ofile : *mut FILE, max_bytes : i64, written_out : *mut i64) : int {
-        var buf : [STREAM_BUF_SIZE]u8
+        unsafe var buf : [STREAM_BUF_SIZE]u8
         var sample_start = now_millis()
         var sample_bytes : i64 = 0
         var written : i64 = 0
@@ -601,7 +601,7 @@ using std::vector;
 
         var out = fopen(dest.data(), "wb")
         if(out == null) { return false }
-        var buf : [1024u * 1024u]u8
+        unsafe var buf : [1024u * 1024u]u8
 
         // Sort segments by index (they are built in order, so just iterate).
         // Iterate the runtime's segments under the lock.

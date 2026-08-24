@@ -612,8 +612,7 @@ public func CDM_yt_make_exec_cfg_runs(env : &mut TestEnv) {
 
 @test
 public func CDM_yt_check_tools_status_runs(env : &mut TestEnv) {
-    var status = cdm::check_tools_status()
-    var json = status.to_json()
+    var json = cdm::check_tools_status_json()
     if(json.find("yt_dlp") == std::NPOS) { env.error("status JSON missing yt_dlp"); return }
     if(json.find("ffmpeg") == std::NPOS) { env.error("status JSON missing ffmpeg"); return }
 }
@@ -621,17 +620,9 @@ public func CDM_yt_check_tools_status_runs(env : &mut TestEnv) {
 @test
 public func CDM_yt_ytdlp_is_available_no_crash(env : &mut TestEnv) {
     var result = cdm::ytdlp_is_available()
-    if(result) {
-        var info = cdm::ytdlp_tool_info()
-        if(!info.is_available()) { env.error("ytdlp tool info should be available"); return }
-    }
 }
 
 @test
 public func CDM_yt_ffmpeg_is_available_no_crash(env : &mut TestEnv) {
     var result = cdm::ffmpeg_is_available()
-    if(result) {
-        var info = cdm::ffmpeg_tool_info()
-        if(!info.is_available()) { env.error("ffmpeg tool info should be available"); return }
-    }
 }

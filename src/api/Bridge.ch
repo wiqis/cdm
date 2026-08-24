@@ -342,8 +342,7 @@ using std::vector;
         // ---- YouTube / yt-dlp methods ----
         var m_yt_status = string_view::make_no_len("yt_status")
         if(method.equals(&m_yt_status)) {
-            var status = check_tools_status()
-            return status.to_json()
+            return check_tools_status_json()
         }
         var m_yt_install = string_view::make_no_len("yt_install")
         if(method.equals(&m_yt_install)) {

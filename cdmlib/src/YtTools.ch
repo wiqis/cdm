@@ -22,6 +22,9 @@ using std::vector;
         Error = 3
     }
 
+    // Note: ToolInfo has strings, so returning it by value triggers
+    // TCC's compound-expression double-free. Callers must use
+    // check_tools_status_json() or call primitives directly instead.
     public struct ToolInfo {
         var name : string
         var status : ToolStatus
@@ -132,12 +135,54 @@ using std::vector;
         var cfg = process::ProcessConfig.default()
         var i = 0u
         while(i < args_.size()) {
-            cfg.args.push_back(args_.get(i).copy())
+            // Use get_ptr(i) instead of get(i) to avoid the TCC compound-expression
+            // double-free: get() returns a bitwise copy sharing heap pointers with
+            // the vector element, and the temp's destruction frees the shared data.
+            cfg.args.push_back(args_.get_ptr(i).copy())
             i = i + 1u
         }
         cfg.capture_stdout = true
         cfg.capture_stderr = true
         return cfg
+    }
+
+    // Check if a binary exists at a given directory path.
+    // Builds the full path without using vector<string>.get(i).copy()
+    // to avoid the TCC compound-expression double-free bug where get()
+    // returns a bitwise copy sharing heap pointers with the vector element,
+    // and the temp cleanup frees the shared data, leaving the vector with
+    // dangling pointers.
+    func check_path(dir : string_view, name : string_view) : bool {
+        var p = string()
+        p.append_view(&dir)
+        p.append_view(&name)
+        return fs::exists(p.data())
+    }
+
+    // Check if a binary exists on common system paths.
+    // This avoids process::execute() which can deadlock when fork() is called
+    // from a multi-threaded process (e.g. WebKitGTK webview).
+    // NOTE: Does NOT use vector<string>.get(i).copy() — that pattern triggers
+    // a TCC compound-expression double-free.
+    func find_binary(name : string_view) : bool {
+        // Check /usr/bin/
+        if(check_path(string_view::make_no_len("/usr/bin/"), name)) { return true }
+        // Check /usr/local/bin/
+        if(check_path(string_view::make_no_len("/usr/local/bin/"), name)) { return true }
+        // Check /usr/bin/local/
+        if(check_path(string_view::make_no_len("/usr/bin/local/"), name)) { return true }
+        // Check ~/.local/bin/
+        var home_opt = std::get_env(string_view::make_no_len("HOME"))
+        if(home_opt is Option.Some) {
+            var Some(home) = home_opt else unreachable
+            var local_bin = home.copy()
+            local_bin.append_view(string_view::make_no_len("/.local/bin/"))
+            if(check_path(string_view::make_view(&local_bin), name)) { return true }
+        } else {}
+        // Check $CDM_TOOLS_DIR
+        var tools = tools_dir()
+        if(check_path(string_view::make_view(&tools), name)) { return true }
+        return false
     }
 
     // Check if yt-dlp is available (bundled binary exists and is executable,
@@ -148,17 +193,8 @@ using std::vector;
         if(fs::exists(bundled.data())) {
             return true
         }
-        // Fall back to system PATH.
-        var args = vector<string>()
-        args.push_back(string::make_no_len("yt-dlp"))
-        args.push_back(string::make_no_len("--version"))
-        var cfg = make_exec_cfg(args)
-        var res = process::execute(cfg)
-        if(res is Result.Err) {
-            return false
-        }
-        var Ok(pr) = res else unreachable
-        return pr.success
+        // Check common filesystem paths (avoids fork() in multi-threaded context).
+        return find_binary(string_view::make_no_len("yt-dlp"))
     }
 
     // Get the yt-dlp version string (empty if not available).
@@ -198,6 +234,8 @@ using std::vector;
     }
 
     // Get the full ToolInfo for yt-dlp.
+    // WARNING: Returns by value — may trigger TCC compound-expression double-free.
+    // Prefer check_tools_status_json() or calling primitives directly.
     public func ytdlp_tool_info() : ToolInfo {
         var info = ToolInfo(string::make_no_len("yt-dlp"))
         info.path = ytdlp_resolved_path()
@@ -292,17 +330,8 @@ using std::vector;
         if(fs::exists(bundled.data())) {
             return true
         }
-        // Fall back to system PATH.
-        var ff_args = vector<string>()
-        ff_args.push_back(string::make_no_len("ffmpeg"))
-        ff_args.push_back(string::make_no_len("-version"))
-        var cfg = make_exec_cfg(ff_args)
-        var res = process::execute(cfg)
-        if(res is Result.Err) {
-            return false
-        }
-        var Ok(pr) = res else unreachable
-        return pr.success
+        // Check common filesystem paths (avoids fork() in multi-threaded context).
+        return find_binary(string_view::make_no_len("ffmpeg"))
     }
 
     // Get the ffmpeg version string.
@@ -365,6 +394,8 @@ using std::vector;
     }
 
     // Get the full ToolInfo for ffmpeg.
+    // WARNING: Returns by value — may trigger TCC compound-expression double-free.
+    // Prefer check_tools_status_json() or calling primitives directly.
     public func ffmpeg_tool_info() : ToolInfo {
         var info = ToolInfo(string::make_no_len("ffmpeg"))
         info.path = ffmpeg_resolved_path()
@@ -464,12 +495,55 @@ using std::vector;
         }
     }
 
+    // Build a ToolInfo JSON object string from individual fields.
+    // Avoids returning ToolInfo by value (TCC double-free issue).
+    func tool_info_json(name : string_view, available : bool, ver : string_view, path_ : string_view) : string {
+        var out = string::make_no_len("{\"name\":")
+        out.append_string(&json_string(name))
+        out.append_string(&string::make_no_len(",\"status\":\""))
+        if(available) {
+            out.append_string(&string::make_no_len("installed"))
+        } else {
+            out.append_string(&string::make_no_len("not_installed"))
+        }
+        out.append_string(&string::make_no_len("\",\"version\":\""))
+        out.append_string(&json_string(ver))
+        out.append_string(&string::make_no_len("\",\"path\":\""))
+        out.append_string(&json_string(path_))
+        out.append_string(&string::make_no_len("\",\"error\":\"\",\"progress\":0}"))
+        return out
+    }
+
     // Check status of both tools.
-    public func check_tools_status() : ToolsStatus {
-        var status = ToolsStatus()
-        status.yt_info = ytdlp_tool_info()
-        status.ff_info = ffmpeg_tool_info()
-        return status
+    // Builds JSON directly to avoid double-free from struct return pattern
+    // with destructible types (ToolInfo contains strings).
+    // DO NOT call ytdlp_tool_info() or ffmpeg_tool_info() here — returning
+    // ToolInfo by value triggers TCC compound-expression double-free.
+    public func check_tools_status_json() : string {
+        var yt_avail = ytdlp_is_available()
+        var ff_avail = ffmpeg_is_available()
+        var yt_ver = string()
+        var ff_ver = string()
+        var yt_path = ytdlp_resolved_path()
+        var ff_path = ffmpeg_resolved_path()
+        if(yt_avail) {
+            yt_ver = ytdlp_version()
+        }
+        if(ff_avail) {
+            ff_ver = ffmpeg_version()
+        }
+        var out = string::make_no_len("{\"yt_dlp\":")
+        out.append_string(&tool_info_json(string_view::make_no_len("yt-dlp"), yt_avail, string_view::make_view(&yt_ver), string_view::make_view(&yt_path)))
+        out.append_string(&string::make_no_len(",\"ffmpeg\":"))
+        out.append_string(&tool_info_json(string_view::make_no_len("ffmpeg"), ff_avail, string_view::make_view(&ff_ver), string_view::make_view(&ff_path)))
+        out.append_string(&string::make_no_len(",\"both_ready\":"))
+        if(yt_avail && ff_avail) {
+            out.append_string(&string::make_no_len("true"))
+        } else {
+            out.append_string(&string::make_no_len("false"))
+        }
+        out.append('}')
+        return out
     }
 
 } // end namespace cdm
