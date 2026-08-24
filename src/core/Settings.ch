@@ -85,25 +85,6 @@ using std::ordered_map;
         }
     }
 
-    // Expand ~ to $HOME at runtime.
-    public func expand_home(path : string_view) : string {
-        if(path.size() == 0 || path.get(0) != '~') {
-            var s = string()
-            s.append_view(&path)
-            return s
-        }
-        var home = string()
-        var opt = std::get_env(string_view::make_no_len("HOME"))
-        if(opt is Option.Some) {
-            var Some(h) = opt else unreachable
-            home = h.copy()
-        } else {
-            home = string::make_no_len(".")
-        }
-        home.append_view(&path.subview(1, path.size()))
-        return home
-    }
-
     // Stable key used for per-category directory override persistence.
     func category_key(c : Category) : string {
         if(c == Category.Documents) { return string::make_no_len("documents") }
@@ -372,6 +353,26 @@ func settings_dir() : string {
             }
         }
         return true
+    }
+
+    // Apply persisted settings to a DownloadManager. The library no longer
+    // handles settings — the app bridges CdmSettings → DownloadManager fields.
+    public func apply_settings_to_dm(dm : &mut DownloadManager, s : &CdmSettings) {
+        dm.max_concurrent = s.max_concurrent
+        dm.max_segments = s.max_segments
+        dm.min_segment_size = s.min_segment_size
+        dm.speed_limit_kbps = s.speed_limit_kbps
+        dm.enable_resume = s.enable_resume
+        dm.allow_segments = s.allow_segments
+        dm.proxy_host = s.proxy_host.copy()
+        dm.proxy_port = s.proxy_port
+        dm.duplicate_action = s.duplicate_action
+        dm.auto_resume_failed = s.auto_resume_failed
+        dm.retry_policy.max_retries = s.max_retries
+        dm.retry_policy.delay_ms = s.retry_delay_ms
+        if(s.download_dir.size() > 0) {
+            dm.download_dir = s.download_dir.copy()
+        }
     }
 
     // In-memory serialization (no filesystem I/O). Used by tests to verify

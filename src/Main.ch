@@ -84,7 +84,7 @@ func run_gui() : int {
     // categories, duplicate policy) so a restart keeps the user's choices.
     var settings = cdm::CdmSettings()
     if(cdm::load_settings(&raw mut settings)) {
-        dm.apply_settings(&settings)
+        cdm::apply_settings_to_dm(&mut dm, &settings)
     }
 
     // Ensure the root download directory exists before any task is added.

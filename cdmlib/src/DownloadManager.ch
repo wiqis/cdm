@@ -25,7 +25,6 @@ using std::mutex;
         var allow_segments : bool
         var save_interval_millis : i64
         var last_save_millis : i64
-        var use_categories : bool
         var duplicate_action : int
         var auto_resume_failed : bool
         var retry_policy : RetryPolicy
@@ -47,7 +46,6 @@ using std::mutex;
                 allow_segments = true,
                 save_interval_millis = 2000,
                 last_save_millis = 0,
-                use_categories = false,
                 duplicate_action = 0,
                 auto_resume_failed = false,
                 retry_policy = RetryPolicy()
@@ -57,26 +55,6 @@ using std::mutex;
         // Configure the global speed limit (KB/s; 0 disables).
         public func set_speed_limit_kbps(&mut self, kbps : i64) {
             self.speed_limit_kbps = kbps
-        }
-
-        // Apply persisted settings (other than the download dir).
-        public func apply_settings(&mut self, s : &CdmSettings) {
-            self.max_concurrent = s.max_concurrent
-            self.max_segments = s.max_segments
-            self.min_segment_size = s.min_segment_size
-            self.speed_limit_kbps = s.speed_limit_kbps
-            self.enable_resume = s.enable_resume
-            self.allow_segments = s.allow_segments
-            self.proxy_host = s.proxy_host.copy()
-            self.proxy_port = s.proxy_port
-            self.use_categories = s.use_categories
-            self.duplicate_action = s.duplicate_action
-            self.auto_resume_failed = s.auto_resume_failed
-            self.retry_policy.max_retries = s.max_retries
-            self.retry_policy.delay_ms = s.retry_delay_ms
-            if(s.download_dir.size() > 0) {
-                self.download_dir = s.download_dir.copy()
-            }
         }
     }
 
@@ -243,10 +221,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
     // skip duplicate policy and an existing file).
     public func add_task_ex(dm : &mut DownloadManager, url_str : string_view,
                             dir_hint : string_view, filename_hint : string_view,
-                            priority : int, category : Category) : string {
-var id = uuid::v4().to_string()
-        // Resolve the file name first so category routing is based on the
-        // name actually used (the URL-derived guess, or the caller's override).
+                            priority : int) : string {
+        var id = uuid::v4().to_string()
         var suggested = suggested_filename(url_str)
         if(filename_hint.size() > 0) {
             suggested = sanitize_filename(filename_hint)
@@ -255,13 +231,6 @@ var id = uuid::v4().to_string()
         var resolved_dir = dm.download_dir.copy()
         if(dir_hint.size() > 0) {
             resolved_dir = string(dir_hint.data(), dir_hint.size())
-        } else if(dm.use_categories) {
-            var cat = category
-            if(cat == Category.Other) {
-                var ext = extension_of(string_view::make_view(&suggested))
-                cat = category_for_extension(string_view::make_view(&ext))
-            }
-            resolved_dir = category_dir_for_dirs(dm, cat, string_view::make_view(&suggested))
         }
 
         // Ensure the destination directory exists before queueing.
@@ -270,14 +239,6 @@ var id = uuid::v4().to_string()
         var item = DownloadItem(id.copy(), string(url_str.data(), url_str.size()),
                                 resolved_dir.copy(), suggested.copy())
         item.priority = priority
-        item.category = category as int
-        if(dm.use_categories && dir_hint.size() == 0u) {
-            // Reflect the resolved category (e.g. an mp4 became Video) so the
-            // UI and persistence store the category actually used.
-            var rdir_ext = extension_of(string_view::make_view(&item.filename))
-            var resolved_cat = category_for_extension(string_view::make_view(&rdir_ext))
-            if(resolved_cat != Category.Other) { item.category = resolved_cat as int }
-        }
 
         // Duplicate policy.
         var dup_dir_copy = resolved_dir.copy()
@@ -292,9 +253,9 @@ var id = uuid::v4().to_string()
         return id
     }
 
-    // Add a new URL to the queue using defaults (kept for compatibility).
+    // Add a new URL to the queue using defaults.
     public func add_task(dm : &mut DownloadManager, url_str : string_view) : string {
-        return add_task_ex(dm, url_str, string_view(), string_view(), 0, Category.Other)
+        return add_task_ex(dm, url_str, string_view(), string_view(), 0)
     }
 
     // Change a queued/paused item's destination/settings. Returns true when the
@@ -302,7 +263,7 @@ var id = uuid::v4().to_string()
     public func edit_item(dm : &mut DownloadManager, id : &string,
                           dir : string_view, filename : string_view,
                           priority : int, max_segments : int,
-                          speed_limit_kbps : i64, category : Category) : bool {
+                          speed_limit_kbps : i64) : bool {
         var idx = find_item_index(dm, id)
         if(idx == dm.items.size()) { return false }
         var it = dm.items.get_ptr(idx)
@@ -321,7 +282,6 @@ var id = uuid::v4().to_string()
         it.priority = priority
         if(max_segments > 0) { it.max_segments = max_segments }
         it.speed_limit_kbps = speed_limit_kbps
-        if(category != Category.Other) { it.category = category as int }
         return true
     }
 
@@ -551,19 +511,6 @@ var id = uuid::v4().to_string()
         dm.items.erase(idx)
     }
 
-    // Copy a target directory path computed from an explicit category.
-    func category_dir_for_dirs(dm : &DownloadManager, cat : Category, filename : string_view) : string {
-        // Build the categorized path directly (library-internal version of
-        // Settings.category_dir_for that doesn't require a settings object).
-        var sub = category_dir(cat)
-        var out = dm.download_dir.copy()
-        if(sub.size() > 0) {
-            out.append('/')
-            out.append_string(&sub)
-        }
-        return out
-    }
-
     // Merge live progress into the item list and return an immutable snapshot.
     public func snapshot(dm : &mut DownloadManager) : vector<DownloadItem> {
         var out = vector<DownloadItem>()
@@ -582,26 +529,6 @@ var id = uuid::v4().to_string()
             }
             out.push_back(copy)
         }
-        return out
-    }
-
-    // Serve-side JSON document of the whole queue + settings.
-    public func state_json(dm : &mut DownloadManager, version : string_view) : string {
-        var dir_copy = dm.download_dir.copy()
-        var out = string::make_no_len("{\"download_dir\":")
-        out.append_string(&json_string(string_view::make_view(&dir_copy)))
-        out.append_string(&string::make_no_len(",\"max_concurrent\":"))
-        out.append_integer(dm.max_concurrent as bigint)
-        out.append_string(&string::make_no_len(",\"version\":"))
-        out.append_string(&json_string(version))
-        out.append_string(&string::make_no_len(",\"items\":["))
-        var snap = snapshot(dm)
-        for(var i = 0u; i < snap.size(); i++) {
-            if(i > 0u) { out.append(',') }
-            var it = snap.get_ptr(i)
-            out.append_string(&item_to_json(&*it))
-        }
-        out.append_string(&string::make_no_len("]}"))
         return out
     }
 

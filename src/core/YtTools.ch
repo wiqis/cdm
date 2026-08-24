@@ -295,7 +295,7 @@ using std::vector;
             fname = string_view::make_no_len("yt-dlp")
         }
         var tdir = tools_dir()
-        var id = add_task_ex(dm, url, string_view::make_view(&tdir), fname, 100, Category.Programs)
+        var id = add_task_ex(dm, url, string_view::make_view(&tdir), fname, 100)
         if(id.size() == 0u) {
             g_tool_dl_status = 0
             return string::make_no_len("failed to queue download")
@@ -324,7 +324,7 @@ using std::vector;
             fname = string_view::make_no_len("ffmpeg")
         }
         var tdir = tools_dir()
-        var id = add_task_ex(dm, url, string_view::make_view(&tdir), fname, 100, Category.Programs)
+        var id = add_task_ex(dm, url, string_view::make_view(&tdir), fname, 100)
         if(id.size() == 0u) {
             g_tool_dl_status = 0
             return string::make_no_len("failed to queue download")

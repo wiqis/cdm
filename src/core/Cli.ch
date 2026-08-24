@@ -217,7 +217,7 @@ using std::Option;
         // Apply persisted settings first, then let explicit CLI flags override.
         var settings = CdmSettings()
         if(load_settings(&raw mut settings)) {
-            dm.apply_settings(&settings)
+            apply_settings_to_dm(&mut dm, &settings)
         }
 
         if(opts.download_dir.size() > 0) {
@@ -231,12 +231,6 @@ using std::Option;
         }
         if(opts.speed_limit_kbps > 0) {
             dm.set_speed_limit_kbps(opts.speed_limit_kbps)
-        }
-        if(opts.use_categories) {
-            dm.use_categories = true
-        }
-        if(opts.no_categories) {
-            dm.use_categories = false
         }
 
         // Make sure the destination directory exists.
@@ -265,9 +259,9 @@ using std::Option;
             var uv = string_view::make_view(u)
             var id = string()
             if(i == 0u && opts.output_name.size() > 0u) {
-                id = add_task_ex(&mut dm, uv, string_view(), name_view, opts.priority, Category.Other)
+                id = add_task_ex(&mut dm, uv, string_view(), name_view, opts.priority)
             } else {
-                id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, Category.Other)
+                id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority)
             }
             added = added + 1
             if(!opts.quiet) {
@@ -277,7 +271,7 @@ using std::Option;
         for(var i = 0u; i < batch.size(); i++) {
             var u = batch.get_ref(i)
             var uv = string_view::make_view(u)
-            var id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, Category.Other)
+            var id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority)
             added = added + 1
             if(!opts.quiet) {
                 printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())

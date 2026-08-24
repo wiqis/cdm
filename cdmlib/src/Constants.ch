@@ -2,6 +2,10 @@
 
 public namespace cdm {
 
+using std::string;
+using std::string_view;
+using std::Option;
+
     public const CDM_VERSION : *char = "0.1.0"
     public const CDM_NAME : *char = "ChemicalDM"
 
@@ -53,5 +57,24 @@ public namespace cdm {
 
     // Persistent settings file (relative to $HOME).
     public const SETTINGS_FILE : *char = ".chemicaldm/config.txt"
+
+    // Expand ~ to $HOME at runtime.
+    public func expand_home(path : string_view) : string {
+        if(path.size() == 0 || path.get(0) != '~') {
+            var s = string()
+            s.append_view(&path)
+            return s
+        }
+        var home = string()
+        var opt = std::get_env(string_view::make_no_len("HOME"))
+        if(opt is Option.Some) {
+            var Some(h) = opt else unreachable
+            home = h.copy()
+        } else {
+            home = string::make_no_len(".")
+        }
+        home.append_view(&path.subview(1, path.size()))
+        return home
+    }
 
 } // end namespace cdm

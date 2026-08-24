@@ -10,7 +10,29 @@ using std::string_view;
 using std::Option;
 using std::Result;
 using std::vector;
+using std::Result;
 // json module types (JsonParser, ASTJsonHandler, JsonValue) are top-level.
+
+    // Build the full queue state as a JSON document for the UI.
+    // Moved from DownloadManager (library no longer handles serialization).
+    func state_json(dm : &mut DownloadManager, version : string_view) : string {
+        var dir_copy = dm.download_dir.copy()
+        var out = string::make_no_len("{\"download_dir\":")
+        out.append_string(&json_string(string_view::make_view(&dir_copy)))
+        out.append_string(&string::make_no_len(",\"max_concurrent\":"))
+        out.append_integer(dm.max_concurrent as bigint)
+        out.append_string(&string::make_no_len(",\"version\":"))
+        out.append_string(&json_string(version))
+        out.append_string(&string::make_no_len(",\"items\":["))
+        var snap = snapshot(dm)
+        for(var i = 0u; i < snap.size(); i++) {
+            if(i > 0u) { out.append(',') }
+            var it = snap.get_ptr(i)
+            out.append_string(&item_to_json(&*it))
+        }
+        out.append_string(&string::make_no_len("]}"))
+        return out
+    }
 
     // Extract a single string field from a JSON object string { "key": "..." }.
     // Returns an empty string when the field is absent or the args are invalid.
@@ -116,8 +138,6 @@ using std::vector;
         if(dm.enable_resume) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"allow_segments\":"))
         if(dm.allow_segments) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len(",\"use_categories\":"))
-        if(dm.use_categories) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"duplicate_action\":"))
         out.append_integer(dm.duplicate_action as bigint)
         out.append_string(&string::make_no_len(",\"auto_resume_failed\":"))
@@ -161,15 +181,29 @@ using std::vector;
             var fname = json_field(args, string_view::make_no_len("filename"))
             var prio = json_int_field(args, string_view::make_no_len("priority"), 0)
             var cat_str = json_field(args, string_view::make_no_len("category"))
-            var cat = Category.Other
-            if(cat_str.equals(&string::make_no_len("Documents"))) { cat = Category.Documents }
-            else if(cat_str.equals(&string::make_no_len("Programs"))) { cat = Category.Programs }
-            else if(cat_str.equals(&string::make_no_len("Video"))) { cat = Category.Video }
-            else if(cat_str.equals(&string::make_no_len("Music"))) { cat = Category.Music }
-            else if(cat_str.equals(&string::make_no_len("Compressed"))) { cat = Category.Compressed }
-            var dirv = string_view::make_view(&dir)
+
+            // Category routing: resolve the category → directory here in the app,
+            // then pass the resolved directory to the library.
+            var resolved_dir = dir.copy()
+            if(resolved_dir.size() == 0u) {
+                var cat = Category.Other
+                if(cat_str.equals(&string::make_no_len("Documents"))) { cat = Category.Documents }
+                else if(cat_str.equals(&string::make_no_len("Programs"))) { cat = Category.Programs }
+                else if(cat_str.equals(&string::make_no_len("Video"))) { cat = Category.Video }
+                else if(cat_str.equals(&string::make_no_len("Music"))) { cat = Category.Music }
+                else if(cat_str.equals(&string::make_no_len("Compressed"))) { cat = Category.Compressed }
+                if(cat != Category.Other) {
+                    var sub = category_dir(cat)
+                    resolved_dir = dm.download_dir.copy()
+                    if(sub.size() > 0) {
+                        resolved_dir.append('/')
+                        resolved_dir.append_string(&sub)
+                    }
+                }
+            }
+            var dirv = string_view::make_view(&resolved_dir)
             var fnamev = string_view::make_view(&fname)
-            var id = add_task_ex(&mut *dm, string_view::make_view(&url), dirv, fnamev, prio, cat)
+            var id = add_task_ex(&mut *dm, string_view::make_view(&url), dirv, fnamev, prio)
             if(id.size() == 0u) {
                 var msg = string::make_no_len("duplicate download skipped")
                 return err_json(&msg)
@@ -247,7 +281,7 @@ using std::vector;
             var sl = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), 0)
             var dirv = string_view::make_view(&dir)
             var fnamev = string_view::make_view(&fname)
-            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, sl as i64, Category.Other)
+            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, sl as i64)
             if(!ok) {
                 var msg = string::make_no_len("cannot edit running item")
                 return err_json(&msg)
@@ -280,7 +314,6 @@ using std::vector;
             var dupact = json_int_field(args, string_view::make_no_len("duplicate_action"), dm.duplicate_action)
             var en_resume = json_bool_field(args, string_view::make_no_len("enable_resume"), dm.enable_resume)
             var al_segs = json_bool_field(args, string_view::make_no_len("allow_segments"), dm.allow_segments)
-            var use_cats = json_bool_field(args, string_view::make_no_len("use_categories"), dm.use_categories)
             var auto_res = json_bool_field(args, string_view::make_no_len("auto_resume_failed"), dm.auto_resume_failed)
             var retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.retry_policy.max_retries)
             var delay = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_policy.delay_ms as int)
@@ -293,7 +326,6 @@ using std::vector;
             dm.duplicate_action = dupact
             dm.enable_resume = en_resume
             dm.allow_segments = al_segs
-            dm.use_categories = use_cats
             dm.auto_resume_failed = auto_res
             dm.retry_policy.max_retries = retries
             if(delay >= 0) { dm.retry_policy.delay_ms = delay as i64 }
@@ -306,7 +338,6 @@ using std::vector;
             settings.duplicate_action = dm.duplicate_action
             settings.enable_resume = dm.enable_resume
             settings.allow_segments = dm.allow_segments
-            settings.use_categories = dm.use_categories
             settings.auto_resume_failed = dm.auto_resume_failed
             settings.max_retries = dm.retry_policy.max_retries
             settings.retry_delay_ms = dm.retry_policy.delay_ms

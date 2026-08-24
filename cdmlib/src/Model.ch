@@ -24,7 +24,6 @@ using std::string_view;
         var pause_requested : bool
         var cancel_requested : bool
         var priority : int            // lower = downloaded first (0 highest)
-        var category : int            // cdm::Category value
         var max_segments : int        // 0 = use the manager default
         var speed_limit_kbps : i64    // 0 = no per-item limit
         var retry_count : int
@@ -49,7 +48,6 @@ using std::string_view;
                 pause_requested = false,
                 cancel_requested = false,
                 priority = 0,
-                category = Category.Other as int,
                 max_segments = 0,
                 speed_limit_kbps = 0,
                 retry_count = 0,
@@ -103,7 +101,6 @@ using std::string_view;
             c.pause_requested = self.pause_requested
             c.cancel_requested = self.cancel_requested
             c.priority = self.priority
-            c.category = self.category
             c.max_segments = self.max_segments
             c.speed_limit_kbps = self.speed_limit_kbps
             c.retry_count = self.retry_count

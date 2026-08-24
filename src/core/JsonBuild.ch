@@ -89,8 +89,6 @@ using std::vector;
         var error_s = json_string(string_view::make_view(&item.error))
         var display = item.display_filename()
         var display_s = json_string(string_view::make_view(&display))
-        var cat_name = format_category(item.category)
-        var cat_s = json_string(string_view::make_view(&cat_name))
 
         var total_s = json_i64(item.total_bytes)
         var down_s = json_i64(item.downloaded_bytes)
@@ -119,7 +117,6 @@ using std::vector;
         json_kv(&mut out, "display_name", &display_s, &mut first)
         json_kv(&mut out, "dir", &dir_s, &mut first)
         json_kv(&mut out, "state", &state_s, &mut first)
-        json_kv(&mut out, "category", &cat_s, &mut first)
         json_kv(&mut out, "error", &error_s, &mut first)
         json_kv(&mut out, "total_bytes", &total_s, &mut first)
         json_kv(&mut out, "downloaded_bytes", &down_s, &mut first)
