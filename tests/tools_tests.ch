@@ -163,3 +163,77 @@ public func CDM_tools_both_ready(env : &mut TestEnv) {
     }
     fs::remove_dir_all_recursive(dir.data())
 }
+
+// 7) A tool binary already on disk at the canonical path must be reported as
+//    installed (status "installed" + ytdlp_is_available()). Reproduces "downloaded
+//    but the app says not installed".
+@test
+@test.timeout(30000)
+public func CDM_tools_detect_after_install(env : &mut TestEnv) {
+    // A tool binary already present on disk at the canonical path must be reported
+    // as installed (status "installed" + ytdlp_is_available()). This is the exact
+    // "downloaded but the app says not installed" complaint: the status reporting
+    // must read the binary from disk rather than lose track of it.
+    var tools = br_tmp_dir(string_view::make_no_len("tools-det"))
+    if(tools.size() == 0u) { env.error("tmpdir"); return }
+    var setr = environment::set(string_view::make_no_len("CDM_TOOLS_DIR"), string_view::make_view(&tools))
+    if(setr is std::Result.Err) { env.error("setenv failed"); return }
+
+    // Simulate a completed install: place the binary at the canonical path.
+    var yp = cdm::ytdlp_path()
+    if(!br_write_pattern(yp.data(), 256 * 1024)) { env.error("write binary"); return }
+
+    if(!cdm::ytdlp_is_available()) {
+        env.error("ytdlp_is_available() false after binary placed on disk"); return
+    }
+    var dm = cdm::DownloadManager()
+    var json = cdm::check_tools_status_json(&mut dm)
+    var want = string::make_no_len("\"name\":\"yt-dlp\",\"status\":\"installed\"")
+    if(json.find(string_view::make_view(&want)) == std::NPOS) {
+        env.error("status json not 'installed' after binary placed on disk")
+        env.error(json.data())
+        return
+    }
+}
+
+// 8) Queueing the install must target the canonical binary name ("yt-dlp") even
+//    when a stale binary already occupies that path. Previously the duplicate-name
+//    policy renamed the completed download to "yt-dlp (1)", so ytdlp_path() pointed
+//    at a missing file and the app reported "not installed".
+@test
+@test.timeout(30000)
+public func CDM_tools_install_uses_canonical_name(env : &mut TestEnv) {
+    // Queueing the install must target the canonical binary name ("yt-dlp"), even
+    // when a stale binary already exists there. Previously the duplicate-name
+    // policy renamed the completed download to "yt-dlp (1)", so ytdlp_path()
+    // pointed at a missing file and the app reported "not installed".
+    var tools = br_tmp_dir(string_view::make_no_len("tools-canon"))
+    if(tools.size() == 0u) { env.error("tmpdir"); return }
+    var setr = environment::set(string_view::make_no_len("CDM_TOOLS_DIR"), string_view::make_view(&tools))
+    if(setr is std::Result.Err) { env.error("setenv failed"); return }
+
+    // Pre-place a STALE partial yt-dlp — this previously triggered the rename.
+    var stale = tools.copy()
+    stale.append_view(string_view::make_no_len("/yt-dlp"))
+    if(!br_write_pattern(stale.data(), 1024)) { env.error("stale write"); return }
+
+    var dl = br_tmp_dir(string_view::make_no_len("tool-dl-canon"))
+    var dm = cdm::DownloadManager()
+    dm.download_dir = dl.copy()
+
+    // Queue the install. The worker runs asynchronously (and fails with no
+    // network here); we only inspect the queued task name, captured synchronously.
+    var inst_err = cdm::ytdlp_download_async(&mut dm)
+    if(!inst_err.empty()) { env.error("ytdlp_download_async: "); env.error(inst_err.data()); return }
+
+    var snap = cdm::snapshot(&mut dm)
+    if(snap.size() == 0u) { env.error("no task was queued"); return }
+    var fn = snap.get_ptr(0u).filename.copy()
+    if(fn.find(string_view::make_no_len(" (1)")) != std::NPOS) {
+        env.error("tool queued under a renamed path (duplicate-name bug)"); return
+    }
+    var want = string::make_no_len("yt-dlp")
+    if(!fn.equals(&want)) {
+        env.error("tool not queued under canonical name 'yt-dlp'"); return
+    }
+}

@@ -279,6 +279,18 @@ using std::vector;
     //
     // Test hook: setting CDM_TOOL_URL_OVERRIDE redirects the download to a
     // local server so the install flow can be exercised hermetically.
+    // Remove any stale canonical binary / partial so the install lands exactly
+    // at `tools_dir()/<name>` (never `name (N)`). A renamed binary would leave
+    // ytdlp_path()/ffmpeg_path() pointing at a missing file and the app would
+    // report "not installed" even though the tool is on disk.
+    func clear_existing_tool_file(path : string_view) {
+        var p = string()
+        p.append_view(&path)
+        remove(p.data())
+        p.append_view(string_view::make_no_len(".part"))
+        remove(p.data())
+    }
+
     public func ytdlp_download_async(dm : &mut DownloadManager) : string {
         if(tool_download_in_progress()) { return string::make_no_len("download already in progress") }
         ensure_tools_dir()
@@ -303,7 +315,16 @@ using std::vector;
             fname = string_view::make_no_len("yt-dlp")
         }
         var tdir = tools_dir()
+        var canon_path = tdir.copy()
+        canon_path.append('/')
+        canon_path.append_view(&fname)
+        clear_existing_tool_file(string_view::make_view(&canon_path))
+        // Force the canonical name: overwrite any existing file instead of
+        // letting the duplicate-name policy rename the completed binary.
+        var prev_da = dm.duplicate_action
+        dm.duplicate_action = 1
         var id = add_task_ex(dm, url, string_view::make_view(&tdir), fname, 100, 0)
+        dm.duplicate_action = prev_da
         if(id.size() == 0u) {
             g_tool_dl_status = 0
             return string::make_no_len("failed to queue download")
@@ -332,7 +353,16 @@ using std::vector;
             fname = string_view::make_no_len("ffmpeg")
         }
         var tdir = tools_dir()
+        var canon_path = tdir.copy()
+        canon_path.append('/')
+        canon_path.append_view(&fname)
+        clear_existing_tool_file(string_view::make_view(&canon_path))
+        // Force the canonical name: overwrite any existing file instead of
+        // letting the duplicate-name policy rename the completed binary.
+        var prev_da = dm.duplicate_action
+        dm.duplicate_action = 1
         var id = add_task_ex(dm, url, string_view::make_view(&tdir), fname, 100, 0)
+        dm.duplicate_action = prev_da
         if(id.size() == 0u) {
             g_tool_dl_status = 0
             return string::make_no_len("failed to queue download")
@@ -381,11 +411,7 @@ using std::vector;
 
         // Make executable on Unix.
         if(!def.windows) {
-            var chmod_args = vector<string>()
-            chmod_args.push_back(string::make_no_len("chmod"))
-            chmod_args.push_back(string::make_no_len("+x"))
-            chmod_args.push_back(target.copy())
-            process::execute(make_exec_cfg(chmod_args))
+            fs::set_permissions(target.data(), 0o755)
         }
 
         // Verify the downloaded binary works.
@@ -539,11 +565,7 @@ using std::vector;
 
         // Make executable.
         if(!def.windows) {
-            var chmod_args = vector<string>()
-            chmod_args.push_back(string::make_no_len("chmod"))
-            chmod_args.push_back(string::make_no_len("+x"))
-            chmod_args.push_back(target.copy())
-            process::execute(make_exec_cfg(chmod_args))
+            fs::set_permissions(target.data(), 0o755)
         }
 
         var ver = ffmpeg_version()
@@ -663,12 +685,13 @@ using std::vector;
                         if(dl_is_yt) { fpath.append_view(string_view::make_no_len("yt-dlp")) }
                         else { fpath.append_view(string_view::make_no_len("ffmpeg")) }
                         // Make executable on Unix after download completes.
+                        // NOTE: use fs::set_permissions (a direct chmod syscall) — NOT
+                        // process::execute("chmod"), because fork() inside the
+                        // multi-threaded WebKitGTK/webview process (or while the
+                        // download worker thread is alive) deadlocks and would hang
+                        // the whole status poll, leaving the Tools tab stuck.
                         if(!def.windows) {
-                            var ca = vector<string>()
-                            ca.push_back(string::make_no_len("chmod"))
-                            ca.push_back(string::make_no_len("+x"))
-                            ca.push_back(fpath.copy())
-                            process::execute(make_exec_cfg(ca))
+                            fs::set_permissions(fpath.data(), 0o755)
                         }
                         // Verify the tool file exists on disk (non-blocking).
                         if(!fs::exists(fpath.data())) {

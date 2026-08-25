@@ -282,9 +282,11 @@ func br_accept_loop(arg : *void) : *void {
 }
 
 func br_port(offset : uint) : uint {
-    var st = std::chrono::SystemTime::now()
-    var na = st.as_unix_epoch_nanos()
-    var base = (51000i64 + (na / 1000i64) % 20000i64) as uint
+    // Each @test runs in its own forked process with a distinct PID, so base the port
+    // on the PID (not just the millisecond clock) to avoid two concurrent test servers
+    // colliding on the same port and tripping net::listen_addr's bind-failure panic.
+    var pid = process::getpid() as uint
+    var base = 51000u + (pid % 14000u)
     return base + offset
 }
 
