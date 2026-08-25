@@ -209,9 +209,13 @@
                 try {
                     var r = (typeof res === "string") ? JSON.parse(res) : res
                     if(r && r.yt_dlp) { ytTools = r }
-                } catch (e) { }
+                } catch (e) {
+                    if(window.__reportError) { window.__reportError("yt_status parse failed: " + (e && e.message ? e.message : e), (e && e.stack) ? e.stack : "") }
+                }
             })
-        } catch (e) { }
+        } catch (e) {
+            if(window.__reportError) { window.__reportError("yt_status call failed: " + (e && e.message ? e.message : e), (e && e.stack) ? e.stack : "") }
+        }
     }
 
     var pollToolProgress = null
@@ -234,19 +238,23 @@
             pollToolProgress = setInterval(() => {
                 asyncBridge("yt_status", "{}", function(status) {
                     console.log("[CDM-JS] poll status: " + JSON.stringify(status))
+                    var st = (typeof status === "string") ? JSON.parse(status) : status
                     var toolInfo = null
-                    if(toolName === "yt-dlp" && status.yt_dlp) toolInfo = status.yt_dlp
-                    if(toolName === "ffmpeg" && status.ffmpeg) toolInfo = status.ffmpeg
-                    if(!toolInfo) { return }
+                    if(toolName === "yt-dlp" && st.yt_dlp) toolInfo = st.yt_dlp
+                    if(toolName === "ffmpeg" && st.ffmpeg) toolInfo = st.ffmpeg
+                    if(!toolInfo) {
+                        if(window.__reportError) { window.__reportError("yt poll: no toolInfo for " + toolName + " (status was " + (typeof status) + ")") }
+                        return
+                    }
                     if(toolInfo.status === "downloading") {
                         ytInstallProgress = toolInfo.progress || 0
-                        ytTools = status
+                        ytTools = st
                     } else if(toolInfo.status === "installed") {
                         clearInterval(pollToolProgress)
                         pollToolProgress = null
                         ytInstallingTool = ""
                         ytInstallProgress = 0
-                        ytTools = status
+                        ytTools = st
                         showToast(toolName + " installed successfully!", "success")
                         refreshTools()
                     } else if(toolInfo.status === "error") {
@@ -254,7 +262,7 @@
                         pollToolProgress = null
                         ytInstallingTool = ""
                         ytInstallProgress = 0
-                        ytTools = status
+                        ytTools = st
                         showToast("Failed to install " + toolName + ": " + (toolInfo.error || "unknown error"), "error")
                     }
                 })
@@ -979,5 +987,6 @@
                 </div>
             })}
         </div>
+        {<ErrorOverlay />}
     </div>
 }

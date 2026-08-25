@@ -253,6 +253,14 @@ Polls `state` every 1000 ms via `setInterval`. State strings are the human names
 Theme classes all prefixed `cdm-*`; base tokens come from shadcn-style variables
 (`hsl(var(--primary))` etc.) injected by `page.injectDefaultComponentsTheme()`.
 
+Global JS error capture: `<ErrorOverlay />` (from the shared `components` library,
+`lang/libs/components/src/ErrorOverlay.ch`) is mounted at the root. It installs
+`window.onerror` / `error` / `unhandledrejection` handlers on client mount and shows a
+modal with the full message + stack trace and a "Copy report" button, so runtime JS
+errors are visible instead of silently swallowed. It also exposes `window.__reportError(msg,
+stack?)`; bridge consumers that swallow errors (e.g. `refreshTools`/`installTool`) call it so
+a parse/transport failure surfaces in the overlay rather than leaving the UI on a stale state.
+
 ---
 
 ## Testing
