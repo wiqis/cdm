@@ -109,14 +109,6 @@
         refresh()
         refreshSettings()
         refreshTools()
-        // ===== TEMP: verify ErrorOverlay renders (REMOVE AFTER TESTING) =====
-        setTimeout(function() {
-            if(window.__reportError) {
-                window.__reportError("TEMP TEST: ErrorOverlay display check", "at CdmApp (temp trigger)\n  (a real error's stack trace would appear here)")
-            } else {
-                throw new Error("TEMP TEST: ErrorOverlay display check (window.__reportError not installed)")
-            }
-        }, 600)
         var t = setInterval(refresh, 1000)
         var closeCtx = (e) => {
             if(!ctxOpen) return
