@@ -70,7 +70,10 @@ public func CDM_tools_available_reported(env : &mut TestEnv) {
     fs::remove_dir_all_recursive(dir.data())
 }
 
-// 3) Removing the binary flips the report back to not_installed.
+// 3) Removing OUR binary flips availability back to the baseline (which is
+//    "not installed" on a clean machine, but may be "installed" if a system
+//    yt-dlp exists on PATH). The test asserts the flip, not an absolute value,
+//    so it stays valid whether or not the host already has yt-dlp installed.
 @test
 public func CDM_tools_not_installed_reported(env : &mut TestEnv) {
     var dir = tools_temp_dir()
@@ -78,15 +81,27 @@ public func CDM_tools_not_installed_reported(env : &mut TestEnv) {
     if(set_res is std::Result.Err) { env.error("setenv failed"); return }
     fs::create_dir_all(dir.data())
 
+    // Baseline = availability WITHOUT our binary present (only a possible system install).
+    var baseline_avail = cdm::ytdlp_is_available()
+
+    // Place our binary, confirm it makes yt-dlp available.
     var p = cdm::ytdlp_path()
     tools_write_file(p.data())
+    if(!cdm::ytdlp_is_available()) { env.error("ytdlp not available after placing binary"); return }
+
+    // Remove our binary; availability must return to the baseline.
     remove(p.data())
-    if(cdm::ytdlp_is_available()) { env.error("ytdlp still available after removing binary"); return }
+    if(cdm::ytdlp_is_available() != baseline_avail) {
+        env.error("ytdlp availability did not return to baseline after removal")
+        return
+    }
 
     var json = tools_status_json()
-    var want = string::make_no_len("\"name\":\"yt-dlp\",\"status\":\"not_installed\"")
+    var want = string::make_no_len("\"name\":\"yt-dlp\",\"status\":\"")
+    if(baseline_avail) { want.append_view(string_view::make_no_len("installed\"")) }
+    else { want.append_view(string_view::make_no_len("not_installed\"")) }
     if(json.find(string_view::make_view(&want)) == std::NPOS) {
-        env.error("yt-dlp not reported not_installed")
+        env.error("yt-dlp status json does not match baseline availability")
         env.error(json.data())
         return
     }
@@ -236,4 +251,88 @@ public func CDM_tools_install_uses_canonical_name(env : &mut TestEnv) {
     if(!fn.equals(&want)) {
         env.error("tool not queued under canonical name 'yt-dlp'"); return
     }
+}
+
+// 9) A yt-dlp binary located in a $PATH directory that is NOT one of the
+//    hardcoded locations must still be detected as installed. This reproduces
+//    the "I downloaded yt-dlp but the app says not installed" bug where the
+//    tool lived in a custom PATH directory (e.g. a conda env, ~/bin, or
+//    /opt/homebrew/bin) that the old hardcoded check never scanned.
+@test
+public func CDM_tools_detect_via_path(env : &mut TestEnv) {
+    // Isolate from any bundled/system install: empty tools dir + empty PATH,
+    // so the only thing that can flip availability is our PATH directory.
+    var td = tools_temp_dir()
+    if(environment::set(string_view::make_no_len("CDM_TOOLS_DIR"), string_view::make_view(&td)) is std::Result.Err) {
+        env.error("setenv CDM_TOOLS_DIR"); return
+    }
+    if(environment::set(string_view::make_no_len("PATH"), string_view::make_no_len("")) is std::Result.Err) {
+        env.error("setenv PATH"); return
+    }
+    // Baseline with empty PATH + empty tools dir = only hardcoded system dirs.
+    var sys_baseline = cdm::ytdlp_is_available()
+
+    // Place a fake yt-dlp ONLY in a temp dir and expose that dir via $PATH.
+    var pdir = tools_temp_dir()
+    fs::create_dir_all(pdir.data())
+    var fake = pdir.copy()
+    fake.append_view(string_view::make_no_len("/yt-dlp"))
+    tools_write_file(fake.data())
+    if(environment::set(string_view::make_no_len("PATH"), string_view::make_view(&pdir)) is std::Result.Err) {
+        env.error("setenv PATH pdir"); return
+    }
+
+    if(!cdm::ytdlp_is_available()) {
+        env.error("ytdlp not detected via $PATH directory"); return
+    }
+
+    // Removing it must drop availability back to the system baseline.
+    remove(fake.data())
+    if(cdm::ytdlp_is_available() != sys_baseline) {
+        env.error("availability did not return to system baseline after removing PATH binary")
+        return
+    }
+    fs::remove_dir_all_recursive(pdir.data())
+    fs::remove_dir_all_recursive(td.data())
+}
+
+// 10) ytdlp_resolved_path() should return the actual discovered location
+//     (including a $PATH directory) rather than always the bare "yt-dlp", so
+//     the Tools tab shows the real path and execution does not depend on $PATH
+//     at exec time. When no binary is found it falls back to the bare name.
+@test
+public func CDM_tools_resolved_path_uses_discovered(env : &mut TestEnv) {
+    var td = tools_temp_dir()
+    if(environment::set(string_view::make_no_len("CDM_TOOLS_DIR"), string_view::make_view(&td)) is std::Result.Err) {
+        env.error("setenv CDM_TOOLS_DIR"); return
+    }
+    var pdir = tools_temp_dir()
+    fs::create_dir_all(pdir.data())
+    var fake = pdir.copy()
+    fake.append_view(string_view::make_no_len("/yt-dlp"))
+    tools_write_file(fake.data())
+    if(environment::set(string_view::make_no_len("PATH"), string_view::make_view(&pdir)) is std::Result.Err) {
+        env.error("setenv PATH"); return
+    }
+
+    var resolved = cdm::ytdlp_resolved_path()
+    var expected = pdir.copy()
+    expected.append_view(string_view::make_no_len("/yt-dlp"))
+    if(!resolved.equals(&expected)) {
+        env.error("ytdlp_resolved_path did not return the discovered PATH location")
+        env.error(resolved.data())
+        return
+    }
+
+    // Without the binary, fall back to the bare command name.
+    remove(fake.data())
+    var fallback = cdm::ytdlp_resolved_path()
+    var bare = string::make_no_len("yt-dlp")
+    if(!fallback.equals(&bare)) {
+        env.error("ytdlp_resolved_path should fall back to bare name when not found")
+        env.error(fallback.data())
+        return
+    }
+    fs::remove_dir_all_recursive(pdir.data())
+    fs::remove_dir_all_recursive(td.data())
 }

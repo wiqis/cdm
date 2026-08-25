@@ -219,6 +219,14 @@ Before opening the window: load settings → apply to manager → restore queue.
 - Availability checks deliberately avoid `process::execute` (`fork()` in the
   multi-threaded WebKitGTK process can deadlock) — `find_binary` stats fixed paths
   instead. Version queries also skipped in status polling for this reason.
+- **`find_binary` scans `$PATH`** (split on `:` POSIX / `;` Windows) *in addition to* a
+  short hardcoded list (`/usr/bin`, `/usr/local/bin`, `/usr/bin/local`, `~/.local/bin`,
+  `/opt/homebrew/bin` on macOS, `/snap/bin`, `$CDM_TOOLS_DIR`). A tool installed in any
+  `$PATH` directory the hardcoded list misses (conda envs, custom `~/bin`, etc.) must
+  still be detected — this was the "I downloaded yt-dlp but the app says not installed"
+  bug. `find_binary_path(name)` returns the concrete discovered path (or the bare command
+  name as a fallback) and backs `ytdlp_resolved_path()`/`ffmpeg_resolved_path()`, so the
+  Tools tab shows the real location and execution does not depend on `$PATH` at exec time.
 - Info extraction shells out to `yt-dlp --dump-json [--flat-playlist]`; results parsed
   with the json module into YtVideoInfo/YtPlaylistInfo; NDJSON playlists handled too.
 - Downloads shell out to `yt-dlp -f <fmt> -o "<dir>/%(title)s.%(ext)s"`; ffmpeg presence
@@ -259,27 +267,34 @@ Suites:
    segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing),
    http(3; real downloads against a python Range server — see below),
    tools(8; yt-dlp/ffmpeg availability + status-JSON reporting — see below).
-   Plus `cdmlib/tests/*` (unit/feature/integration/behavior). `./run.sh --test` runs the
-   app suite; it currently passes end-to-end (~153 tests).
+    Plus `cdmlib/tests/*` (unit/feature/integration/behavior). `./run.sh --test` runs the
+    app suite; it currently passes end-to-end (~157 tests).
 
-Tool-status reporting tests (`tests/tools_tests.ch`, 8): these verify that the
-"checking whether yt-dlp/ffmpeg is installed" logic reports correctly and never lies:
-- `CDM_tools_dir_respects_env` — `CDM_TOOLS_DIR` (or `HOME`) redirects where the binary is
-  looked up; availability flips when a fake binary is placed/removed at that path.
-- `CDM_tools_available_reported` / `CDM_tools_not_installed_reported` — `check_tools_status_json`
-  emits `status:"installed"` vs `status:"not_installed"` matching reality.
-- `CDM_tools_status_structure` — every tool object has `name` (machine id `yt-dlp`/`ffmpeg`),
-  `status`, `version`, `path` and the top-level object has `yt_dlp`+`ffmpeg`+`both_ready`.
-- `CDM_tools_status_matches_availability` — `yt_dlp.status`/`ffmpeg.status` agree with
-  `ytdlp_is_available()`/`ffmpeg_is_available()`.
-- `CDM_tools_both_ready` — `both_ready` is true only when BOTH tools are available.
-- `CDM_tools_detect_after_install` — a binary already on disk at the canonical path is
-  reported `installed` (regression for "downloaded but app says not installed").
-- `CDM_tools_install_uses_canonical_name` — installing (queueing) the tool targets the
-  canonical name `yt-dlp` even when a stale binary occupied that path (regression for the
-  duplicate-name rename to `yt-dlp (1)`).
-The live "downloading"/"error" progress-reporting path is covered separately by
-`CDM_BR_tool_download_progress` in `bridge_tests.ch` (drives a real redirected install).
+ Tool-status reporting tests (`tests/tools_tests.ch`, 10): these verify that the
+ "checking whether yt-dlp/ffmpeg is installed" logic reports correctly and never lies:
+ - `CDM_tools_dir_respects_env` — `CDM_TOOLS_DIR` (or `HOME`) redirects where the binary is
+   looked up; availability flips when a fake binary is placed/removed at that path.
+ - `CDM_tools_available_reported` / `CDM_tools_not_installed_reported` — `check_tools_status_json`
+   emits `status:"installed"` vs `status:"not_installed"` matching reality. The negative test
+   asserts the flip back to a captured *baseline* (not an absolute `false`), so it stays valid
+   on a host that already has a system yt-dlp/ffmpeg installed.
+ - `CDM_tools_status_structure` — every tool object has `name` (machine id `yt-dlp`/`ffmpeg`),
+   `status`, `version`, `path` and the top-level object has `yt_dlp`+`ffmpeg`+`both_ready`.
+ - `CDM_tools_status_matches_availability` — `yt_dlp.status`/`ffmpeg.status` agree with
+   `ytdlp_is_available()`/`ffmpeg_is_available()`.
+ - `CDM_tools_both_ready` — `both_ready` is true only when BOTH tools are available.
+ - `CDM_tools_detect_after_install` — a binary already on disk at the canonical path is
+   reported `installed` (regression for "downloaded but app says not installed").
+ - `CDM_tools_install_uses_canonical_name` — installing (queueing) the tool targets the
+   canonical name `yt-dlp` even when a stale binary occupied that path (regression for the
+   duplicate-name rename to `yt-dlp (1)`).
+ - `CDM_tools_detect_via_path` — a binary placed ONLY in a `$PATH` directory that is NOT in the
+   hardcoded list must still be detected (regression for the `$PATH`-scanning fix). Isolates by
+   pointing `CDM_TOOLS_DIR` at an empty temp dir and `PATH` at a temp dir holding the fake binary.
+ - `CDM_tools_resolved_path_uses_discovered` — `ytdlp_resolved_path()` returns the discovered
+   `$PATH` location (not just the bare `"yt-dlp"`), and falls back to the bare name when absent.
+ The live "downloading"/"error" progress-reporting path is covered separately by
+ `CDM_BR_tool_download_progress` in `bridge_tests.ch` (drives a real redirected install).
 
 
 Settings tests isolate themselves with `CDM_CONFIG_DIR`.

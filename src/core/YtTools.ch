@@ -159,6 +159,40 @@ using std::vector;
         return fs::exists(p.data())
     }
 
+    // Check each directory in a vector of string_views for `name`.
+    // string_view elements are value types (pointer+length, no heap), so using
+    // .get(i) here is safe (no TCC compound-expression double-free).
+    func find_binary_in_dirs(dirs : &vector<string_view>, name : string_view) : bool {
+        for(var i = 0u; i < dirs.size(); i++) {
+            var d = dirs.get(i)
+            if(d.empty()) { continue }
+            var full = string()
+            full.append_view(&d)
+            full.append('/')
+            full.append_view(&name)
+            if(fs::exists(full.data())) { return true }
+        }
+        return false
+    }
+
+    // Scan the $PATH environment variable for `name`. $PATH is the canonical
+    // source of truth for "where is this installed binary", so scanning it
+    // makes detection robust to installs that land in any PATH directory
+    // (conda envs, /opt/homebrew/bin, custom ~/bin, /snap/bin, …) instead of
+    // only the handful of hardcoded locations.
+    func check_path_env(name : string_view) : bool {
+        var path_opt = std::get_env(string_view::make_no_len("PATH"))
+        if(path_opt is Option.None) { return false }
+        var Some(p) = path_opt else unreachable
+        comptime if(def.windows) {
+            var dirs = p.split(';')
+            return find_binary_in_dirs(&dirs, name)
+        } else {
+            var dirs = p.split(':')
+            return find_binary_in_dirs(&dirs, name)
+        }
+    }
+
     // Check if a binary exists on common system paths.
     // This avoids process::execute() which can deadlock when fork() is called
     // from a multi-threaded process (e.g. WebKitGTK webview).
@@ -179,9 +213,16 @@ using std::vector;
             local_bin.append_view(string_view::make_no_len("/.local/bin/"))
             if(check_path(string_view::make_view(&local_bin), name)) { return true }
         } else {}
+        // Check a couple of well-known macOS/homebrew + snap locations.
+        comptime if(def.macos) {
+            if(check_path(string_view::make_no_len("/opt/homebrew/bin/"), name)) { return true }
+        } else {}
+        if(check_path(string_view::make_no_len("/snap/bin/"), name)) { return true }
         // Check $CDM_TOOLS_DIR
         var tools = tools_dir()
         if(check_path(string_view::make_view(&tools), name)) { return true }
+        // Finally, scan $PATH — the canonical source of truth for installed binaries.
+        if(check_path_env(name)) { return true }
         return false
     }
 
@@ -224,13 +265,95 @@ using std::vector;
         return out
     }
 
-    // Get the resolved path to use for yt-dlp execution.
-    public func ytdlp_resolved_path() : string {
-        var bundled = ytdlp_path()
+    // Find the full path to an installed binary: bundled tools dir first, then
+    // common system directories, then $PATH. Falls back to the bare command name
+    // (e.g. "yt-dlp") when nothing is found, so callers can still rely on the OS
+    // to resolve it at execution time. Returning the concrete path (instead of
+    // always the bare name) makes the Tools tab report the real location and
+    // lets yt-dlp/ffmpeg be executed without depending on $PATH at exec time.
+    func find_binary_path(name : string_view) : string {
+        // Bundled tools dir first.
+        var bundled = tools_dir()
+        bundled.append('/')
+        bundled.append_view(&name)
         if(fs::exists(bundled.data())) {
             return bundled
         }
-        return string::make_no_len("yt-dlp")
+        // Common system directories.
+        if(check_path(string_view::make_no_len("/usr/bin/"), name)) {
+            var p = string::make_no_len("/usr/bin/")
+            p.append_view(&name)
+            return p
+        }
+        if(check_path(string_view::make_no_len("/usr/local/bin/"), name)) {
+            var p = string::make_no_len("/usr/local/bin/")
+            p.append_view(&name)
+            return p
+        }
+        if(check_path(string_view::make_no_len("/usr/bin/local/"), name)) {
+            var p = string::make_no_len("/usr/bin/local/")
+            p.append_view(&name)
+            return p
+        }
+        var home_opt = std::get_env(string_view::make_no_len("HOME"))
+        if(home_opt is Option.Some) {
+            var Some(home) = home_opt else unreachable
+            var lb = home.copy()
+            lb.append_view(string_view::make_no_len("/.local/bin/"))
+            if(check_path(string_view::make_view(&lb), name)) {
+                lb.append_view(&name)
+                return lb
+            }
+        } else {}
+        comptime if(def.macos) {
+            if(check_path(string_view::make_no_len("/opt/homebrew/bin/"), name)) {
+                var p = string::make_no_len("/opt/homebrew/bin/")
+                p.append_view(&name)
+                return p
+            }
+        } else {}
+        if(check_path(string_view::make_no_len("/snap/bin/"), name)) {
+            var p = string::make_no_len("/snap/bin/")
+            p.append_view(&name)
+            return p
+        }
+        // $PATH scan.
+        var path_opt = std::get_env(string_view::make_no_len("PATH"))
+        if(path_opt is Option.Some) {
+            var Some(pp) = path_opt else unreachable
+            comptime if(def.windows) {
+                var dirs = pp.split(';')
+                for(var i = 0u; i < dirs.size(); i++) {
+                    var d = dirs.get(i)
+                    if(d.empty()) { continue }
+                    var full = string()
+                    full.append_view(&d)
+                    full.append('/')
+                    full.append_view(&name)
+                    if(fs::exists(full.data())) { return full }
+                }
+            } else {
+                var dirs = pp.split(':')
+                for(var i = 0u; i < dirs.size(); i++) {
+                    var d = dirs.get(i)
+                    if(d.empty()) { continue }
+                    var full = string()
+                    full.append_view(&d)
+                    full.append('/')
+                    full.append_view(&name)
+                    if(fs::exists(full.data())) { return full }
+                }
+            }
+        } else {}
+        // Fall back to the bare command name.
+        var bare = string()
+        bare.append_view(&name)
+        return bare
+    }
+
+    // Get the resolved path to use for yt-dlp execution.
+    public func ytdlp_resolved_path() : string {
+        return find_binary_path(string_view::make_no_len("yt-dlp"))
     }
 
     // Get the full ToolInfo for yt-dlp.
@@ -507,11 +630,7 @@ using std::vector;
 
     // Get the resolved path for ffmpeg execution.
     public func ffmpeg_resolved_path() : string {
-        var bundled = ffmpeg_path()
-        if(fs::exists(bundled.data())) {
-            return bundled
-        }
-        return string::make_no_len("ffmpeg")
+        return find_binary_path(string_view::make_no_len("ffmpeg"))
     }
 
     // Get the full ToolInfo for ffmpeg.
