@@ -49,6 +49,7 @@ Suite layout today (app `./run.sh --test`): bridge 22, cli 5, format 6, json 6, 
 | queue | `tests/queue_tests.ch` | add_task_ex/priority/change_url/pause/resume/cancel/remove via public API (uses `find_item_for_tests` to poke state) | no |
 | segment | `tests/segment_tests.ch` | compute_segment_count boundaries, build_segments math, category helpers | no |
 | settings | `tests/settings_tests.ch` | config round-trip via `save_settings_to_string`/`parse_settings_string` (in-memory) AND a real disk round-trip via `save_settings`/`load_settings` isolated with `CDM_CONFIG_DIR` | no |
+| http | `tests/http_tests.ch` | REAL downloads against `tests/http_server.py` (python `ThreadingHTTPServer` with Range/206) on loopback — 1 MiB segmented, 50 KiB single-stream, 5 MiB large; byte-verified against the served payload; tears down server (`fuser -k`) + temp dirs | loopback only (needs `python3`, `fuser`) |
 | yt | `tests/yt_tests.ch` | yt-dlp arg building, playlist URL detection, progress-line parsing, JSON field extraction — all offline | no |
 
 Rule of thumb: library logic → cdmlib tests; wire format/UI-facing serialization →
@@ -120,6 +121,11 @@ public func CDM_my_feature(env : &mut TestEnv) {
 - To simulate states directly use `cdm::find_item_for_tests(&mut dm, &id)` →
   `*mut DownloadItem` into the queue.
 - Uninitialized buffers need `unsafe var argv : [4]*char` (cli_tests pattern).
+- **String-temporary dangling-pointer gotcha**: passing `func_returning_string().data()`
+  straight into a callee dangles — the temporary string is destroyed before the callee
+  reads the pointer (saw this as `fopen` getting garbage in `http_tests.ch`). Always store
+  first: `var p = it.local_path(); use(p.data())`. When the dir is deterministic, build the
+  path into a named var instead of relying on snapshot string fields.
 - Names prefix `CDM_` everywhere; keep them descriptive — the runner prints test names.
 
 ## Debugging a failing suite

@@ -256,11 +256,21 @@ Suites:
   Range support (port 3009) in-process; exercises real downloads, segmentation, resume,
   throttling. Downloads go to temp dirs.
  - `tests/*.ch` (app-level) — bridge(22), cli(5), format(6), json(6), proc(1), queue(15),
-   segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing).
+   segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing),
+   http(3; real downloads against a python Range server — see below).
    Plus `cdmlib/tests/*` (unit/feature/integration/behavior). `./run.sh --test` runs the
-   app suite; it currently passes end-to-end (144 app tests).
+   app suite; it currently passes end-to-end (147 app tests).
 
 Settings tests isolate themselves with `CDM_CONFIG_DIR`.
+
+Real-world download verification: `tests/http_tests.ch` spawns `tests/http_server.py`
+(a small `ThreadingHTTPServer` with full `Range`/206 + `Accept-Ranges` support, like a
+real host) on `127.0.0.1`, drives the actual `cdm::DownloadManager` engine against it
+(1 MiB segmented, 50 KiB single-stream, 5 MiB large), and byte-compares the downloaded
+file against the served payload. Each test forks its own server + temp dirs and cleans
+them up (`fuser -k PORT/tcp`, `remove_dir_all_recursive`). Needs `python3` + `fuser` on
+the host. These are the closest thing to an end-to-end "does the app really download?"
+check.
 
 When adding features: unit-testable logic goes in cdmlib with tests there; UI-facing
 serialization in JsonBuild tests; keep integration tests hermetic (loopback only).
