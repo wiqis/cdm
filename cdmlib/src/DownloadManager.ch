@@ -23,6 +23,7 @@ using std::mutex;
         var proxy_port : int
         var enable_resume : bool
         var allow_segments : bool
+        var use_categories : bool
         var save_interval_millis : i64
         var last_save_millis : i64
         var duplicate_action : int
@@ -44,6 +45,7 @@ using std::mutex;
                 proxy_port = 0,
                 enable_resume = true,
                 allow_segments = true,
+                use_categories = true,
                 save_interval_millis = 2000,
                 last_save_millis = 0,
                 duplicate_action = 0,
@@ -233,6 +235,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         var resolved_dir = dm.download_dir.copy()
         if(dir_hint.size() > 0) {
             resolved_dir = string(dir_hint.data(), dir_hint.size())
+        } else {
+            resolved_dir = resolve_destination_dir(dm, string_view::make_view(&suggested))
         }
 
         // Ensure the destination directory exists before queueing.
@@ -241,6 +245,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         var item = DownloadItem(id.copy(), string(url_str.data(), url_str.size()),
                                 resolved_dir.copy(), suggested.copy())
         item.priority = priority
+        item.category = category
 
         // Duplicate policy.
         var dup_dir_copy = resolved_dir.copy()
@@ -257,7 +262,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
 
     // Add a new URL to the queue using defaults.
     public func add_task(dm : &mut DownloadManager, url_str : string_view) : string {
-        return add_task_ex(dm, url_str, string_view(), string_view(), 0)
+        return add_task_ex(dm, url_str, string_view(), string_view(), 0, 0)
     }
 
     // Change a queued/paused item's destination/settings. Returns true when the

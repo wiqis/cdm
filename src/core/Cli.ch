@@ -259,9 +259,9 @@ using std::Option;
             var uv = string_view::make_view(u)
             var id = string()
             if(i == 0u && opts.output_name.size() > 0u) {
-                id = add_task_ex(&mut dm, uv, string_view(), name_view, opts.priority)
+                id = add_task_ex(&mut dm, uv, string_view(), name_view, opts.priority, 0)
             } else {
-                id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority)
+                id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, 0)
             }
             added = added + 1
             if(!opts.quiet) {
@@ -271,7 +271,7 @@ using std::Option;
         for(var i = 0u; i < batch.size(); i++) {
             var u = batch.get_ref(i)
             var uv = string_view::make_view(u)
-            var id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority)
+            var id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, 0)
             added = added + 1
             if(!opts.quiet) {
                 printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())

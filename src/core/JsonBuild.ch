@@ -97,6 +97,8 @@ using std::vector;
         var seg_s = json_int(item.max_segments)
         var speed_lim_s = json_i64(item.speed_limit_kbps)
         var dup_s = json_int(item.duplicate_suffix)
+        var cat_name = format_category(item.category)
+        var cat_s = json_string(string_view::make_view(&cat_name))
 
         var percent = 0.0
         if(item.total_bytes > 0) { percent = (item.downloaded_bytes as double) * 100.0 / (item.total_bytes as double) }
@@ -125,6 +127,7 @@ using std::vector;
         json_kv(&mut out, "max_segments", &seg_s, &mut first)
         json_kv(&mut out, "speed_limit_kbps", &speed_lim_s, &mut first)
         json_kv(&mut out, "duplicate_suffix", &dup_s, &mut first)
+        json_kv(&mut out, "category", &cat_s, &mut first)
         json_kv(&mut out, "percent", &percent_s, &mut first)
         json_kv(&mut out, "eta", &eta_s, &mut first)
         var retry_s = json_int(item.retry_count)

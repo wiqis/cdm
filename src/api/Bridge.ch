@@ -241,7 +241,7 @@ using std::Result;
             }
             var dirv = string_view::make_view(&resolved_dir)
             var fnamev = string_view::make_view(&fname)
-            var id = add_task_ex(&mut *dm, string_view::make_view(&url), dirv, fnamev, prio)
+            var id = add_task_ex(&mut *dm, string_view::make_view(&url), dirv, fnamev, prio, 0)
             if(id.size() == 0u) {
                 var msg = string::make_no_len("duplicate download skipped")
                 return err_json(&msg)
@@ -319,7 +319,7 @@ using std::Result;
             var sl = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), 0)
             var dirv = string_view::make_view(&dir)
             var fnamev = string_view::make_view(&fname)
-            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, sl as i64)
+            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, sl as i64, 0)
             if(!ok) {
                 var msg = string::make_no_len("cannot edit running item")
                 return err_json(&msg)

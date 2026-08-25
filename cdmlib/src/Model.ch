@@ -28,6 +28,7 @@ using std::string_view;
         var speed_limit_kbps : i64    // 0 = no per-item limit
         var retry_count : int
         var duplicate_suffix : int    // 0 = original name; 1,2,.. = "name (N).ext"
+        var category : int            // opaque category tag (0 = none)
         var segments_json : string    // pre-serialized JSON array of segment states
         var was_interrupted : bool    // true if download was active when app closed
 
@@ -52,6 +53,7 @@ using std::string_view;
                 speed_limit_kbps = 0,
                 retry_count = 0,
                 duplicate_suffix = 0,
+                category = 0,
                 segments_json = string(),
                 was_interrupted = false
             }
