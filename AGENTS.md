@@ -225,8 +225,18 @@ Before opening the window: load settings → apply to manager → restore queue.
   `$PATH` directory the hardcoded list misses (conda envs, custom `~/bin`, etc.) must
   still be detected — this was the "I downloaded yt-dlp but the app says not installed"
   bug. `find_binary_path(name)` returns the concrete discovered path (or the bare command
-  name as a fallback) and backs `ytdlp_resolved_path()`/`ffmpeg_resolved_path()`, so the
-  Tools tab shows the real location and execution does not depend on `$PATH` at exec time.
+   name as a fallback) and backs `ytdlp_resolved_path()`/`ffmpeg_resolved_path()`, so the
+   Tools tab shows the real location and execution does not depend on `$PATH` at exec time.
+- **`yt-dlp` is a Python script, not an ELF binary** — `file`/`head` showing `#!/usr/bin/env
+   python3` + a Zip payload is normal. Availability only checks that the canonical file exists
+   in `$CDM_TOOLS_DIR` (or `$PATH`); it does NOT require the file to be an ELF/binary. Never
+   "fix" this by requiring a binary magic header — that would break the legit yt-dlp download.
+- **Install hardening** (`src/core/YtTools.ch`): `clear_stale_tool_duplicates(base_name)`
+   removes leftover `name (N)` / `name (N).part` artifacts (older installs left a stray
+   `yt-dlp (1)` directly next to the real `yt-dlp`, which is harmless but confusing). After
+   clearing the existing canonical file, `ensure_tool_executable(path)` runs
+   `fs::set_permissions(path, 0o755)` on Unix so a downloaded tool is always runnable, and the
+   status poll does the same for bundled paths that exist.
 - Info extraction shells out to `yt-dlp --dump-json [--flat-playlist]`; results parsed
   with the json module into YtVideoInfo/YtPlaylistInfo; NDJSON playlists handled too.
 - Downloads shell out to `yt-dlp -f <fmt> -o "<dir>/%(title)s.%(ext)s"`; ffmpeg presence
@@ -266,9 +276,10 @@ Suites:
  - `tests/*.ch` (app-level) — bridge(22), cli(5), format(6), json(6), proc(1), queue(15),
    segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing),
    http(3; real downloads against a python Range server — see below),
-   tools(8; yt-dlp/ffmpeg availability + status-JSON reporting — see below).
-    Plus `cdmlib/tests/*` (unit/feature/integration/behavior). `./run.sh --test` runs the
-    app suite; it currently passes end-to-end (~157 tests).
+    tools(11; yt-dlp/ffmpeg availability + status-JSON reporting, PATH scanning, stale-duplicate
+    cleanup — see below).
+     Plus `cdmlib/tests/*` (unit/feature/integration/behavior). `./run.sh --test` runs the
+     app suite; it currently passes end-to-end (~158 tests).
 
  Tool-status reporting tests (`tests/tools_tests.ch`, 10): these verify that the
  "checking whether yt-dlp/ffmpeg is installed" logic reports correctly and never lies:

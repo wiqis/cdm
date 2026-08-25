@@ -382,6 +382,42 @@ using std::vector;
         return g_tool_dl_status == 1 || g_tool_dl_status == 2
     }
 
+    // Remove any stale "name (N)" duplicate artifacts left by installs that ran
+    // before the canonical-name (overwrite) policy was in place. The tools dir
+    // only ever holds our two tool binaries, so removing "yt-dlp (1)" /
+    // "ffmpeg (2)" etc. is safe and prevents a confusing leftover sitting next
+    // to the canonical file.
+    func clear_stale_tool_duplicates(base_name : string_view) {
+        var n = 1
+        while(n < 100) {
+            var cand = string()
+            cand.append_view(&base_name)
+            cand.append_view(string_view::make_no_len(" ("))
+            var ns = string()
+            ns.append_integer(n as bigint)
+            cand.append_string(&ns)
+            cand.append(')')
+            var with_part = cand.copy()
+            with_part.append_view(string_view::make_no_len(".part"))
+            if(!fs::exists(cand.data()) && !fs::exists(with_part.data())) { break }
+            remove(cand.data())
+            remove(with_part.data())
+            n = n + 1
+        }
+    }
+
+    // Ensure a tool binary at the given path is executable (Unix). A file placed
+    // in the tools dir without the +x bit (e.g. a manually downloaded yt-dlp
+    // script) would be detected as "present" but fail to run; chmod'ing it here
+    // keeps it usable. Idempotent and fork-free (no deadlock risk).
+    func ensure_tool_executable(path : string_view) {
+        comptime if(!def.windows) {
+            if(fs::exists(path.data())) {
+                fs::set_permissions(path.data(), 0o755)
+            }
+        }
+    }
+
     // Store a task ID string into the fixed-size global buffer.
     func store_task_id(id : &string) {
         var len = id.size()
@@ -442,6 +478,7 @@ using std::vector;
         canon_path.append('/')
         canon_path.append_view(&fname)
         clear_existing_tool_file(string_view::make_view(&canon_path))
+        clear_stale_tool_duplicates(string_view::make_view(&canon_path))
         // Force the canonical name: overwrite any existing file instead of
         // letting the duplicate-name policy rename the completed binary.
         var prev_da = dm.duplicate_action
@@ -480,6 +517,7 @@ using std::vector;
         canon_path.append('/')
         canon_path.append_view(&fname)
         clear_existing_tool_file(string_view::make_view(&canon_path))
+        clear_stale_tool_duplicates(string_view::make_view(&canon_path))
         // Force the canonical name: overwrite any existing file instead of
         // letting the duplicate-name policy rename the completed binary.
         var prev_da = dm.duplicate_action
@@ -754,6 +792,12 @@ using std::vector;
     // Polls the DownloadManager snapshot for active tool downloads,
     // reports progress, and cleans up completed downloads.
     public func check_tools_status_json(dm : &mut DownloadManager) : string {
+        // A tool binary already on disk (e.g. placed manually or by a prior
+        // install) may lack the executable bit, in which case it is "present"
+        // but cannot actually run. Ensure the bundled binaries are executable
+        // so availability reflects what the app can really use.
+        ensure_tool_executable(string_view::make_view(&ytdlp_path()))
+        ensure_tool_executable(string_view::make_view(&ffmpeg_path()))
         var yt_avail = ytdlp_is_available()
         var ff_avail = ffmpeg_is_available()
         var yt_ver = string()

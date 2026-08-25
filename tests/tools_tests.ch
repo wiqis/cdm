@@ -336,3 +336,33 @@ public func CDM_tools_resolved_path_uses_discovered(env : &mut TestEnv) {
     fs::remove_dir_all_recursive(pdir.data())
     fs::remove_dir_all_recursive(td.data())
 }
+
+// 11) Installing (or checking) a tool cleans up stale "name (N)" duplicates
+//     left by older installs, so only the canonical binary remains. Regression
+//     for a confusing leftover `yt-dlp (1)` sitting next to the real binary.
+@test
+public func CDM_tools_stale_duplicate_cleaned(env : &mut TestEnv) {
+    var tools = tools_temp_dir()
+    if(environment::set(string_view::make_no_len("CDM_TOOLS_DIR"), string_view::make_view(&tools)) is std::Result.Err) {
+        env.error("setenv CDM_TOOLS_DIR"); return
+    }
+    fs::create_dir_all(tools.data())
+    // Stale duplicate artifact from an older install.
+    var stale = tools.copy()
+    stale.append_view(string_view::make_no_len("/yt-dlp (1)"))
+    if(!br_write_pattern(stale.data(), 1024)) { env.error("stale write"); return }
+    // A canonical file so the dir looks real.
+    var canon = tools.copy()
+    canon.append_view(string_view::make_no_len("/yt-dlp"))
+    tools_write_file(canon.data())
+
+    var dm = cdm::DownloadManager()
+    var inst_err = cdm::ytdlp_download_async(&mut dm)
+    if(!inst_err.empty()) { env.error("ytdlp_download_async: "); env.error(inst_err.data()); return }
+
+    if(fs::exists(stale.data())) {
+        env.error("stale 'yt-dlp (1)' was not cleaned up")
+        return
+    }
+    fs::remove_dir_all_recursive(tools.data())
+}
