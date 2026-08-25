@@ -107,6 +107,7 @@
     useEffect(() => {
         refresh()
         refreshSettings()
+        refreshTools()
         var t = setInterval(refresh, 1000)
         var closeCtx = (e) => {
             if(!ctxOpen) return
@@ -183,14 +184,29 @@
         setTimeout(() => { toastVisible = false }, 4000)
     }
 
+    var toolsFallback = () => ({
+        yt_dlp: { name: "yt-dlp", status: "not_installed", version: "", path: "", error: "", progress: 0 },
+        ffmpeg: { name: "ffmpeg", status: "not_installed", version: "", path: "", error: "", progress: 0 },
+        both_ready: false
+    })
+
+    // Fetch yt-dlp/ffmpeg install status. The Tools tab must NEVER stay stuck on
+    // "checking...": if the bridge call throws synchronously (bridge not ready) or
+    // its promise never resolves, we keep a safe fallback instead of leaving
+    // `ytTools` null. The real status replaces the fallback as soon as the bridge
+    // responds.
     var refreshTools = () => {
-        asyncBridge("yt_status", "{}", function(r) {
-            if(r) {
-                ytTools = r
-            } else {
-                ytTools = { yt_dlp: { name: "yt-dlp", status: "not_installed", version: "", path: "", error: "", progress: 0 }, ffmpeg: { name: "ffmpeg", status: "not_installed", version: "", path: "", error: "", progress: 0 }, both_ready: false }
-            }
-        })
+        if(!ytTools) { ytTools = toolsFallback() }
+        try {
+            window.webview_bridge.call("yt_status", "{}")
+                .then(function(res) {
+                    try {
+                        var r = JSON.parse(res)
+                        if(r && r.yt_dlp) { ytTools = r }
+                    } catch (e) { }
+                })
+                .catch(function() { })
+        } catch (e) { }
     }
 
     var pollToolProgress = null

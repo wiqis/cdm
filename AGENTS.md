@@ -257,9 +257,25 @@ Suites:
   throttling. Downloads go to temp dirs.
  - `tests/*.ch` (app-level) — bridge(22), cli(5), format(6), json(6), proc(1), queue(15),
    segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing),
-   http(3; real downloads against a python Range server — see below).
+   http(3; real downloads against a python Range server — see below),
+   tools(6; yt-dlp/ffmpeg availability + status-JSON reporting — see below).
    Plus `cdmlib/tests/*` (unit/feature/integration/behavior). `./run.sh --test` runs the
-   app suite; it currently passes end-to-end (147 app tests).
+   app suite; it currently passes end-to-end (~153 tests).
+
+Tool-status reporting tests (`tests/tools_tests.ch`): these verify that the
+"checking whether yt-dlp/ffmpeg is installed" logic reports correctly and never lies:
+- `CDM_tools_dir_respects_env` — `CDM_TOOLS_DIR` (or `HOME`) redirects where the binary is
+  looked up; availability flips when a fake binary is placed/removed at that path.
+- `CDM_tools_available_reported` / `CDM_tools_not_installed_reported` — `check_tools_status_json`
+  emits `status:"installed"` vs `status:"not_installed"` matching reality.
+- `CDM_tools_status_structure` — every tool object has `name` (machine id `yt-dlp`/`ffmpeg`),
+  `status`, `version`, `path` and the top-level object has `yt_dlp`+`ffmpeg`+`both_ready`.
+- `CDM_tools_status_matches_availability` — `yt_dlp.status`/`ffmpeg.status` agree with
+  `ytdlp_is_available()`/`ffmpeg_is_available()`.
+- `CDM_tools_both_ready` — `both_ready` is true only when BOTH tools are available.
+The live "downloading"/"error" progress-reporting path is covered separately by
+`CDM_BR_tool_download_progress` in `bridge_tests.ch` (drives a real redirected install).
+
 
 Settings tests isolate themselves with `CDM_CONFIG_DIR`.
 
@@ -316,6 +332,11 @@ Project-specific ones:
 - Returning struct-by-value with string members can trigger TCC compound-expression
   double-free — hence `check_tools_status_json` builds JSON directly instead of returning
   `ToolInfo` (documented inline in YtTools.ch).
+- The Tools tab's "checking..." status (`ytTools` signal in `CdmApp.ch`) must never stay
+  stuck: `refreshTools()` now (a) seeds a safe fallback immediately so a thrown/slow bridge
+  call can't leave `ytTools` null, and (b) is invoked on mount (alongside `refresh`/
+  `refreshSettings`). `asyncBridge`'s `.catch` swallows bridge errors, so any caller that
+  must surface data should set its own fallback (as `refreshTools` does).
 - Uninitialized locals need `unsafe var x : T` (e.g. stream buffers, argv arrays).
 - Strings: no `+`; use `append_view/append_string(&s)/append(char)`. Never append a moved
   string; copy explicitly with `.copy()` when both sides stay alive.
