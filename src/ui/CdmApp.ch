@@ -195,17 +195,22 @@
     // its promise never resolves, we keep a safe fallback instead of leaving
     // `ytTools` null. The real status replaces the fallback as soon as the bridge
     // responds.
+    //
+    // NOTE: the webview framework already parses the native JSON string into a JS
+    // object before resolving the promise (every other `asyncBridge` consumer here
+    // reads `d.items`/`d.x` directly, not a string). So do NOT `JSON.parse` the
+    // result here — parsing an already-parsed object throws and the silent catch
+    // would leave `ytTools` stuck on the "not_installed" fallback forever. Only
+    // parse if we somehow get a raw string.
     var refreshTools = () => {
         if(!ytTools) { ytTools = toolsFallback() }
         try {
-            window.webview_bridge.call("yt_status", "{}")
-                .then(function(res) {
-                    try {
-                        var r = JSON.parse(res)
-                        if(r && r.yt_dlp) { ytTools = r }
-                    } catch (e) { }
-                })
-                .catch(function() { })
+            asyncBridge("yt_status", "{}", function(res) {
+                try {
+                    var r = (typeof res === "string") ? JSON.parse(res) : res
+                    if(r && r.yt_dlp) { ytTools = r }
+                } catch (e) { }
+            })
         } catch (e) { }
     }
 

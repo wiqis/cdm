@@ -33,10 +33,16 @@ webview::webview_bind(&raw mut wv, (|dmp|(method, args) => {
 
 JS side:
 ```js
-window.webview_bridge.call(method, argsJson).then(function(jsonResultString) { ... })
+window.webview_bridge.call(method, argsJson).then(function(result) { ... })
 ```
 
-Native side `bridge_call(dm : *mut DownloadManager, method : string_view, args : string_view) : string`.
+**The framework resolves the promise with an ALREADY-PARSED JS object** (not a JSON
+string) — every consumer reads `d.items` / `d.x` directly. Do NOT `JSON.parse()` the
+result (parsing an object throws `SyntaxError` and a silent `catch` leaves the UI on a
+stale fallback). If you must be defensive: `var r = (typeof result === "string") ? JSON.parse(result) : result;`.
+
+Native side `bridge_call(dm : *mut DownloadManager, method : string_view, args : string_view) : string`
+(the native handler returns a JSON *string*; the framework parses it before resolving).
 
 **Args-wrapping gotcha**: the injected bridge JS wraps bodies as `{id, method, params:[body]}`,
 so `args` may be `"[{\"url\":...}]"`. ALWAYS extract fields through the helpers

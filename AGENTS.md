@@ -368,6 +368,14 @@ Project-specific ones:
   call can't leave `ytTools` null, and (b) is invoked on mount (alongside `refresh`/
   `refreshSettings`). `asyncBridge`'s `.catch` swallows bridge errors, so any caller that
   must surface data should set its own fallback (as `refreshTools` does).
+- **Bridge results are ALREADY parsed objects, not strings.** The webview framework
+  resolves `window.webview_bridge.call(...)` with a JS object (every `asyncBridge` consumer
+  reads `d.items`/`d.x` directly). Do NOT `JSON.parse()` a bridge result — parsing an
+  already-parsed object throws `SyntaxError`, and a silent `catch` leaves the UI stuck on a
+  stale fallback. This was the real "yt-dlp/ffmpeg show Not Installed even though they ARE
+  installed" bug: only `refreshTools` re-parsed `res` while the native side returned correct
+  `installed` status. Guard with `typeof res === "string" ? JSON.parse(res) : res` if unsure.
+  (The `cdm_bridge_ui` skill's `jsonResultString` naming is misleading — treat it as an object.)
 - Uninitialized locals need `unsafe var x : T` (e.g. stream buffers, argv arrays).
 - Strings: no `+`; use `append_view/append_string(&s)/append(char)`. Never append a moved
   string; copy explicitly with `.copy()` when both sides stay alive.
