@@ -48,6 +48,7 @@
     // Tool setup state
     state ytToolsOpen = false
     state ytTools = null           // {yt_dlp: {...}, ffmpeg: {...}}
+    state ytToolsRaw = ""          // raw yt_status JSON for diagnostics (copy/paste)
     state ytInstallingTool = ""
     state ytInstallProgress = 0
     // Toast state
@@ -108,6 +109,14 @@
         refresh()
         refreshSettings()
         refreshTools()
+        // ===== TEMP: verify ErrorOverlay renders (REMOVE AFTER TESTING) =====
+        setTimeout(function() {
+            if(window.__reportError) {
+                window.__reportError("TEMP TEST: ErrorOverlay display check", "at CdmApp (temp trigger)\n  (a real error's stack trace would appear here)")
+            } else {
+                throw new Error("TEMP TEST: ErrorOverlay display check (window.__reportError not installed)")
+            }
+        }, 600)
         var t = setInterval(refresh, 1000)
         var closeCtx = (e) => {
             if(!ctxOpen) return
@@ -184,6 +193,28 @@
         setTimeout(() => { toastVisible = false }, 4000)
     }
 
+    // Clipboard helper: navigator.clipboard often silently fails inside a WebKit
+    // webview (no secure context / focus / permission), so fall back to the
+    // legacy execCommand("copy") path which works synchronously here.
+    var copyText = (txt) => {
+        try {
+            if(navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(txt)
+                return
+            }
+        } catch (e) { }
+        try {
+            var ta = document.createElement("textarea")
+            ta.value = txt
+            ta.style.position = "fixed"
+            ta.style.opacity = "0"
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand("copy")
+            document.body.removeChild(ta)
+        } catch (e) { }
+    }
+
     var toolsFallback = () => ({
         yt_dlp: { name: "yt-dlp", status: "not_installed", version: "", path: "", error: "", progress: 0 },
         ffmpeg: { name: "ffmpeg", status: "not_installed", version: "", path: "", error: "", progress: 0 },
@@ -205,15 +236,24 @@
     var refreshTools = () => {
         if(!ytTools) { ytTools = toolsFallback() }
         try {
-            asyncBridge("yt_status", "{}", function(res) {
-                try {
-                    var r = (typeof res === "string") ? JSON.parse(res) : res
-                    if(r && r.yt_dlp) { ytTools = r }
-                } catch (e) {
-                    if(window.__reportError) { window.__reportError("yt_status parse failed: " + (e && e.message ? e.message : e), (e && e.stack) ? e.stack : "") }
-                }
-            })
+            window.webview_bridge.call("yt_status", "{}")
+                .then(function(res) {
+                    try {
+                        var r = (typeof res === "string") ? JSON.parse(res) : res
+                        ytToolsRaw = (typeof res === "string") ? res : JSON.stringify(res)
+                        if(r && r.yt_dlp) { ytTools = r }
+                    } catch (e) {
+                        ytToolsRaw = "[refreshTools parse error] " + (e && e.message ? e.message : e)
+                        if(window.__reportError) { window.__reportError("yt_status parse failed: " + (e && e.message ? e.message : e), (e && e.stack) ? e.stack : "") }
+                    }
+                })
+                .catch(function(err) {
+                    var msg = "[yt_status BRIDGE REJECTED] " + (err && err.message ? err.message : ("" + err))
+                    ytToolsRaw = msg
+                    if(window.__reportError) { window.__reportError(msg, (err && err.stack) ? err.stack : "") }
+                })
         } catch (e) {
+            ytToolsRaw = "[yt_status call threw] " + (e && e.message ? e.message : e)
             if(window.__reportError) { window.__reportError("yt_status call failed: " + (e && e.message ? e.message : e), (e && e.stack) ? e.stack : "") }
         }
     }
@@ -785,7 +825,7 @@
                             <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.yt_dlp && ytTools.yt_dlp.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
                             <div style="flex:1;">
                                 <div class="cdm-yt-tool-name">yt-dlp</div>
-                                <div class="cdm-yt-tool-ver">{ytTools && ytTools.yt_dlp ? (ytTools.yt_dlp.version || ytTools.yt_dlp.status || "not installed") : "checking..."}</div>
+                                <div class="cdm-yt-tool-ver">{ytTools && ytTools.yt_dlp ? ((ytTools.yt_dlp.version || ytTools.yt_dlp.status || "not installed") + (ytTools.yt_dlp.path ? (" @ " + ytTools.yt_dlp.path) : "")) : "checking..."}</div>
                                 {ytInstallingTool === "yt-dlp" ? (
                                     <div style="margin-top:6px;">
                                         <div class="cdm-progress" style="height:6px;">
@@ -812,7 +852,7 @@
                             <div class={"cdm-yt-tool-dot " + (ytTools && ytTools.ffmpeg && ytTools.ffmpeg.status === "installed" ? "cdm-yt-tool-dot-ok" : "cdm-yt-tool-dot-miss")}></div>
                             <div style="flex:1;">
                                 <div class="cdm-yt-tool-name">ffmpeg</div>
-                                <div class="cdm-yt-tool-ver">{ytTools && ytTools.ffmpeg ? (ytTools.ffmpeg.version || ytTools.ffmpeg.status || "not installed") : "checking..."}</div>
+                                <div class="cdm-yt-tool-ver">{ytTools && ytTools.ffmpeg ? ((ytTools.ffmpeg.version || ytTools.ffmpeg.status || "not installed") + (ytTools.ffmpeg.path ? (" @ " + ytTools.ffmpeg.path) : "")) : "checking..."}</div>
                                 {ytInstallingTool === "ffmpeg" ? (
                                     <div style={{ marginTop: "6px" }}>
                                         <div class="cdm-progress" style={{ height: "6px" }}>

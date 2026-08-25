@@ -889,53 +889,83 @@ using std::vector;
             ff_avail = ffmpeg_is_available()
         }
 
-        // Build yt_dlp entry
-        var yt_json = string::make_no_len("{\"name\":\"yt-dlp\",\"status\":\"")
+        // Build yt_dlp entry. Every string field is emitted via json_string()
+        // (which wraps the value in quotes); do NOT add extra quotes around it.
+        var yt_status_str = string_view::make_no_len("not_installed")
         if(dl_is_yt && (dl_active || dl_done || dl_err)) {
-            if(dl_active) { yt_json.append_view(string_view::make_no_len("downloading")) }
-            else if(dl_done) { yt_json.append_view(string_view::make_no_len("installed")) }
-            else { yt_json.append_view(string_view::make_no_len("error")) }
-        } else if(yt_avail) { yt_json.append_view(string_view::make_no_len("installed")) }
-        else { yt_json.append_view(string_view::make_no_len("not_installed")) }
-        yt_json.append_view(string_view::make_no_len("\",\"version\":\""))
-        yt_json.append_string(&json_string(string_view::make_view(&yt_ver)))
-        yt_json.append_view(string_view::make_no_len("\",\"path\":\""))
-        yt_json.append_string(&json_string(string_view::make_view(&yt_p)))
-        yt_json.append_view(string_view::make_no_len("\",\"error\":\""))
-        if(dl_is_yt && dl_err) {
-            yt_json.append_string(&json_string(string_view::make_view(&dl_error_msg)))
-        }
-        yt_json.append_view(string_view::make_no_len("\",\"progress\":"))
+            if(dl_active) { yt_status_str = string_view::make_no_len("downloading") }
+            else if(dl_done) { yt_status_str = string_view::make_no_len("installed") }
+            else { yt_status_str = string_view::make_no_len("error") }
+        } else if(yt_avail) { yt_status_str = string_view::make_no_len("installed") }
+
         var pstr_yt = string()
         if(dl_is_yt && (dl_active || dl_done)) { pstr_yt.append_double(g_tool_dl_progress * 100.0, 1) }
         else { pstr_yt.append_double(0.0, 1) }
-        yt_json.append_string(&pstr_yt)
-        yt_json.append_view(string_view::make_no_len(",\"speed\":\"\"}"))
 
-        // Build ffmpeg entry
-        var ff_json = string::make_no_len("{\"name\":\"ffmpeg\",\"status\":\"")
+        var yt_json = string()
+        yt_json.append('{')
+        yt_json.append_view(string_view::make_no_len("\"name\":"))
+        yt_json.append_string(&json_string(string_view::make_no_len("yt-dlp")))
+        yt_json.append(',')
+        yt_json.append_view(string_view::make_no_len("\"status\":"))
+        yt_json.append_string(&json_string(yt_status_str))
+        yt_json.append(',')
+        yt_json.append_view(string_view::make_no_len("\"version\":"))
+        yt_json.append_string(&json_string(string_view::make_view(&yt_ver)))
+        yt_json.append(',')
+        yt_json.append_view(string_view::make_no_len("\"path\":"))
+        yt_json.append_string(&json_string(string_view::make_view(&yt_p)))
+        yt_json.append(',')
+        yt_json.append_view(string_view::make_no_len("\"error\":"))
+        if(dl_is_yt && dl_err) { yt_json.append_string(&json_string(string_view::make_view(&dl_error_msg))) }
+        else { yt_json.append_string(&json_string(string_view::make_no_len(""))) }
+        yt_json.append(',')
+        yt_json.append_view(string_view::make_no_len("\"progress\":"))
+        yt_json.append_string(&pstr_yt)
+        yt_json.append(',')
+        yt_json.append_view(string_view::make_no_len("\"speed\":"))
+        yt_json.append_string(&json_string(string_view::make_no_len("")))
+        yt_json.append('}')
+
+        // Build ffmpeg entry.
+        var ff_status_str = string_view::make_no_len("not_installed")
         if(dl_is_ff && (dl_active || dl_done || dl_err)) {
-            if(dl_active) { ff_json.append_view(string_view::make_no_len("downloading")) }
-            else if(dl_done) { ff_json.append_view(string_view::make_no_len("installed")) }
-            else { ff_json.append_view(string_view::make_no_len("error")) }
-        } else if(ff_avail) { ff_json.append_view(string_view::make_no_len("installed")) }
-        else { ff_json.append_view(string_view::make_no_len("not_installed")) }
-        ff_json.append_view(string_view::make_no_len("\",\"version\":\""))
-        ff_json.append_string(&json_string(string_view::make_view(&ff_ver)))
-        ff_json.append_view(string_view::make_no_len("\",\"path\":\""))
-        ff_json.append_string(&json_string(string_view::make_view(&ff_p)))
-        ff_json.append_view(string_view::make_no_len("\",\"error\":\""))
-        if(dl_is_ff && dl_err) {
-            ff_json.append_string(&json_string(string_view::make_view(&dl_error_msg)))
-        }
-        ff_json.append_view(string_view::make_no_len("\",\"progress\":"))
+            if(dl_active) { ff_status_str = string_view::make_no_len("downloading") }
+            else if(dl_done) { ff_status_str = string_view::make_no_len("installed") }
+            else { ff_status_str = string_view::make_no_len("error") }
+        } else if(ff_avail) { ff_status_str = string_view::make_no_len("installed") }
+
         var pstr_ff = string()
         if(dl_is_ff && (dl_active || dl_done)) { pstr_ff.append_double(g_tool_dl_progress * 100.0, 1) }
         else { pstr_ff.append_double(0.0, 1) }
-        ff_json.append_string(&pstr_ff)
-        ff_json.append_view(string_view::make_no_len(",\"speed\":\"\"}"))
 
-        var out = string::make_no_len("{\"yt_dlp\":")
+        var ff_json = string()
+        ff_json.append('{')
+        ff_json.append_view(string_view::make_no_len("\"name\":"))
+        ff_json.append_string(&json_string(string_view::make_no_len("ffmpeg")))
+        ff_json.append(',')
+        ff_json.append_view(string_view::make_no_len("\"status\":"))
+        ff_json.append_string(&json_string(ff_status_str))
+        ff_json.append(',')
+        ff_json.append_view(string_view::make_no_len("\"version\":"))
+        ff_json.append_string(&json_string(string_view::make_view(&ff_ver)))
+        ff_json.append(',')
+        ff_json.append_view(string_view::make_no_len("\"path\":"))
+        ff_json.append_string(&json_string(string_view::make_view(&ff_p)))
+        ff_json.append(',')
+        ff_json.append_view(string_view::make_no_len("\"error\":"))
+        if(dl_is_ff && dl_err) { ff_json.append_string(&json_string(string_view::make_view(&dl_error_msg))) }
+        else { ff_json.append_string(&json_string(string_view::make_no_len(""))) }
+        ff_json.append(',')
+        ff_json.append_view(string_view::make_no_len("\"progress\":"))
+        ff_json.append_string(&pstr_ff)
+        ff_json.append(',')
+        ff_json.append_view(string_view::make_no_len("\"speed\":"))
+        ff_json.append_string(&json_string(string_view::make_no_len("")))
+        ff_json.append('}')
+
+        var out = string()
+        out.append_view(string_view::make_no_len("{\"yt_dlp\":"))
         out.append_string(&yt_json)
         out.append_view(string_view::make_no_len(",\"ffmpeg\":"))
         out.append_string(&ff_json)

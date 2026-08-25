@@ -366,3 +366,44 @@ public func CDM_tools_stale_duplicate_cleaned(env : &mut TestEnv) {
     }
     fs::remove_dir_all_recursive(tools.data())
 }
+
+// 12) check_tools_status_json() MUST emit VALID JSON. A prior bug double-wrapped
+//     string values (json_string already adds quotes, but the builder also added
+//     a leading quote), producing ""yt-dlp"" — invalid JSON that the webview
+//     bridge failed to parse, leaving the Tools tab stuck on "Not Installed".
+@test
+public func CDM_tools_status_json_parseable(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    var json_str = cdm::check_tools_status_json(&mut dm)
+
+    var parser = JsonParser(256, 4096)
+    var ph = ASTJsonHandler.make()
+    var res = parser.parse(json_str.data(), json_str.size(), &mut ph)
+    if(!res.ok) {
+        env.error("check_tools_status_json produced INVALID JSON")
+        env.error(res.msg)
+        return
+    }
+    if(ph.root is JsonValue.Null) {
+        env.error("check_tools_status_json parsed to a null root")
+        return
+    }
+    if(ph.root is JsonValue.Object) {
+        var Object(m) = ph.root else unreachable
+        if(m.get_ptr(string("yt_dlp")) == null) { env.error("status JSON missing yt_dlp"); return }
+        if(m.get_ptr(string("ffmpeg")) == null) { env.error("status JSON missing ffmpeg"); return }
+        if(m.get_ptr(string("both_ready")) == null) { env.error("status JSON missing both_ready"); return }
+        var ytp = m.get_ptr(string("yt_dlp"))
+        if(ytp != null && ytp is JsonValue.Object) {
+            var Object(ym) = *ytp else unreachable
+            if(ym.get_ptr(string("status")) == null) { env.error("yt_dlp missing status"); return }
+            if(ym.get_ptr(string("name")) == null) { env.error("yt_dlp missing name"); return }
+        } else {
+            env.error("yt_dlp is not an object")
+            return
+        }
+    } else {
+        env.error("status JSON root is not an object")
+        return
+    }
+}

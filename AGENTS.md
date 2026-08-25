@@ -376,13 +376,21 @@ Project-specific ones:
   call can't leave `ytTools` null, and (b) is invoked on mount (alongside `refresh`/
   `refreshSettings`). `asyncBridge`'s `.catch` swallows bridge errors, so any caller that
   must surface data should set its own fallback (as `refreshTools` does).
+- **Manual JSON building: wrap every string value with `json_string()` EXACTLY ONCE.**
+  `json_string()` (in `JsonBuild.ch`) already adds the surrounding quotes, so the field
+  prefix must be `"\"key\":"` (NO trailing `\"`) and you append `json_string(value)`
+  directly. Adding a manual leading/trailing `"` too produced `""yt-dlp""` — **invalid
+  JSON** — which the webview framework's `JSON.parse(result)` then rejected with
+  "Failed to parse binding result as JSON". That rejection was the real
+  "yt-dlp/ffmpeg show Not Installed even though they ARE installed" bug: `check_tools_status_json`
+  returned unparseable JSON, so the bridge promise rejected and the Tools tab stayed on the
+  stale fallback. Use the `json_kv`/`json_kv_raw` helpers (which wrap with `json_string`)
+  instead of hand-concatenating quotes. Regression test: `CDM_tools_status_json_parseable`.
 - **Bridge results are ALREADY parsed objects, not strings.** The webview framework
   resolves `window.webview_bridge.call(...)` with a JS object (every `asyncBridge` consumer
   reads `d.items`/`d.x` directly). Do NOT `JSON.parse()` a bridge result — parsing an
   already-parsed object throws `SyntaxError`, and a silent `catch` leaves the UI stuck on a
-  stale fallback. This was the real "yt-dlp/ffmpeg show Not Installed even though they ARE
-  installed" bug: only `refreshTools` re-parsed `res` while the native side returned correct
-  `installed` status. Guard with `typeof res === "string" ? JSON.parse(res) : res` if unsure.
+  stale fallback. Guard with `typeof res === "string" ? JSON.parse(res) : res` if unsure.
   (The `cdm_bridge_ui` skill's `jsonResultString` naming is misleading — treat it as an object.)
 - Uninitialized locals need `unsafe var x : T` (e.g. stream buffers, argv arrays).
 - Strings: no `+`; use `append_view/append_string(&s)/append(char)`. Never append a moved
