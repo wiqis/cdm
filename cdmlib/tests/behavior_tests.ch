@@ -479,7 +479,7 @@ func bt_wait_state(dm : &mut cdm::DownloadManager, id : &string, want : int, max
     var deadline = bt_now_ms() + max_ms
     while(bt_now_ms() < deadline) {
         if(bt_state_of(dm, id) == want) { return true }
-        std::concurrent.sleep_ms(20)
+        std::concurrent.sleep_ms(60)
     }
     return bt_state_of(dm, id) == want
 }

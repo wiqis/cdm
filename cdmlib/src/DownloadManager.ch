@@ -248,6 +248,10 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         if(dir_hint.size() > 0) {
             resolved_dir = string(dir_hint.data(), dir_hint.size())
         }
+        // Normalize: a trailing separator would stack up ("dir//Sub").
+        while(resolved_dir.size() > 1u && resolved_dir.get(resolved_dir.size() - 1u) == '/') {
+            resolved_dir = resolved_dir.substring(0u, resolved_dir.size() - 1u)
+        }
 
         // Ensure the destination directory exists before queueing.
         var mkres = fs::create_dir_all(resolved_dir.data())

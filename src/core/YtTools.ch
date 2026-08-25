@@ -276,6 +276,9 @@ using std::vector;
     }
 
     // Start downloading yt-dlp via the DownloadManager. Returns error or empty on success.
+    //
+    // Test hook: setting CDM_TOOL_URL_OVERRIDE redirects the download to a
+    // local server so the install flow can be exercised hermetically.
     public func ytdlp_download_async(dm : &mut DownloadManager) : string {
         if(tool_download_in_progress()) { return string::make_no_len("download already in progress") }
         ensure_tools_dir()
@@ -284,7 +287,12 @@ using std::vector;
 
         unsafe var url : string_view
         unsafe var fname : string_view
-        if(def.windows) {
+        var override_opt = std::get_env(string_view::make_no_len("CDM_TOOL_URL_OVERRIDE"))
+        if(override_opt is Option.Some) {
+            var Some(tu) = override_opt else unreachable
+            url = string_view::make_view(&tu)
+            fname = string_view::make_no_len("yt-dlp")
+        } else if(def.windows) {
             url = string_view::make_no_len(YTDLP_WIN_URL)
             fname = string_view::make_no_len("yt-dlp.exe")
         } else if(def.macos) {

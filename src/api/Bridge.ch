@@ -215,6 +215,12 @@ using std::Result;
                 var msg = string::make_no_len("missing url parameter")
                 return err_json(&msg)
             }
+            // Reject malformed URLs before queueing so users get immediate,
+            // meaningful feedback instead of a download that fails later.
+            var url_err = validate_url(string_view::make_view(&url))
+            if(!url_err.is_ok()) {
+                return err_json(&url_err.message)
+            }
             var dir = json_field(args, string_view::make_no_len("dir"))
             var fname = json_field(args, string_view::make_no_len("filename"))
             var prio = json_int_field(args, string_view::make_no_len("priority"), 0)
@@ -232,15 +238,18 @@ using std::Result;
                 else if(cat_str.equals(&string::make_no_len("Video"))) { cat = Category.Video }
                 else if(cat_str.equals(&string::make_no_len("Music"))) { cat = Category.Music }
                 else if(cat_str.equals(&string::make_no_len("Compressed"))) { cat = Category.Compressed }
-                if(cat != Category.Other) {
-                    cat_tag = cat as int
-                    var sub = category_dir(cat)
-                    resolved_dir = dm.download_dir.copy()
-                    if(sub.size() > 0) {
+            if(cat != Category.Other) {
+                cat_tag = cat as int
+                var sub = category_dir(cat)
+                resolved_dir = dm.download_dir.copy()
+                if(sub.size() > 0) {
+                    // avoid stacking separators when the root already ends in '/'
+                    if(resolved_dir.size() > 0 && resolved_dir.get(resolved_dir.size() - 1u) != '/') {
                         resolved_dir.append('/')
-                        resolved_dir.append_string(&sub)
                     }
+                    resolved_dir.append_string(&sub)
                 }
+            }
             }
             var dirv = string_view::make_view(&resolved_dir)
             var fnamev = string_view::make_view(&fname)

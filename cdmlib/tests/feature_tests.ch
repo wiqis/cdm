@@ -235,15 +235,19 @@ public func CDM_retry(env : &mut TestEnv) {
 // display_filename applies the " (N)" suffix for duplicates.
 @test
 public func CDM_display_filename(env : &mut TestEnv) {
+    // Contract: the physical filename is the single source of truth.
+    // resolve_duplicate_filename bakes the " (N)" suffix into `filename`
+    // itself; display_filename must return it verbatim (no double suffix).
     var item = cdm::DownloadItem(string(), string(), string(), string::make_no_len("video.mp4"))
-    item.duplicate_suffix = 2
-    var d = item.display_filename()
+    var d2 = item.display_filename()
+    if(!d2.equals(&string::make_no_len("video.mp4"))) { env.error("display: plain name changed") }
+
+    var renamed = cdm::DownloadItem(string(), string(), string(), string::make_no_len("video (2).mp4"))
+    renamed.duplicate_suffix = 2
+    var d = renamed.display_filename()
     var want = string::make_no_len("video (2).mp4")
     if(!d.equals(&want)) {
         env.error("display: expected video (2).mp4, got ")
         env.error(d.data())
     }
-    item.duplicate_suffix = 0
-    var d2 = item.display_filename()
-    if(!d2.equals(&string::make_no_len("video.mp4"))) { env.error("display: suffix 0 changed name") }
 }
