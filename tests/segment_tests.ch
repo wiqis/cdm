@@ -112,6 +112,24 @@ public func CDM_category_for_extension(env : &mut TestEnv) {
     if(cdm::category_for_extension(string_view::make_no_len("PDF")) != cdm::Category.Documents) { env.error("PDF upper"); return }
 }
 
+// categorize_path maps a filename to root + category subfolder (moved from
+// cdmlib unit tests — this is app-side routing logic).
+@test
+public func CDM_categorize_path(env : &mut TestEnv) {
+    var got = cdm::categorize_path(string_view::make_no_len("/dl"), string_view::make_no_len("movie.mp4"))
+    var want = string::make_no_len("/dl/Video")
+    if(!got.equals(&want)) { env.error("categorize path mp4"); return }
+
+    var got2 = cdm::categorize_path(string_view::make_no_len("/dl"), string_view::make_no_len("notes.txt"))
+    var want2 = string::make_no_len("/dl/Documents")
+    if(!got2.equals(&want2)) { env.error("categorize path txt"); return }
+
+    // Unknown extension stays in the root (Other has no subfolder).
+    var got3 = cdm::categorize_path(string_view::make_no_len("/dl"), string_view::make_no_len("blob.xyz123"))
+    var want3 = string::make_no_len("/dl")
+    if(!got3.equals(&want3)) { env.error("categorize path other"); return }
+}
+
 @test
 public func CDM_parse_content_length(env : &mut TestEnv) {
     var cl1 = string::make_no_len("12345")

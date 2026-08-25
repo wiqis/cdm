@@ -80,9 +80,9 @@ public func CDM_priority_order(env : &mut TestEnv) {
     var u1 = string::make_no_len("https://127.0.0.1:9/a.bin")
     var u2 = string::make_no_len("https://127.0.0.1:9/b.bin")
     var u3 = string::make_no_len("https://127.0.0.1:9/c.bin")
-    cdm::add_task_ex(&mut dm, string_view::make_view(&u1), string_view(), string_view(), 2, cdm::Category.Other)
-    var id2 = cdm::add_task_ex(&mut dm, string_view::make_view(&u2), string_view(), string_view(), 0, cdm::Category.Other)
-    cdm::add_task_ex(&mut dm, string_view::make_view(&u3), string_view(), string_view(), 1, cdm::Category.Other)
+    cdm::add_task_ex(&mut dm, string_view::make_view(&u1), string_view(), string_view(), 2, 0)
+    var id2 = cdm::add_task_ex(&mut dm, string_view::make_view(&u2), string_view(), string_view(), 0, 0)
+    cdm::add_task_ex(&mut dm, string_view::make_view(&u3), string_view(), string_view(), 1, 0)
 
     // With max_concurrent=1 the scheduler must pick the priority-0 item (id2)
     // first. Because the URLs are unroutable the worker may already be
@@ -108,7 +108,9 @@ public func CDM_priority_order(env : &mut TestEnv) {
     fs::remove_dir_all_recursive(base.data())
 }
 
-// Category routing: with use_categories on, an .mp4 goes under Video.
+// Destination resolution contract: with no dir_hint the library uses the
+// manager's download_dir verbatim. Category routing is app policy — the
+// library only stores the opaque category tag on the item.
 @test
 public func CDM_category_routing(env : &mut TestEnv) {
     var base = string::make_no_len("/tmp/cdm-cat-test")
@@ -117,21 +119,20 @@ public func CDM_category_routing(env : &mut TestEnv) {
 
     var dm = cdm::DownloadManager()
     dm.download_dir = base.copy()
-    dm.use_categories = true
 
     var u = string::make_no_len("https://example.com/clip.mp4")
-    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, cdm::Category.Other)
+    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, 3)
     if(id.size() == 0u) { env.error("cat: add failed"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(base.data()); return }
 
     var snap = cdm::snapshot(&mut dm)
     if(snap.size() == 0u) { env.error("cat: no item"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(base.data()); return }
     var it = snap.get_ptr(0)
-    var want = string::make_no_len("/tmp/cdm-cat-test/Video")
-    var got = it.dir.copy()
-    if(!got.equals(&want)) {
-        env.error("cat: expected Video dir, got ")
-        env.error(got.data())
+    var want = base.copy()
+    if(!it.dir.equals(&want)) {
+        env.error("cat: expected download_dir verbatim, got ")
+        env.error(it.dir.data())
     }
+    if(it.category != 3) { env.error("cat: category tag not stored"); return }
     cdm::shutdown(&mut dm)
     fs::remove_dir_all_recursive(base.data())
 }
@@ -148,13 +149,13 @@ public func CDM_edit_item(env : &mut TestEnv) {
     dm.max_concurrent = 0   // don't auto-start
 
     var u = string::make_no_len("https://example.com/file.bin")
-    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, cdm::Category.Other)
+    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, 0)
     if(id.size() == 0u) { env.error("edit: add failed"); return }
 
     var newdir = string::make_no_len("/tmp/cdm-edit-test/nested")
     fs::create_dir_all(newdir.data())
     var dirv = string_view::make_view(&newdir)
-    var ok = cdm::edit_item(&mut dm, &id, dirv, string_view(), 1, 0, 0, cdm::Category.Other)
+    var ok = cdm::edit_item(&mut dm, &id, dirv, string_view(), 1, 0, 0, 0)
     if(!ok) { env.error("edit: edit_item returned false"); return }
 
     var snap = cdm::snapshot(&mut dm)
@@ -179,7 +180,7 @@ public func CDM_restart(env : &mut TestEnv) {
     dm.max_concurrent = 0
 
     var u = string::make_no_len("https://example.com/restart.bin")
-    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, cdm::Category.Other)
+    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, 0)
     if(id.size() == 0u) { env.error("restart: add failed"); return }
 
     // Simulate a completed item by marking it done + progress.
@@ -212,7 +213,7 @@ public func CDM_retry(env : &mut TestEnv) {
     dm.max_concurrent = 0
 
     var u = string::make_no_len("https://example.com/retry.bin")
-    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, cdm::Category.Other)
+    var id = cdm::add_task_ex(&mut dm, string_view::make_view(&u), string_view(), string_view(), 0, 0)
     if(id.size() == 0u) { env.error("retry: add failed"); return }
 
     var it = cdm::find_item_for_tests(&mut dm, &id)

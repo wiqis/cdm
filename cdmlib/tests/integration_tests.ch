@@ -14,7 +14,18 @@ using std::vector;
 using std::Result;
 using std::Option;
 
-const TEST_PORT : uint = 0x0000BBDu  // 0xBBD = 3009 (loopback)
+const TEST_PORT : uint = 0x0000BBDu  // 0xBBD = 3005 (loopback)
+
+// Local state-name helper (format_state lives app-side in Formatters.ch).
+func test_state_name(state : int) : string {
+    if(state == cdm::STATE_QUEUED) { return string::make_no_len("Queued") }
+    if(state == cdm::STATE_DOWNLOADING) { return string::make_no_len("Downloading") }
+    if(state == cdm::STATE_PAUSED) { return string::make_no_len("Paused") }
+    if(state == cdm::STATE_DONE) { return string::make_no_len("Done") }
+    if(state == cdm::STATE_FAILED) { return string::make_no_len("Failed") }
+    if(state == cdm::STATE_CANCELLED) { return string::make_no_len("Cancelled") }
+    return string::make_no_len("Unknown")
+}
 
 // ─── minimal threaded HTTP file server with Range support ──────────────
 //
@@ -506,7 +517,7 @@ public func CDM_INT_single_download(env : &mut TestEnv) {
     var it = snap.get_ptr(0)
     if(it.state != cdm::STATE_DONE) {
         env.error("single download not done (state ")
-        env.error(cdm::format_state(it.state).data())
+        env.error(test_state_name(it.state).data())
         env.error(" err=")
         env.error(it.error.data())
         env.error(")")
@@ -622,7 +633,7 @@ public func CDM_INT_multiple_downloads(env : &mut TestEnv) {
             failed = true
             fail_index = i as int
             env.error("multi item ")
-            env.error(cdm::format_state(it.state).data())
+            env.error(test_state_name(it.state).data())
             env.error(" err=")
             env.error(it.error.data())
             break

@@ -221,8 +221,10 @@ using std::Result;
             var cat_str = json_field(args, string_view::make_no_len("category"))
 
             // Category routing: resolve the category → directory here in the app,
-            // then pass the resolved directory to the library.
+            // then pass the resolved directory to the library. The numeric tag is
+            // stored opaquely on the item so the UI can display/filter it.
             var resolved_dir = dir.copy()
+            var cat_tag = 0
             if(resolved_dir.size() == 0u) {
                 var cat = Category.Other
                 if(cat_str.equals(&string::make_no_len("Documents"))) { cat = Category.Documents }
@@ -231,6 +233,7 @@ using std::Result;
                 else if(cat_str.equals(&string::make_no_len("Music"))) { cat = Category.Music }
                 else if(cat_str.equals(&string::make_no_len("Compressed"))) { cat = Category.Compressed }
                 if(cat != Category.Other) {
+                    cat_tag = cat as int
                     var sub = category_dir(cat)
                     resolved_dir = dm.download_dir.copy()
                     if(sub.size() > 0) {
@@ -241,7 +244,7 @@ using std::Result;
             }
             var dirv = string_view::make_view(&resolved_dir)
             var fnamev = string_view::make_view(&fname)
-            var id = add_task_ex(&mut *dm, string_view::make_view(&url), dirv, fnamev, prio, 0)
+            var id = add_task_ex(&mut *dm, string_view::make_view(&url), dirv, fnamev, prio, cat_tag)
             if(id.size() == 0u) {
                 var msg = string::make_no_len("duplicate download skipped")
                 return err_json(&msg)

@@ -67,27 +67,12 @@ using std::string_view;
             return s
         }
 
-        // The file name after applying duplicate renaming. When
-        // duplicate_suffix > 0 the name becomes "base (N).ext".
+        // The name shown to the user. The physical `filename` is the single
+        // source of truth — resolve_duplicate_filename already bakes the
+        // " (N)" suffix into it, so this must NOT apply duplicate_suffix
+        // again (that used to produce "report (1) (1).pdf" in the UI).
         public func display_filename(&self) : string {
-            if(self.duplicate_suffix <= 0) { return self.filename.copy() }
-            var base = string()
-            var ext = string()
-            var dot = string_view::make_view(&self.filename).find_last(".")
-            if(dot != std::NPOS && dot > 0) {
-                base = self.filename.substring(0u, dot)
-                ext = self.filename.substring(dot, self.filename.size())
-            } else {
-                base = self.filename.copy()
-            }
-            var out = base
-            out.append_view(" (")
-            var sfx = string()
-            sfx.append_integer(self.duplicate_suffix as bigint)
-            out.append_string(&sfx)
-            out.append(')')
-            out.append_string(&ext)
-            return out
+            return self.filename.copy()
         }
 
         public func copy(&self) : DownloadItem {
@@ -107,6 +92,7 @@ using std::string_view;
             c.speed_limit_kbps = self.speed_limit_kbps
             c.retry_count = self.retry_count
             c.duplicate_suffix = self.duplicate_suffix
+            c.category = self.category
             c.segments_json = self.segments_json.copy()
             c.was_interrupted = self.was_interrupted
             return c

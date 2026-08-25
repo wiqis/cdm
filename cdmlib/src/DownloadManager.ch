@@ -23,7 +23,6 @@ using std::mutex;
         var proxy_port : int
         var enable_resume : bool
         var allow_segments : bool
-        var use_categories : bool
         var save_interval_millis : i64
         var last_save_millis : i64
         var duplicate_action : int
@@ -45,7 +44,6 @@ using std::mutex;
                 proxy_port = 0,
                 enable_resume = true,
                 allow_segments = true,
-                use_categories = true,
                 save_interval_millis = 2000,
                 last_save_millis = 0,
                 duplicate_action = 0,
@@ -58,6 +56,18 @@ using std::mutex;
         public func set_speed_limit_kbps(&mut self, kbps : i64) {
             self.speed_limit_kbps = kbps
         }
+    }
+
+    // Copy the live runtime progress into the persistent item record. Without
+    // this, snapshots fall back to the (stale) item fields as soon as the
+    // runtime is erased — interrupted downloads reported 0 bytes downloaded
+    // and auto-resume restarted from scratch instead of from disk.
+    func sync_runtime_progress(it : *mut DownloadItem, rt : *mut TaskRuntime) {
+        rt.info_mutex.lock()
+        it.downloaded_bytes = rt.progress.downloaded_bytes
+        if(rt.progress.total_bytes > 0) { it.total_bytes = rt.progress.total_bytes }
+        it.speed_bytes_per_sec = 0
+        rt.info_mutex.unlock()
     }
 
     // Count of items currently in the DOWNLOADING state (proxies scheduler slots).
@@ -225,18 +235,18 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
     // skip duplicate policy and an existing file).
     public func add_task_ex(dm : &mut DownloadManager, url_str : string_view,
                             dir_hint : string_view, filename_hint : string_view,
-                            priority : int) : string {
+                            priority : int, category : int) : string {
         var id = uuid::v4().to_string()
         var suggested = suggested_filename(url_str)
         if(filename_hint.size() > 0) {
             suggested = sanitize_filename(filename_hint)
         }
 
+        // The caller resolves the destination directory (including any
+        // category routing — that is app policy, not library policy).
         var resolved_dir = dm.download_dir.copy()
         if(dir_hint.size() > 0) {
             resolved_dir = string(dir_hint.data(), dir_hint.size())
-        } else {
-            resolved_dir = resolve_destination_dir(dm, string_view::make_view(&suggested))
         }
 
         // Ensure the destination directory exists before queueing.
@@ -260,7 +270,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         return id
     }
 
-    // Add a new URL to the queue using defaults.
+    // Add a new URL to the queue using defaults (category 0 = none).
     public func add_task(dm : &mut DownloadManager, url_str : string_view) : string {
         return add_task_ex(dm, url_str, string_view(), string_view(), 0, 0)
     }
@@ -270,7 +280,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
     public func edit_item(dm : &mut DownloadManager, id : &string,
                           dir : string_view, filename : string_view,
                           priority : int, max_segments : int,
-                          speed_limit_kbps : i64) : bool {
+                          speed_limit_kbps : i64, category : int) : bool {
         var idx = find_item_index(dm, id)
         if(idx == dm.items.size()) { return false }
         var it = dm.items.get_ptr(idx)
@@ -289,6 +299,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         it.priority = priority
         if(max_segments > 0) { it.max_segments = max_segments }
         it.speed_limit_kbps = speed_limit_kbps
+        it.category = category
         return true
     }
 
@@ -476,6 +487,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             if(rt.running) {
                 join_task(rt)
             }
+            // Preserve final progress on the item record before teardown.
+            sync_runtime_progress(it, rt)
             delete rt
             dm.runtimes.erase(&it.id)
             it.state = STATE_CANCELLED
@@ -552,8 +565,11 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
                 if(rt.running) {
                     join_task(rt)
                 }
+                // Preserve the final progress so a restart can resume from
+                // disk instead of starting over.
+                sync_runtime_progress(it, rt)
                 // Mark as interrupted so auto-resume can restart it later.
-                if(it.state == STATE_DOWNLOADING) {
+                if(it.state == STATE_DOWNLOADING || snapshot_progress(rt).state == STATE_DOWNLOADING) {
                     it.state = STATE_FAILED
                     it.was_interrupted = true
                     var msg = string::make_no_len("interrupted by shutdown")

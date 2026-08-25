@@ -210,11 +210,11 @@ public func CDM_queue_priority_ordering(env : &mut TestEnv) {
     dm.max_concurrent = 10
     // Add items with different priorities (lower = higher priority).
     var id_low = cdm::add_task_ex(&mut dm, string_view::make_no_len("https://example.com/low.bin"),
-                                  string_view(), string_view(), 10, cdm::Category.Other)
+                                  string_view(), string_view(), 10, 0)
     var id_high = cdm::add_task_ex(&mut dm, string_view::make_no_len("https://example.com/high.bin"),
-                                   string_view(), string_view(), 1, cdm::Category.Other)
+                                   string_view(), string_view(), 1, 0)
     var id_default = cdm::add_task_ex(&mut dm, string_view::make_no_len("https://example.com/default.bin"),
-                                      string_view(), string_view(), 0, cdm::Category.Other)
+                                      string_view(), string_view(), 0, 0)
 
     // Find items and verify priorities.
     var idx_high = cdm::find_item_index(&dm, &id_high)
