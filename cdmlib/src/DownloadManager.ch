@@ -229,14 +229,20 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         }
     }
 
-    // Add a new URL to the queue with per-item options. When dir or filename
-    // are empty, sensible defaults (download_dir / URL-derived name) are used.
-    // Returns the id of the new item, or empty string when skipped (with the
-    // skip duplicate policy and an existing file).
-    public func add_task_ex(dm : &mut DownloadManager, url_str : string_view,
-                            dir_hint : string_view, filename_hint : string_view,
-                            priority : int, category : int) : string {
-        var id = uuid::v4().to_string()
+    // Add a new URL to the queue with per-item options, using an explicit id.
+    // When dir or filename are empty, sensible defaults (download_dir /
+    // URL-derived name) are used. Returns the id of the new item, or empty
+    // string when skipped (skip duplicate policy with an existing file). The
+    // explicit id lets the app restore a previously persisted queue without
+    // renumbering items (which would break resume bookkeeping).
+    public func add_task_ex_id(dm : &mut DownloadManager, id : string_view,
+                               url_str : string_view, dir_hint : string_view,
+                               filename_hint : string_view, priority : int,
+                               category : int) : string {
+        var id_copy = string(id.data(), id.size())
+        if(id_copy.empty()) {
+            id_copy = uuid::v4().to_string()
+        }
         var suggested = suggested_filename(url_str)
         if(filename_hint.size() > 0) {
             suggested = sanitize_filename(filename_hint)
@@ -256,7 +262,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         // Ensure the destination directory exists before queueing.
         var mkres = fs::create_dir_all(resolved_dir.data())
 
-        var item = DownloadItem(id.copy(), string(url_str.data(), url_str.size()),
+        var item = DownloadItem(id_copy.copy(), string(url_str.data(), url_str.size()),
                                 resolved_dir.copy(), suggested.copy())
         item.priority = priority
         item.category = category
@@ -271,7 +277,19 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
 
         dm.items.push_back(item)
         start_pending(dm)
-        return id
+        return id_copy
+    }
+
+    // Add a new URL to the queue with per-item options. When dir or filename
+    // are empty, sensible defaults (download_dir / URL-derived name) are used.
+    // Returns the id of the new item, or empty string when skipped (with the
+    // skip duplicate policy and an existing file).
+    public func add_task_ex(dm : &mut DownloadManager, url_str : string_view,
+                            dir_hint : string_view, filename_hint : string_view,
+                            priority : int, category : int) : string {
+        var id = uuid::v4().to_string()
+        return add_task_ex_id(dm, string_view::make_view(&id), url_str, dir_hint,
+                              filename_hint, priority, category)
     }
 
     // Add a new URL to the queue using defaults (category 0 = none).

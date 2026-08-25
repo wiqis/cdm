@@ -131,6 +131,25 @@ public func CDM_categorize_path(env : &mut TestEnv) {
 }
 
 @test
+public func CDM_category_from_name(env : &mut TestEnv) {
+    if(cdm::category_from_name(string_view::make_no_len("Video")) != cdm::Category.Video) { env.error("Video"); return }
+    if(cdm::category_from_name(string_view::make_no_len("video")) != cdm::Category.Video) { env.error("video lower"); return }
+    if(cdm::category_from_name(string_view::make_no_len("DOCUMENTS")) != cdm::Category.Documents) { env.error("DOCUMENTS upper"); return }
+    if(cdm::category_from_name(string_view::make_no_len("Programs")) != cdm::Category.Programs) { env.error("Programs"); return }
+    if(cdm::category_from_name(string_view::make_no_len("Music")) != cdm::Category.Music) { env.error("Music"); return }
+    if(cdm::category_from_name(string_view::make_no_len("Compressed")) != cdm::Category.Compressed) { env.error("Compressed"); return }
+    // Empty / unknown => Other.
+    if(cdm::category_from_name(string_view::make_no_len("")) != cdm::Category.Other) { env.error("empty -> Other"); return }
+    if(cdm::category_from_name(string_view::make_no_len("Nonsense")) != cdm::Category.Other) { env.error("unknown -> Other"); return }
+}
+
+@test
+public func CDM_category_dir(env : &mut TestEnv) {
+    if(!cdm::category_dir(cdm::Category.Video).equals_view("Video")) { env.error("Video dir"); return }
+    if(!cdm::category_dir(cdm::Category.Other).equals_view("")) { env.error("Other dir empty"); return }
+}
+
+@test
 public func CDM_parse_content_length(env : &mut TestEnv) {
     var cl1 = string::make_no_len("12345")
     if(cdm::parse_content_length(&cl1) != 12345) { env.error("simple number"); return }

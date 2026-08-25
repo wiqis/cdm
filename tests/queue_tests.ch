@@ -255,3 +255,53 @@ public func CDM_queue_state_json(env : &mut TestEnv) {
     if(json.find("items") == std::NPOS) { env.error("missing items"); return }
     if(json.find("a.bin") == std::NPOS) { env.error("missing item filename"); return }
 }
+
+@test
+public func CDM_queue_restore_roundtrip(env : &mut TestEnv) {
+    // Isolate the config directory (queue.txt lives there).
+    var cfg_dir = string::make_no_len("/tmp/cdm_q_test_")
+    cfg_dir.append_string(&uuid::v4().to_string())
+    var set_res = environment::set(string_view::make_no_len("CDM_CONFIG_DIR"), string_view::make_view(&cfg_dir))
+    if(set_res is std::Result.Err) { env.error("cannot set CDM_CONFIG_DIR"); return }
+
+    // Build a queue with explicit ids/dirs/categories, no auto-start.
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    var id1 = cdm::add_task_ex_id(&mut dm, string_view::make_no_len("id-one"),
+                                  string_view::make_no_len("https://example.com/a.zip"),
+                                  string_view::make_no_len("/tmp/dl1"), string_view(), 0,
+                                  cdm::Category.Compressed as int)
+    var id2 = cdm::add_task_ex_id(&mut dm, string_view::make_no_len("id-two"),
+                                  string_view::make_no_len("https://example.com/movie.mp4"),
+                                  string_view::make_no_len("/tmp/dl2"), string_view(), 3,
+                                  cdm::Category.Video as int)
+    if(dm.items.size() != 2u) { env.error("expected 2 items"); return }
+    if(!cdm::save_queue(&dm)) { env.error("save_queue failed"); return }
+
+    // Restore into a brand-new manager — ids, dirs and categories must survive.
+    var dm2 = cdm::DownloadManager()
+    dm2.max_concurrent = 0
+    var restored = cdm::restore_queue(&mut dm2)
+    if(restored != 2) { env.error("expected 2 restored"); return }
+    if(dm2.items.size() != 2u) { env.error("restored size"); return }
+
+    var found_one = false
+    var found_two = false
+    for(var i = 0u; i < dm2.items.size(); i++) {
+        var it = dm2.items.get_ptr(i)
+        if(it.id.equals_view("id-one")) {
+            found_one = true
+            if(!it.dir.equals_view("/tmp/dl1")) { env.error("id-one dir mismatch"); return }
+            if(it.category != cdm::Category.Compressed as int) { env.error("id-one category mismatch"); return }
+        } else if(it.id.equals_view("id-two")) {
+            found_two = true
+            if(!it.dir.equals_view("/tmp/dl2")) { env.error("id-two dir mismatch"); return }
+            if(it.category != cdm::Category.Video as int) { env.error("id-two category mismatch"); return }
+        } else {
+            env.error("unexpected restored id"); return
+        }
+    }
+    if(!found_one || !found_two) { env.error("not both ids restored"); return }
+
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}

@@ -22,7 +22,8 @@ using std::Option;
         var speed_limit_kbps : i64       // 0 => unlimited
         var priority : int               // 0 = high/drop default; higher = lower
         var use_categories : bool        // route into category folders
-        var no_categories : bool         // --no-categories override
+        var no_categories : bool          // --no-categories override
+        var category : string            // forced category name (e.g. "Video")
         var quiet : bool
         var show_help : bool
         var show_version : bool
@@ -41,6 +42,7 @@ using std::Option;
                 priority = 0,
                 use_categories = false,
                 no_categories = false,
+                category = string(),
                 quiet = false,
                 show_help = false,
                 show_version = false,
@@ -122,6 +124,12 @@ using std::Option;
                 out.use_categories = true
             } else if(h == comptime_fnv1_hash("--no-categories")) {
                 out.no_categories = true
+            } else if(h == comptime_fnv1_hash("--category")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--category requires a name (Documents/Programs/Video/Music/Compressed)" }
+                out.category = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--no-category")) {
+                out.category = string()
             } else if(h == comptime_fnv1_hash("--file") || h == comptime_fnv1_hash("-f")) {
                 i = i + 1
                 if(i >= argc || argv[i] == null) { return "--file requires a path argument" }
@@ -209,6 +217,29 @@ using std::Option;
         return state == STATE_DONE || state == STATE_FAILED || state == STATE_CANCELLED
     }
 
+    // Resolve the destination directory + category tag for a CLI download,
+    // honoring --category (forced) then --categories (auto by extension).
+    // Returns an empty dir string when no routing applies (library default).
+    func cli_route(opts : &CliOptions, dm : &DownloadManager, fname : string_view, cat_tag : &mut int) : string {
+        *cat_tag = 0
+        if(opts.category.size() > 0) {
+            var c = category_from_name(string_view::make_view(&opts.category))
+            *cat_tag = c as int
+            var sub = category_dir(c)
+            if(sub.size() > 0) {
+                var out = dm.download_dir.copy()
+                out.append('/')
+                out.append_string(&sub)
+                return out
+            }
+            return dm.download_dir.copy()
+        }
+        if(opts.use_categories) {
+            return categorize_path(string_view::make_view(&dm.download_dir), fname)
+        }
+        return string()
+    }
+
     // Headless runner: add the URLs, schedule them, and block until every task
     // reaches a terminal state. Returns process exit code (0 = all succeeded).
     public func run_headless(opts : &CliOptions) : int {
@@ -253,16 +284,20 @@ using std::Option;
         }
 
         var added : i64 = 0
-        var name_view = string_view::make_view(&opts.output_name)
         for(var i = 0u; i < opts.urls.size(); i++) {
             var u = opts.urls.get_ref(i)
             var uv = string_view::make_view(u)
-            var id = string()
+            var fname = string()
             if(i == 0u && opts.output_name.size() > 0u) {
-                id = add_task_ex(&mut dm, uv, string_view(), name_view, opts.priority, 0)
+                fname = opts.output_name.copy()
             } else {
-                id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, 0)
+                fname = suggested_filename(uv)
             }
+            var cat_tag = 0
+            var dest = cli_route(opts, &dm, string_view::make_view(&fname), &mut cat_tag)
+            var dest_v = string_view::make_view(&dest)
+            var fname_v = string_view::make_view(&fname)
+            var id = add_task_ex(&mut dm, uv, dest_v, fname_v, opts.priority, cat_tag)
             added = added + 1
             if(!opts.quiet) {
                 printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())
@@ -271,7 +306,12 @@ using std::Option;
         for(var i = 0u; i < batch.size(); i++) {
             var u = batch.get_ref(i)
             var uv = string_view::make_view(u)
-            var id = add_task_ex(&mut dm, uv, string_view(), string_view(), opts.priority, 0)
+            var fname = suggested_filename(uv)
+            var cat_tag = 0
+            var dest = cli_route(opts, &dm, string_view::make_view(&fname), &mut cat_tag)
+            var dest_v = string_view::make_view(&dest)
+            var fname_v = string_view::make_view(&fname)
+            var id = add_task_ex(&mut dm, uv, dest_v, fname_v, opts.priority, cat_tag)
             added = added + 1
             if(!opts.quiet) {
                 printf("cdm: [%lld/%lld] queued %s (%s)\n", (added as bigint), (total as bigint), u.data(), id.data())
@@ -340,8 +380,10 @@ using std::Option;
         printf("  -j, --concurrent <n>  max concurrent downloads\n")
         printf("      --speed-limit kb  global speed limit in KB/s\n")
         printf("      --priority <n>    queue priority (0 = highest)\n")
-        printf("      --categories      route downloads into category folders\n")
+        printf("      --categories      route downloads into category folders (by file type)\n")
         printf("      --no-categories   do not route into category folders\n")
+        printf("      --category <name> force a category folder (Documents/Programs/Video/Music/Compressed)\n")
+        printf("      --no-category     clear a forced category\n")
         printf("  -f, --file <path>     read URLs from a file\n")
         printf("  -q, --quiet           don't print progress\n")
         printf("  -g, --gui             force the GUI\n")

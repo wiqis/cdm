@@ -475,7 +475,9 @@ func settings_dir() : string {
     }
 
     // Load a previously saved queue and re-queue its incomplete items into the
-    // manager. Returns how many items were restored.
+    // manager, preserving the original id, destination directory and category
+    // tag so resume bookkeeping (and any category routing) survives a restart.
+    // Returns how many items were restored.
     public func restore_queue(dm : &mut DownloadManager) : int {
         var path = queue_file()
         var f = fopen(path.data(), "rb")
@@ -499,13 +501,38 @@ func settings_dir() : string {
                 continue
             }
             if(line.empty()) { continue }
-            // split on tab
-            var tab = line.find(std::string_view::make_no_len("\t"))
-            if(tab == std::NPOS) { continue }
-            var url = line.substring(0u, tab)
+            // Fields are tab-separated: url \t id \t dir \t [category]
+            var tab1 = line.find(std::string_view::make_no_len("\t"))
+            if(tab1 == std::NPOS) { continue }
+            var url = line.substring(0u, tab1)
             if(url.empty()) { continue }
-            var id = add_task(dm, string_view::make_view(&url))
-            if(id.size() > 0u) { restored = restored + 1 }
+            var rest = line.substring(tab1 + 1u, line.size())
+
+            var id = string()
+            var dir = string()
+            var category = 0
+            var tab2 = rest.find(std::string_view::make_no_len("\t"))
+            if(tab2 == std::NPOS) {
+                // Legacy 2-field row: url \t id  (dir defaults to manager root).
+                id = rest
+            } else {
+                id = rest.substring(0u, tab2)
+                var rest2 = rest.substring(tab2 + 1u, rest.size())
+                var tab3 = rest2.find(std::string_view::make_no_len("\t"))
+                if(tab3 == std::NPOS) {
+                    dir = rest2
+                } else {
+                    dir = rest2.substring(0u, tab3)
+                    var cat_s = rest2.substring(tab3 + 1u, rest2.size())
+                    var cat_n = parse_int_opt(cat_s.data())
+                    if(cat_n >= 0) { category = cat_n }
+                }
+            }
+            var id_view = string_view::make_view(&id)
+            var dir_view = string_view::make_view(&dir)
+            var rid = add_task_ex_id(dm, id_view, string_view::make_view(&url),
+                                    dir_view, string_view(), 0, category)
+            if(rid.size() > 0u) { restored = restored + 1 }
         }
         return restored
     }
@@ -525,6 +552,8 @@ func settings_dir() : string {
             out.append_string(&it.id)
             out.append(QUEUE_SEP)
             out.append_string(&it.dir)
+            out.append(QUEUE_SEP)
+            out.append_integer(it.category as bigint)
             out.append('\n')
         }
 

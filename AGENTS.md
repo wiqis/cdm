@@ -203,8 +203,9 @@ Before opening the window: load settings → apply to manager → restore queue.
   `maxSegments:`, `speedLimit:`, `enableResume:`, `allowSegments:`, `duplicateAction:`,
   `autoResumeFailed:`, `maxRetries:`, `retryDelayMs:`, `category*:` overrides, …).
   Parsed/written manually in Settings.ch; keys matched via fnv1 hash switch.
-- `queue.txt` — header `#cdm-queue-v1`, one `url\tid\tdir` per line. NOTE: restore only
-  uses the url column today (fresh ids, default dirs).
+- `queue.txt` — header `#cdm-queue-v1`, one `url\tid\tdir\tcategory` per line (legacy
+  `url\tid` rows are still accepted). `restore_queue` replays the saved id + dir +
+  category via `add_task_ex_id` so a relaunch reproduces the exact queue.
 - Env overrides: `CDM_CONFIG_DIR` (settings root — used by tests), `CDM_TOOLS_DIR`
   (yt-dlp/ffmpeg install root), `HOME`.
 - `~` prefix expanded via `expand_home`.
@@ -254,8 +255,10 @@ Suites:
 - `cdmlib/tests/integration_tests.ch` (14) — spins a local threaded HTTP server with
   Range support (port 3009) in-process; exercises real downloads, segmentation, resume,
   throttling. Downloads go to temp dirs.
-- `tests/*.ch` (89 total) — app-level: cli(2), format(6), json(6), proc(1), queue(14),
-  segment(8), settings(7), yt(45; mostly offline logic around yt-dlp args/parsing).
+ - `tests/*.ch` (app-level) — bridge(22), cli(5), format(6), json(6), proc(1), queue(15),
+   segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing).
+   Plus `cdmlib/tests/*` (unit/feature/integration/behavior). `./run.sh --test` runs the
+   app suite; it currently passes end-to-end (144 app tests).
 
 Settings tests isolate themselves with `CDM_CONFIG_DIR`.
 
@@ -264,39 +267,20 @@ serialization in JsonBuild tests; keep integration tests hermetic (loopback only
 
 ---
 
-## ⚠️ Current state: working tree does NOT compile (mid-refactor)
+## Current state: builds clean, tests pass
 
-As of this writing `git status` shows uncommitted changes implementing "opaque category
-tag on items", and they were left half-finished. Compiling either module fails in
-`cdmlib/src/DownloadManager.ch` symres with:
+The "opaque category tag" refactor is **done** (Option A). `DownloadItem.category` is a plain
+`int` (0=Other, 1=Documents, 2=Programs, 3=Video, 4=Music, 5=Compressed). `add_task_ex` and
+`add_task_ex_id` take an `int category`; the app routes categories (Bridge → `categorize_path`
+/`category_dir`; CLI `--category`/`--categories` → `cli_route`), and `Settings.save_queue` /
+`restore_queue` persist + restore `id`, `dir`, and `category` on disk. `cdmlib` stays minimal
+(no `Category` enum, no `resolve_destination_dir`).
 
-1. `add_task_ex` signature still has 5 params, but its body references an undefined
-   `category` variable (line ~248) and every caller (Bridge, Cli, YtTools, both test
-   suites) already passes a 6th argument (`0` int literal in app code, `cdm::Category.Other`
-   in tests).
-2. Body calls `resolve_destination_dir(dm, ...)` (line ~239) which is defined NOWHERE.
-3. `edit_item` signature has 7 params; Bridge (`Bridge.ch:322`) and
-   `cdmlib/tests/feature_tests.ch` pass 8 (trailing category).
-4. Tests reference `cdm::Category.Other`, but `enum Category` currently exists only in the
-   APP (`src/core/Categories.ch`); cdmlib cannot see app types (imports are one-way).
-
-Two consistent ways to finish it — pick one and apply everywhere:
-
-- **Option A (matches Model.ch comment "opaque category tag (0 = none)" and keeps the
-  philosophy)**: make the new params plain `int category`; delete the
-  `resolve_destination_dir` call (the app already passes the resolved dir — Bridge routes
-  categories before calling `add_task_ex`; `use_categories` field added to the manager is
-  then unnecessary, remove it); update the two test suites to pass `0`.
-- **Option B (move categories into cdmlib)**: define `public enum Category {...}` inside
-  namespace `cdm` in cdmlib, type the param as `Category`, implement
-  `resolve_destination_dir` using `use_categories` + extension mapping, and delete the
-  app-side routing duplication. Note this grows the library beyond its stated minimalism.
-
-Verify with:
+Build & verify:
 
 ```bash
-../../../cmake-build-debug/TCCCompiler cdmlib/chemical.mod -o /tmp/cdmlib_check   # library alone
-./run.sh --build                                                                  # whole app
+./run.sh --build   # whole app (TCC backend)
+./run.sh --test    # builds + runs the app test suite (currently all pass)
 ```
 
 Also note these intentional-but-dead leftovers (candidates for cleanup, don't "fix"

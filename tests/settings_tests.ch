@@ -141,3 +141,44 @@ public func CDM_settings_persistence(env : &mut TestEnv) {
     if(parsed.max_retries != 7) { env.error("parsed max_retries"); return }
     if(parsed.retry_delay_ms != 2000) { env.error("parsed retry_delay_ms"); return }
 }
+
+@test
+public func CDM_settings_disk_roundtrip(env : &mut TestEnv) {
+    // Isolate the config directory so the test doesn't touch the user's home.
+    var cfg_dir = string::make_no_len("/tmp/cdm_cfg_test_")
+    cfg_dir.append_string(&uuid::v4().to_string())
+    var set_res = environment::set(string_view::make_no_len("CDM_CONFIG_DIR"), string_view::make_view(&cfg_dir))
+    if(set_res is std::Result.Err) { env.error("cannot set CDM_CONFIG_DIR"); return }
+
+    var s = cdm::CdmSettings()
+    s.download_dir = string::make_no_len("/home/me/Downloads")
+    s.max_concurrent = 6
+    s.max_segments = 9
+    s.speed_limit_kbps = 750
+    s.enable_resume = false
+    s.allow_segments = false
+    s.use_categories = true
+    s.duplicate_action = 2
+    s.auto_resume_failed = true
+    s.max_retries = 11
+    s.retry_delay_ms = 1500
+
+    if(!cdm::save_settings(&s)) { env.error("save_settings failed"); return }
+
+    // A fresh struct should be populated from disk.
+    var loaded = cdm::CdmSettings()
+    if(!cdm::load_settings(&raw mut loaded)) { env.error("load_settings failed"); return }
+    if(loaded.max_concurrent != 6) { env.error("disk max_concurrent"); return }
+    if(loaded.max_segments != 9) { env.error("disk max_segments"); return }
+    if(loaded.speed_limit_kbps != 750) { env.error("disk speed_limit_kbps"); return }
+    if(loaded.enable_resume) { env.error("disk enable_resume"); return }
+    if(loaded.allow_segments) { env.error("disk allow_segments"); return }
+    if(!loaded.use_categories) { env.error("disk use_categories"); return }
+    if(loaded.duplicate_action != 2) { env.error("disk duplicate_action"); return }
+    if(!loaded.auto_resume_failed) { env.error("disk auto_resume_failed"); return }
+    if(loaded.max_retries != 11) { env.error("disk max_retries"); return }
+    if(loaded.retry_delay_ms != 1500) { env.error("disk retry_delay_ms"); return }
+
+    // Clean up the test config directory.
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}

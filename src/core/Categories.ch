@@ -80,6 +80,20 @@ using std::Option;
         return category_for_extension_lower(string_view::make_view(&lower))
     }
 
+    // Map a (case-insensitive) category name string to its enum value.
+    // Returns Category.Other for "other"/empty/unknown names.
+    public func category_from_name(name : string_view) : Category {
+        if(name.size() == 0) { return Category.Other }
+        var n = ascii_lower(name)
+        if(n.equals_view(string_view::make_no_len("documents"))) { return Category.Documents }
+        if(n.equals_view(string_view::make_no_len("programs"))) { return Category.Programs }
+        if(n.equals_view(string_view::make_no_len("video"))) { return Category.Video }
+        if(n.equals_view(string_view::make_no_len("music"))) { return Category.Music }
+        if(n.equals_view(string_view::make_no_len("compressed"))) { return Category.Compressed }
+        if(n.equals_view(string_view::make_no_len("other"))) { return Category.Other }
+        return Category.Other
+    }
+
     // Extract the extension of a filename (after the last dot, lower-cased).
     // Returns an empty string when there is none.
     public func extension_of(name : string_view) : string {

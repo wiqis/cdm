@@ -33,7 +33,10 @@ cdmlib; cdmlib can never see app types).
 ## Download lifecycle
 
 ```
-add_task_ex(dm, url, dir_hint, filename_hint, priority[, category])
+add_task_ex(dm, url, dir_hint, filename_hint, priority, category)
+  # category: int (0=Other, 1=Documents, 2=Programs, 3=Video, 4=Music, 5=Compressed)
+  # add_task_ex_id(dm, id, url, dir_hint, filename_hint, priority, category) = same but
+  #   preserves a caller-supplied id (used by queue.txt restore).
   ├─ uuid id, suggested_filename / sanitize, resolve dir (hint > manager default)
   ├─ fs::create_dir_all(resolved_dir)
   ├─ resolve_duplicate_filename  (duplicate_action: 0=rename " (N)", 1=overwrite, 2=skip→returns "")
@@ -151,5 +154,6 @@ Pure helpers also public (tested directly): `compute_segment_count`, `build_segm
   that just finished but wasn't reaped still occupies a slot until cleanup.
 - `restart_task`/`remove_task_file` scan part files only for indices 0..63 — fine for
   max_segments ≤ 32 but worth knowing.
-- The working tree has had a half-finished "category param" refactor (see repo AGENTS.md
-  section "Current state"); verify compilation before assuming signatures you see are final.
+- The "category param" refactor is DONE: `DownloadItem.category` is a plain `int` tag and
+   both `add_task_ex` and `add_task_ex_id` take it. cdmlib never interprets the tag (the app
+   routes categories before calling). See repo AGENTS.md "Current state".

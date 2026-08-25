@@ -30,8 +30,11 @@ description: How the ChemicalDM test suites work — @test/TestEnv harness, run.
   `source "tests" if test`
 - root `chemical.mod`: same for the app's `tests/`
 
-Suite totals today: cdmlib 37 (unit 15 + feature 8 + integration 14), app 89
-(cli 2 + format 6 + json 6 + proc 1 + queue 14 + segment 8 + settings 7 + yt 45).
+Suite layout today (app `./run.sh --test`): bridge 22, cli 5, format 6, json 6, proc 1,
+ queue 15, segment 11, settings 8, yt 45 (≈119 app tests; the `--test` run also collects
+ any cdmlib `@test` fns compiled in and currently reports **144 passing**). cdmlib tests
+ build separately via `cdmlib/chemical.mod --test` (unit 7 + feature 8 + integration 14 +
+ behavior 13).
 
 ## Suite layout & what goes where
 
@@ -45,7 +48,7 @@ Suite totals today: cdmlib 37 (unit 15 + feature 8 + integration 14), app 89
 | proc | `tests/proc_test.ch` | process execution plumbing | no |
 | queue | `tests/queue_tests.ch` | add_task_ex/priority/change_url/pause/resume/cancel/remove via public API (uses `find_item_for_tests` to poke state) | no |
 | segment | `tests/segment_tests.ch` | compute_segment_count boundaries, build_segments math, category helpers | no |
-| settings | `tests/settings_tests.ch` | config round-trip via `save_settings_to_string`/`parse_settings_string` (in-memory, no disk) | no |
+| settings | `tests/settings_tests.ch` | config round-trip via `save_settings_to_string`/`parse_settings_string` (in-memory) AND a real disk round-trip via `save_settings`/`load_settings` isolated with `CDM_CONFIG_DIR` | no |
 | yt | `tests/yt_tests.ch` | yt-dlp arg building, playlist URL detection, progress-line parsing, JSON field extraction — all offline | no |
 
 Rule of thumb: library logic → cdmlib tests; wire format/UI-facing serialization →
@@ -125,6 +128,6 @@ public func CDM_my_feature(env : &mut TestEnv) {
    bridge/tool logs use `[CDM-BRIDGE]` / `[CDM-POLL]`. Run the binary directly to see them.
 2. Per-test process isolation means a crash kills only that test — check the runner
    summary for missing/failed counts rather than assuming later tests ran.
-3. If EVERYTHING fails to build, you're probably hitting the half-finished category
-   refactor described in the repo AGENTS.md ("Current state" section). Compile cdmlib
-   alone first: `../../../cmake-build-debug/TCCCompiler cdmlib/chemical.mod -o /tmp/x`.
+ 3. The app builds clean and the suite passes (see repo AGENTS.md "Current state"). If a
+    build fails, compile cdmlib alone first to isolate the side:
+    `../../../cmake-build-debug/TCCCompiler cdmlib/chemical.mod -o /tmp/x`.
