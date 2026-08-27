@@ -343,10 +343,13 @@
     var fmtVideoLabel = (fmt) => {
         var hasVid = fmt.vcodec && fmt.vcodec !== "none"
         var hasAud = fmt.acodec && fmt.acodec !== "none"
+        var combined = hasVid && hasAud
         var lbl = fmt.format_note || ""
         if(fmt.height > 0) { lbl = fmt.height + "p" }
         if(fmt.fps > 30) { lbl += " " + fmt.fps + "fps" }
-        if(!hasAud && hasVid) { lbl += " [no audio]" }
+        if(combined) { lbl += " (audio+video)" }
+        else if(hasVid && !hasAud) { lbl += " [video only]" }
+        else if(!hasVid && hasAud) { lbl += " [audio only]" }
         if(fmt.ext) { lbl += " \u2022 " + fmt.ext }
         return lbl
     }
@@ -396,8 +399,7 @@
                     showToast("Download failed: " + d.error, "error")
                 } else {
                     ytDlDone = true
-                    showToast("Video download complete!", "success")
-                    ytOpen = false
+                    showToast("Download complete", "success")
                     refresh()
                 }
             }
@@ -420,7 +422,6 @@
                 } else {
                     ytPlDone = true
                     showToast("Playlist download complete!", "success")
-                    ytOpen = false
                     refresh()
                 }
             }
@@ -477,9 +478,11 @@
                     showToast("Playlist download failed: " + d.error, "error")
                     return
                 }
-                if(ytPlPollId) { clearInterval(ytPlPollId) }
-                ytPlPollId = setInterval(pollYtPlaylist, 500)
-                pollYtPlaylist()
+                // Close dialog immediately — download runs in background
+                ytOpen = false
+                ytDownloading = false
+                showToast("Playlist download queued", "success")
+                refresh()
             })
         } else {
             var body = { url: u, format: fmt }
@@ -490,9 +493,11 @@
                     showToast("Download failed: " + d.error, "error")
                     return
                 }
-                if(ytDlPollId) { clearInterval(ytDlPollId) }
-                ytDlPollId = setInterval(pollYtDownload, 500)
-                pollYtDownload()
+                // Close dialog immediately — download runs in DM background
+                ytOpen = false
+                ytDownloading = false
+                showToast("Download queued in main queue", "success")
+                refresh()
             })
         }
     }
@@ -806,7 +811,7 @@
                 <div class="cdm-dialog" style="max-width:560px;" onClick={(e) => { e.stopPropagation() }}>
                     <div class="cdm-dialog-header">
                         <div class="cdm-dialog-title">&#9654; YouTube Download</div>
-                        <button class="cdm-dialog-close" onClick={() => { if(!ytLoading && !ytDownloading) ytOpen = false }}>&#10005;</button>
+                        <button class="cdm-dialog-close" onClick={() => { ytOpen = false }}>&#10005;</button>
                     </div>
                     <div class="cdm-dialog-body">
                         {(!ytTools || !ytTools.yt_dlp || ytTools.yt_dlp.status !== "installed") ? (
@@ -914,7 +919,7 @@
                         </div>
                     ) : null}
                     <div class="cdm-dialog-footer">
-                        <button class="cdm-btn" onClick={() => { if(!ytLoading && !ytDownloading) ytOpen = false }}>Cancel</button>
+                        <button class="cdm-btn" onClick={() => { ytOpen = false }}>Close</button>
                         {ytDownloading ? (
                             <button class="cdm-btn cdm-btn-danger" onClick={cancelYtDownload}>Cancel Download</button>
                         ) : null}
