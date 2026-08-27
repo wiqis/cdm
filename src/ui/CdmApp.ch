@@ -58,6 +58,11 @@
     state ytDlTitle = ""
     state ytDlError = ""
     state ytDlDone = false
+    state ytDlVideoId = ""
+    state ytDlAudioId = ""
+    state ytDlMergeStatus = ""
+    state ytDlMergeError = ""
+    state ytDlNeedsMerge = false
     state ytPlProgress = 0
     state ytPlSpeed = ""
     state ytPlEta = ""
@@ -409,12 +414,29 @@
             ytDlSpeed = d.speed || ""
             ytDlEta = d.eta || ""
             ytDlStatus = d.status || ""
+            ytDlVideoId = d.video_task_id || ""
+            ytDlAudioId = d.audio_task_id || ""
+            ytDlMergeStatus = d.merge_status || ""
+            ytDlMergeError = d.merge_error || ""
+            ytDlNeedsMerge = d.needs_merge || false
+            // Keep polling while merge is in progress (waiting or merging).
+            if(d.needs_merge && (d.merge_status === "waiting" || d.merge_status === "merging")) {
+                return
+            }
             if(d.done) {
                 if(ytDlPollId) { clearInterval(ytDlPollId); ytDlPollId = null }
                 ytDownloading = false
-                if(d.error) {
+                if(d.error && !d.needs_merge) {
                     ytDlError = d.error
                     showToast("Download failed: " + d.error, "error")
+                } else if(d.merge_status === "merged") {
+                    ytDlDone = true
+                    showToast("Download merged successfully", "success")
+                    refresh()
+                } else if(d.merge_status === "failed") {
+                    ytDlDone = true
+                    showToast("Merge failed: " + (d.merge_error || "unknown"), "error")
+                    refresh()
                 } else {
                     ytDlDone = true
                     showToast("Download complete", "success")
@@ -443,6 +465,14 @@
                     refresh()
                 }
             }
+        })
+    }
+
+    var cancelYtInfo = () => {
+        asyncBridge("yt_cancel", "{}", function(d) {
+            ytLoading = false
+            if(ytInfoPollId) { clearInterval(ytInfoPollId); ytInfoPollId = null }
+            showToast("Info fetch cancelled", "info")
         })
     }
 
@@ -854,6 +884,7 @@
                             <div style="display:flex;align-items:center;gap:8px;">
                                 <span class="cdm-yt-spinner"></span>
                                 <span style="font-size:13px;color:hsl(var(--muted-foreground));">Fetching video info...</span>
+                                <button class="cdm-btn cdm-btn-danger" style="font-size:11px;padding:2px 8px;" onClick={() => cancelYtInfo()}>Cancel</button>
                             </div>
                         ) : null}
 
@@ -1123,7 +1154,7 @@
         ) : null}
 
         <div class="cdm-list">
-            {visibleItems.map((item) => {
+            {visibleItems.filter((item) => !(ytDlNeedsMerge && ytDlAudioId && item.id === ytDlAudioId)).map((item) => {
                 var pct = parseFloat(item.percent)
                 if(isNaN(pct)) pct = 0
                 if(pct < 0) pct = 0
@@ -1142,6 +1173,11 @@
                     onContextMenu={(e) => openContextMenu(e, item)}>
                     <div class="cdm-item-head">
                         <div class="cdm-item-name" title={item.url}>{name}</div>
+                        {ytDlNeedsMerge && (item.id === ytDlVideoId || item.id === ytDlAudioId) && ytDlMergeStatus !== "" ? (
+                            <span class={ytDlMergeStatus === "merged" ? "cdm-merge-ok" : ytDlMergeStatus === "failed" ? "cdm-merge-fail" : "cdm-merge-wait"}>
+                                {ytDlMergeStatus === "merged" ? "✓ Merged" : ytDlMergeStatus === "merging" ? "⟳ Merging..." : ytDlMergeStatus === "waiting" ? "⏳ Waiting..." : ytDlMergeStatus === "failed" ? "✗ Merge failed" : ytDlMergeStatus}
+                            </span>
+                        ) : null}
                         <span class={stateClass(item.state)}>{item.state}</span>
                     </div>
                     <div class="cdm-item-meta-line">

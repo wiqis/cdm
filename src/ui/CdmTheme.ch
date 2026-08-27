@@ -358,6 +358,15 @@ public func CdmTheme(page : &mut HtmlPage) {
             white-space: nowrap;
             opacity: 0.75;
         }
+        .cdm-merge-ok, .cdm-merge-fail, .cdm-merge-wait {
+            padding: 1px 8px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .cdm-merge-ok { background: hsl(142 76% 36% / 0.2); color: hsl(142 76% 46%); }
+        .cdm-merge-fail { background: hsl(0 84% 60% / 0.2); color: hsl(0 84% 60%); }
+        .cdm-merge-wait { background: hsl(48 96% 53% / 0.2); color: hsl(48 96% 53%); }
         .cdm-ctx-menu {
             position: fixed;
             z-index: 2000;

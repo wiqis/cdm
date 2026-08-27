@@ -37,23 +37,23 @@ using std::mutex;
     @never_destructed public unsafe var g_async_info = zeroed<AsyncInfoState>()
 
     // ---- Async download state ----
-    // The download thread extracts URLs, adds them to the DM, then returns.
-    // The DM handles the actual download. The UI polls this state for status.
 
     public struct AsyncDlState {
-        var running : bool        // true while the setup thread is running
-        var done : bool           // true when setup is complete (URL extracted, added to DM)
+        var running : bool
+        var done : bool
         var error : string
-        var progress : double     // 0.0 - 100.0
+        var progress : double
         var speed : string
         var eta : string
         var status_line : string
         var title : string
-        var dm_task_id : string   // ID of the video item added to the DM
-        var audio_task_id : string // ID of the audio item (when 2 URLs)
-        var needs_merge : bool    // true when both video+audio are downloaded
-        var auto_merge : bool     // merge with ffmpeg after download
-        var delete_separate : bool // delete individual files after merge
+        var dm_task_id : string       // video task ID in the DM
+        var audio_task_id : string    // audio task ID (when 2 URLs)
+        var needs_merge : bool
+        var auto_merge : bool
+        var delete_separate : bool
+        var merge_status : string     // "idle" | "waiting" | "merging" | "merged" | "failed"
+        var merge_error : string
         var url : string
         var format : string
         var mode : string
@@ -72,6 +72,7 @@ using std::mutex;
                 status_line = string(), title = string(),
                 dm_task_id = string(), audio_task_id = string(),
                 needs_merge = false, auto_merge = true, delete_separate = true,
+                merge_status = string(), merge_error = string(),
                 url = string(), format = string(),
                 mode = string(), audio_format = string(),
                 min_quality = 0, max_quality = 0,
@@ -221,6 +222,7 @@ using std::mutex;
     // ---- Info fetch ----
 
     func info_thread_entry(arg : *void) : *void {
+        fprintf(stderr, "[CDM-INFO] thread started, url=%s\n", g_async_info.url.data())
         std::concurrent.sleep_ms(10u)
         var args = vector<string>()
         args.push_back(ytdlp_resolved_path())
@@ -230,16 +232,23 @@ using std::mutex;
         else { args.push_back(string::make_no_len("--no-playlist")) }
         args.push_back(g_async_info.url.copy())
         var cmd = build_cmd(&args)
+        fprintf(stderr, "[CDM-INFO] cmd=%s\n", cmd.data())
         var fp = popen(cmd.data(), "r")
         if(fp == null) {
+            fprintf(stderr, "[CDM-INFO] popen failed\n")
             g_async_info.mu.lock()
             g_async_info.error = string::make_no_len("failed to start yt-dlp")
             g_async_info.done = true; g_async_info.running = false
             g_async_info.mu.unlock(); return null
         }
         var json_out = string()
-        while(true) { var ch = fgetc(fp); if(ch == -1) { break } json_out.append(ch as char) }
+        while(true) {
+            var ch = fgetc(fp)
+            if(ch == -1) { break }
+            json_out.append(ch as char)
+        }
         var exit_code = pclose(fp)
+        fprintf(stderr, "[CDM-INFO] done, exit=%d, size=%d\n", exit_code, json_out.size() as int)
         g_async_info.mu.lock()
         if(exit_code != 0 && json_out.size() == 0u) {
             g_async_info.error = string::make_no_len("yt-dlp failed (exit ")
@@ -280,12 +289,12 @@ using std::mutex;
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"done\":"))
         if(done) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len(",\"error\":"))
+        out.append_string(&string::make_no_len(",\"error\":\""))
         out.append_string(&json_string(string_view::make_view(&error)))
-        out.append_string(&string::make_no_len(",\"is_playlist\":"))
+        out.append_string(&string::make_no_len("\",\"is_playlist\":\""))
         if(is_pl) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         if(done && error.size() == 0u && result.size() > 0u) {
-            out.append_string(&string::make_no_len(",\"info\":"))
+            out.append_string(&string::make_no_len("\",\"info\":"))
             out.append_string(&result)
         }
         out.append('}'); return out
@@ -296,6 +305,7 @@ using std::mutex;
         g_async_info.running = false; g_async_info.done = true
         g_async_info.error = string::make_no_len("cancelled")
         g_async_info.mu.unlock()
+        fprintf(stderr, "[CDM-INFO] cancelled\n")
     }
 
     // ---- URL extraction ----
@@ -369,7 +379,9 @@ using std::mutex;
         g_async_dl.running = true; g_async_dl.done = false; g_async_dl.error = string()
         g_async_dl.progress = 0.0; g_async_dl.speed = string(); g_async_dl.eta = string()
         g_async_dl.status_line = string(); g_async_dl.title = string()
-        g_async_dl.dm_task_id = string()
+        g_async_dl.dm_task_id = string(); g_async_dl.audio_task_id = string()
+        g_async_dl.needs_merge = false; g_async_dl.merge_status = string::make_no_len("idle")
+        g_async_dl.merge_error = string()
         g_async_dl.url = string(url.data(), url.size())
         g_async_dl.format = string(format.data(), format.size())
         g_async_dl.mode = string(mode.data(), mode.size())
@@ -384,10 +396,13 @@ using std::mutex;
 
 
     // Merge separate video+audio files using ffmpeg via popen (safe in threads).
-    // Returns true on success.
+    // Writes to a temp file first, then renames to avoid overwriting the input.
     func ffmpeg_merge_popen(video_path : string_view, audio_path : string_view,
                             output_path : string_view) : bool {
         var ffmpeg = ffmpeg_resolved_path()
+        // Build temp output path: output_path + ".merge_tmp.mp4"
+        var tmp_path = string(output_path.data(), output_path.size())
+        tmp_path.append_view(string_view::make_no_len(".merge_tmp.mp4"))
         var cmd = string()
         cmd.append_string(&ffmpeg)
         cmd.append_view(string_view::make_no_len(" -i "))
@@ -395,47 +410,50 @@ using std::mutex;
         cmd.append_view(string_view::make_no_len(" -i "))
         cmd.append_string(&sh_escape(audio_path))
         cmd.append_view(string_view::make_no_len(" -c copy -y "))
-        cmd.append_string(&sh_escape(output_path))
+        cmd.append_string(&sh_escape(string_view::make_view(&tmp_path)))
         fprintf(stderr, "[CDM-MERGE] %s\n", cmd.data())
         var fp = popen(cmd.data(), "r")
         if(fp == null) { return false }
         while(true) { var ch = fgetc(fp); if(ch == -1) { break } }
         var exit_code = pclose(fp)
-        if(exit_code != 0) { return false }
+        if(exit_code != 0) {
+            // Clean up temp file on failure.
+            remove(tmp_path.data())
+            return false
+        }
+        // Rename temp to final output.
+        var rename_res = rename(tmp_path.data(), output_path.data())
+        if(rename_res != 0) {
+            remove(tmp_path.data())
+            return false
+        }
         return fs::exists(output_path.data())
     }
 
     // ---- Download thread (NON-BLOCKING) ----
     // Extracts URLs, adds to DM, returns immediately.
-    // Does NOT wait for the download to complete.
 
     func download_thread_entry(arg : *void) : *void {
         std::concurrent.sleep_ms(10u)
         var dm = g_async_dl.dm
-        // Resolve yt-dlp format string based on mode.
         var user_fmt = string_view::make_view(&g_async_dl.format)
         var dl_mode = string_view::make_view(&g_async_dl.mode)
         var min_q = g_async_dl.min_quality
         var max_q = g_async_dl.max_quality
-        // Detect "best" selector (empty string or the word "best").
         var is_best = (user_fmt.size() == 0u)
         if(!is_best && user_fmt.size() == 4u) {
             is_best = (user_fmt.get(0) == 'b' && user_fmt.get(1) == 'e' && user_fmt.get(2) == 's' && user_fmt.get(3) == 't')
         }
-        // Detect "audio_only" mode.
         var is_audio_only = false
         if(dl_mode.size() == 10u) {
             is_audio_only = (dl_mode.get(0) == 'a' && dl_mode.get(1) == 'u' && dl_mode.get(2) == 'd' && dl_mode.get(3) == 'i' && dl_mode.get(4) == 'o' && dl_mode.get(5) == '_' && dl_mode.get(6) == 'o' && dl_mode.get(7) == 'n' && dl_mode.get(8) == 'l' && dl_mode.get(9) == 'y')
         }
         var fmt = string()
         if(is_audio_only) {
-            // Audio-only mode: download best audio stream.
             fmt = resolve_yt_format(string_view::make_no_len("bestaudio"), min_q, max_q)
         } else if(is_best) {
-            // Best quality merged (video+audio).
             fmt = resolve_yt_format(user_fmt, min_q, max_q)
         } else {
-            // Specific video format: always merge with best audio.
             fmt = string(user_fmt.data(), user_fmt.size())
             fmt.append_view(string_view::make_no_len("+bestaudio/best"))
         }
@@ -473,15 +491,13 @@ using std::mutex;
         g_async_dl.title = video_title.copy()
         g_async_dl.mu.unlock()
 
-        // Step 3: Add URL(s) to the download manager and return immediately.
-        // The DM handles the actual download in its worker thread.
+        // Step 3: Add URL(s) to the download manager and return.
         if(dm != null) {
             var fname = suggest_yt_filename(string_view::make_view(&video_title), string_view::make_no_len("mp4"))
             g_async_dl.mu.lock()
             g_async_dl.status_line = string::make_no_len("Queued in download manager")
             g_async_dl.mu.unlock()
 
-            // Add the first URL (combined best, or video if separate).
             var url0s = urls.get_ptr(0).size()
             var url0d = urls.get_ptr(0).data()
             var id = add_task_ex(&mut *dm, string_view(url0d, url0s),
@@ -494,7 +510,7 @@ using std::mutex;
                 g_async_dl.mu.unlock()
             }
 
-            // If we have 2 URLs (video+audio), add the audio too.
+            // If we have 2 URLs (separate video+audio), add the audio too.
             if(urls.size() >= 2u) {
                 var audio_name = string::make_no_len("audio_")
                 audio_name.append_string(&video_title)
@@ -507,12 +523,12 @@ using std::mutex;
                 g_async_dl.mu.lock()
                 g_async_dl.audio_task_id = audio_id.copy()
                 g_async_dl.needs_merge = true
+                g_async_dl.merge_status = string::make_no_len("waiting")
                 g_async_dl.mu.unlock()
             }
         }
 
         // Mark as done — the URL extraction and DM add are complete.
-        // The actual download runs in the DM's worker thread.
         g_async_dl.mu.lock()
         g_async_dl.status_line = string::make_no_len("Download started")
         g_async_dl.done = true
@@ -527,7 +543,7 @@ using std::mutex;
 
     // ---- Merge monitor thread ----
     // Waits for both video and audio tasks to complete, then merges with ffmpeg.
-    // Runs only when auto_merge is enabled and 2 URLs were extracted.
+    // Retries merge once on failure.
 
     func merge_monitor_entry(arg : *void) : *void {
         var dm = g_async_dl.dm
@@ -558,6 +574,8 @@ using std::mutex;
         var aud_done = false
         var merge_error = string()
         var poll_count = 0
+
+        fprintf(stderr, "[CDM-MERGE] monitor started: vid=%s aud=%s\n", vid_id.data(), aud_id.data())
 
         while(!vid_done || !aud_done) {
             std::concurrent.sleep_ms(2000u)
@@ -595,7 +613,22 @@ using std::mutex;
                 merge_error = string::make_no_len("audio download failed")
                 break
             }
+
+            // Update status so UI shows waiting progress.
+            if(vid_done && !aud_done) {
+                g_async_dl.mu.lock()
+                g_async_dl.status_line = string::make_no_len("Waiting for audio download...")
+                g_async_dl.mu.unlock()
+            } else if(!vid_done && aud_done) {
+                g_async_dl.mu.lock()
+                g_async_dl.status_line = string::make_no_len("Waiting for video download...")
+                g_async_dl.mu.unlock()
+            }
         }
+
+        var both_int = 0
+        if(vid_done && aud_done) { both_int = 1 }
+        fprintf(stderr, "[CDM-MERGE] both done=%d, error=%s\n", both_int, merge_error.data())
 
         // Update status.
         g_async_dl.mu.lock()
@@ -603,52 +636,67 @@ using std::mutex;
             g_async_dl.status_line = string::make_no_len("Merge failed: ")
             g_async_dl.status_line.append_string(&merge_error)
             g_async_dl.error = merge_error.copy()
-        } else {
-            g_async_dl.status_line = string::make_no_len("Merging video + audio...")
+            g_async_dl.merge_status = string::make_no_len("failed")
+            g_async_dl.merge_error = merge_error.copy()
+            g_async_dl.mu.unlock()
+            return null
         }
+        g_async_dl.status_line = string::make_no_len("Merging video + audio...")
+        g_async_dl.merge_status = string::make_no_len("merging")
         g_async_dl.mu.unlock()
 
-        // Perform the merge if both downloads succeeded.
-        if(merge_error.size() == 0u) {
-            var video_path = string()
-            video_path.append_string(&vid_dir)
-            video_path.append('/')
-            video_path.append_string(&vid_fname)
+        // Perform the merge (with one retry).
+        var video_path = string()
+        video_path.append_string(&vid_dir)
+        video_path.append('/')
+        video_path.append_string(&vid_fname)
 
-            var audio_path = string()
-            audio_path.append_string(&vid_dir)
-            audio_path.append('/')
-            audio_path.append_string(&aud_fname)
+        var audio_path = string()
+        audio_path.append_string(&vid_dir)
+        audio_path.append('/')
+        audio_path.append_string(&aud_fname)
 
-            var output_path = string()
-            output_path.append_string(&vid_dir)
-            output_path.append('/')
-            output_path.append_string(&vid_fname)
+        var output_path = string()
+        output_path.append_string(&vid_dir)
+        output_path.append('/')
+        output_path.append_string(&vid_fname)
 
-            var merged = ffmpeg_merge_popen(
+        var merged = ffmpeg_merge_popen(
+            string_view::make_view(&video_path),
+            string_view::make_view(&audio_path),
+            string_view::make_view(&output_path))
+
+        // Retry once on failure.
+        if(!merged) {
+            fprintf(stderr, "[CDM-MERGE] first merge attempt failed, retrying...\n")
+            std::concurrent.sleep_ms(1000u)
+            merged = ffmpeg_merge_popen(
                 string_view::make_view(&video_path),
                 string_view::make_view(&audio_path),
                 string_view::make_view(&output_path))
+        }
 
-            if(merged) {
-                g_async_dl.mu.lock()
-                g_async_dl.status_line = string::make_no_len("Merged successfully")
-                g_async_dl.mu.unlock()
+        if(merged) {
+            g_async_dl.mu.lock()
+            g_async_dl.status_line = string::make_no_len("Merged successfully")
+            g_async_dl.merge_status = string::make_no_len("merged")
+            g_async_dl.mu.unlock()
+            fprintf(stderr, "[CDM-MERGE] merge succeeded\n")
 
-                // Delete separate files if requested.
-                if(del_separate) {
-                    remove(video_path.data())
-                    remove(audio_path.data())
-                }
-
-                // Rename the merged file to drop the (1) suffix if needed.
-                // The merged file has the same name as the video file.
-            } else {
-                g_async_dl.mu.lock()
-                g_async_dl.status_line = string::make_no_len("ffmpeg merge failed")
-                g_async_dl.error = string::make_no_len("ffmpeg merge failed — files kept separately")
-                g_async_dl.mu.unlock()
+            // Delete separate files if requested.
+            if(del_separate) {
+                remove(video_path.data())
+                remove(audio_path.data())
+                fprintf(stderr, "[CDM-MERGE] deleted separate files\n")
             }
+        } else {
+            g_async_dl.mu.lock()
+            g_async_dl.status_line = string::make_no_len("ffmpeg merge failed")
+            g_async_dl.error = string::make_no_len("ffmpeg merge failed - files kept separately")
+            g_async_dl.merge_status = string::make_no_len("failed")
+            g_async_dl.merge_error = string::make_no_len("ffmpeg merge failed")
+            g_async_dl.mu.unlock()
+            fprintf(stderr, "[CDM-MERGE] merge failed after retry\n")
         }
 
         return null
@@ -660,13 +708,15 @@ using std::mutex;
         var needs = g_async_dl.needs_merge
         var auto = g_async_dl.auto_merge
         g_async_dl.mu.unlock()
+        var needs_int = 0; if(needs) { needs_int = 1 }
+        var auto_int = 0; if(auto) { auto_int = 1 }
+        fprintf(stderr, "[CDM-MERGE] maybe_start: needs=%d auto=%d\n", needs_int, auto_int)
         if(needs && auto) {
             std::concurrent.spawn(merge_monitor_entry, null)
         }
     }
 
-    // Poll async download status. Returns the global state directly.
-    // The main page refresh() already polls the DM for live progress.
+    // Poll async download status. Includes merge info so the UI can group items.
     public func poll_async_download() : string {
         g_async_dl.mu.lock()
         var running = g_async_dl.running
@@ -676,22 +726,37 @@ using std::mutex;
         var speed = g_async_dl.speed.copy()
         var status = g_async_dl.status_line.copy()
         var title = g_async_dl.title.copy()
+        var vid_id = g_async_dl.dm_task_id.copy()
+        var aud_id = g_async_dl.audio_task_id.copy()
+        var merge_st = g_async_dl.merge_status.copy()
+        var merge_err = g_async_dl.merge_error.copy()
+        var needs_merge = g_async_dl.needs_merge
         g_async_dl.mu.unlock()
 
         var out = string::make_no_len("{\"running\":")
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"done\":"))
         if(done) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len(",\"error\":"))
+        out.append_string(&string::make_no_len(",\"error\":\""))
         out.append_string(&json_string(string_view::make_view(&error)))
-        out.append_string(&string::make_no_len(",\"progress\":"))
+        out.append_string(&string::make_no_len("\",\"progress\":\""))
         var ps = string(); ps.append_double(progress, 1); out.append_string(&ps)
-        out.append_string(&string::make_no_len(",\"speed\":"))
+        out.append_string(&string::make_no_len("\",\"speed\":\""))
         out.append_string(&json_string(string_view::make_view(&speed)))
-        out.append_string(&string::make_no_len(",\"status\":"))
+        out.append_string(&string::make_no_len("\",\"status\":\""))
         out.append_string(&json_string(string_view::make_view(&status)))
-        out.append_string(&string::make_no_len(",\"title\":"))
+        out.append_string(&string::make_no_len("\",\"title\":\""))
         out.append_string(&json_string(string_view::make_view(&title)))
+        out.append_string(&string::make_no_len("\",\"video_task_id\":\""))
+        out.append_string(&json_string(string_view::make_view(&vid_id)))
+        out.append_string(&string::make_no_len("\",\"audio_task_id\":\""))
+        out.append_string(&json_string(string_view::make_view(&aud_id)))
+        out.append_string(&string::make_no_len("\",\"merge_status\":\""))
+        out.append_string(&json_string(string_view::make_view(&merge_st)))
+        out.append_string(&string::make_no_len("\",\"merge_error\":\""))
+        out.append_string(&json_string(string_view::make_view(&merge_err)))
+        out.append_string(&string::make_no_len("\",\"needs_merge\":"))
+        if(needs_merge) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append('}')
         return out
     }
@@ -847,17 +912,17 @@ using std::mutex;
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"done\":"))
         if(done) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len(",\"error\":"))
+        out.append_string(&string::make_no_len(",\"error\":\""))
         out.append_string(&json_string(string_view::make_view(&error)))
-        out.append_string(&string::make_no_len(",\"progress\":"))
+        out.append_string(&string::make_no_len("\",\"progress\":\""))
         var ps = string(); ps.append_double(progress, 1); out.append_string(&ps)
-        out.append_string(&string::make_no_len(",\"items_done\":"))
+        out.append_string(&string::make_no_len("\",\"items_done\":\""))
         var ds = string(); ds.append_integer(items_done as bigint); out.append_string(&ds)
-        out.append_string(&string::make_no_len(",\"items_total\":"))
+        out.append_string(&string::make_no_len("\",\"items_total\":\""))
         var ts = string(); ts.append_integer(items_total as bigint); out.append_string(&ts)
-        out.append_string(&string::make_no_len(",\"current_title\":"))
+        out.append_string(&string::make_no_len("\",\"current_title\":\""))
         out.append_string(&json_string(string_view::make_view(&current_title)))
-        out.append_string(&string::make_no_len(",\"status\":"))
+        out.append_string(&string::make_no_len("\",\"status\":\""))
         out.append_string(&json_string(string_view::make_view(&status)))
         out.append('}'); return out
     }
