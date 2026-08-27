@@ -497,7 +497,8 @@ using std::Result;
             var start_err = start_async_download(
                 string_view::make_view(&url),
                 string_view::make_view(&format),
-                string_view::make_view(&output_dir)
+                string_view::make_view(&output_dir),
+                dm
             )
             if(start_err.size() > 0u) {
                 return err_json(&start_err)
@@ -535,7 +536,8 @@ using std::Result;
                 string_view::make_view(&url),
                 string_view::make_view(&format),
                 string_view::make_view(&output_dir),
-                min_q, max_q
+                min_q, max_q,
+                dm
             )
             if(start_err.size() > 0u) {
                 return err_json(&start_err)
