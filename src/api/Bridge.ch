@@ -446,6 +446,8 @@ using std::Result;
             fprintf(stderr, "[CDM-BRIDGE] yt_install OK\n")
             return ok_json()
         }
+        // ---- YouTube / yt-dlp methods ----
+        // yt_info: starts async info fetch in a background thread (non-blocking).
         var m_yt_info = string_view::make_no_len("yt_info")
         if(method.equals(&m_yt_info)) {
             var url = json_field(args, string_view::make_no_len("url"))
@@ -458,25 +460,19 @@ using std::Result;
             if(!url_err.is_ok()) {
                 return err_json(&url_err.message)
             }
-            // Check if it's a playlist.
-            if(is_youtube_playlist_url(string_view::make_view(&url))) {
-                var res = yt_extract_playlist_info(string_view::make_view(&url), true)
-                if(res is Result.Err) {
-                    var Err(e) = res else unreachable
-                    return err_json(&e)
-                }
-                var Ok(info) = res else unreachable
-                return info.to_json()
+            // Start async fetch in a background thread.
+            var start_err = start_async_info(string_view::make_view(&url))
+            if(start_err.size() > 0u) {
+                return err_json(&start_err)
             }
-            // Single video.
-            var res = yt_extract_video_info(string_view::make_view(&url))
-            if(res is Result.Err) {
-                var Err(e) = res else unreachable
-                return err_json(&e)
-            }
-            var Ok(info) = res else unreachable
-            return info.to_json()
+            return ok_json()
         }
+        // yt_info_poll: poll for async info fetch completion.
+        var m_yt_info_poll = string_view::make_no_len("yt_info_poll")
+        if(method.equals(&m_yt_info_poll)) {
+            return poll_async_info()
+        }
+        // yt_download: starts async download in a background thread (non-blocking).
         var m_yt_download = string_view::make_no_len("yt_download")
         if(method.equals(&m_yt_download)) {
             var url = json_field(args, string_view::make_no_len("url"))
@@ -491,57 +487,29 @@ using std::Result;
                 var msg = string::make_no_len("yt-dlp is not installed. Use yt_install to set it up.")
                 return err_json(&msg)
             }
-            // Build yt-dlp command.
+            // Resolve output directory.
             var output_dir = dm.download_dir.copy()
             if(dir.size() > 0) {
                 output_dir = dir.copy()
             }
             fs::create_dir_all(output_dir.data())
-            var args_vec = vector<string>()
-            args_vec.push_back(ytdlp_resolved_path())
-            args_vec.push_back(string::make_no_len("--no-warnings"))
-            args_vec.push_back(string::make_no_len("--newline"))
-            args_vec.push_back(string::make_no_len("--no-playlist"))
-            args_vec.push_back(string::make_no_len("--progress"))
-            // Output template.
-            var out_template = output_dir.copy()
-            out_template.append_view(string_view::make_no_len("/%(title)s.%(ext)s"))
-            args_vec.push_back(string::make_no_len("-o"))
-            args_vec.push_back(out_template.copy())
-            // Format.
-            if(format.size() > 0) {
-                args_vec.push_back(string::make_no_len("-f"))
-                args_vec.push_back(format.copy())
-            } else {
-                args_vec.push_back(string::make_no_len("-f"))
-                args_vec.push_back(string::make_no_len("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"))
-            }
-            if(ffmpeg_is_available()) {
-                args_vec.push_back(string::make_no_len("--merge-output-format"))
-                args_vec.push_back(string::make_no_len("mp4"))
-            }
-            args_vec.push_back(url.copy())
-            // Execute yt-dlp synchronously.
-            var cfg = cdm::make_exec_cfg(args_vec)
-            var exec_res = process::execute(cfg)
-            if(exec_res is Result.Err) {
-                var Err(e) = exec_res else unreachable
-                var emsg = e.message()
-                return err_json(&emsg)
-            }
-            var Ok(pr) = exec_res else unreachable
-            if(!pr.success) {
-                var err_out = string()
-                for(var i = 0u; i < pr.output.stderr_data.size(); i++) {
-                    err_out.append(pr.output.stderr_data.get(i) as char)
-                }
-                if(err_out.empty()) {
-                    err_out = string::make_no_len("yt-dlp failed")
-                }
-                return err_json(&err_out)
+            // Start async download in background thread.
+            var start_err = start_async_download(
+                string_view::make_view(&url),
+                string_view::make_view(&format),
+                string_view::make_view(&output_dir)
+            )
+            if(start_err.size() > 0u) {
+                return err_json(&start_err)
             }
             return ok_json()
         }
+        // yt_download_poll: poll for async download progress.
+        var m_yt_download_poll = string_view::make_no_len("yt_download_poll")
+        if(method.equals(&m_yt_download_poll)) {
+            return poll_async_download()
+        }
+        // yt_download_playlist: starts async playlist download.
         var m_yt_download_playlist = string_view::make_no_len("yt_download_playlist")
         if(method.equals(&m_yt_download_playlist)) {
             var url = json_field(args, string_view::make_no_len("url"))
@@ -562,22 +530,29 @@ using std::Result;
                 output_dir = dir.copy()
             }
             fs::create_dir_all(output_dir.data())
-            var args_vec = build_ytdlp_playlist_args(string_view::make_view(&url), string_view::make_view(&output_dir), string_view::make_view(&format), min_q, max_q)
-            var cfg = cdm::make_exec_cfg(args_vec)
-            var exec_res = process::execute(cfg)
-            if(exec_res is Result.Err) {
-                var Err(e) = exec_res else unreachable
-                var emsg2 = e.message()
-                return err_json(&emsg2)
+            // Start async playlist download.
+            var start_err = start_async_playlist_download(
+                string_view::make_view(&url),
+                string_view::make_view(&format),
+                string_view::make_view(&output_dir),
+                min_q, max_q
+            )
+            if(start_err.size() > 0u) {
+                return err_json(&start_err)
             }
-            var Ok(pr) = exec_res else unreachable
-            if(!pr.success) {
-                var err_out = string()
-                for(var i = 0u; i < pr.output.stderr_data.size(); i++) {
-                    err_out.append(pr.output.stderr_data.get(i) as char)
-                }
-                return err_json(&err_out)
-            }
+            return ok_json()
+        }
+        // yt_download_playlist_poll: poll for async playlist download progress.
+        var m_yt_download_playlist_poll = string_view::make_no_len("yt_download_playlist_poll")
+        if(method.equals(&m_yt_download_playlist_poll)) {
+            return poll_async_playlist_download()
+        }
+        // yt_cancel: cancel any active async YouTube operation.
+        var m_yt_cancel = string_view::make_no_len("yt_cancel")
+        if(method.equals(&m_yt_cancel)) {
+            cancel_async_info()
+            cancel_async_download()
+            cancel_async_playlist_download()
             return ok_json()
         }
         var msg = string::make_no_len("unknown method: ")

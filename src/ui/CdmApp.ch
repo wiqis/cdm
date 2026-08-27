@@ -45,6 +45,26 @@
     state ytMaxQuality = 0
     state ytPlaylistEntries = []
     state ytPlaylistSelected = []  // indices of selected entries
+    // Async download progress state
+    state ytDlProgress = 0
+    state ytDlSpeed = ""
+    state ytDlEta = ""
+    state ytDlStatus = ""
+    state ytDlTitle = ""
+    state ytDlError = ""
+    state ytDlDone = false
+    state ytPlProgress = 0
+    state ytPlSpeed = ""
+    state ytPlEta = ""
+    state ytPlStatus = ""
+    state ytPlItemsDone = 0
+    state ytPlItemsTotal = 0
+    state ytPlCurrentTitle = ""
+    state ytPlError = ""
+    state ytPlDone = false
+    state ytInfoPollId = null
+    state ytDlPollId = null
+    state ytPlPollId = null
     // Tool setup state
     state ytToolsOpen = false
     state ytTools = null           // {yt_dlp: {...}, ffmpeg: {...}}
@@ -117,7 +137,13 @@
             ctxOpen = false
         }
         document.addEventListener("mousedown", closeCtx)
-        return () => { clearInterval(t); document.removeEventListener("mousedown", closeCtx) }
+        return () => {
+            clearInterval(t)
+            document.removeEventListener("mousedown", closeCtx)
+            if(ytInfoPollId) { clearInterval(ytInfoPollId) }
+            if(ytDlPollId) { clearInterval(ytDlPollId) }
+            if(ytPlPollId) { clearInterval(ytPlPollId) }
+        }
     }, [])
 
     var post = (method, id, extra) => {
@@ -314,6 +340,102 @@
         refreshTools()
     }
 
+    var fmtVideoLabel = (fmt) => {
+        var hasVid = fmt.vcodec && fmt.vcodec !== "none"
+        var hasAud = fmt.acodec && fmt.acodec !== "none"
+        var lbl = fmt.format_note || ""
+        if(fmt.height > 0) { lbl = fmt.height + "p" }
+        if(fmt.fps > 30) { lbl += " " + fmt.fps + "fps" }
+        if(!hasAud && hasVid) { lbl += " [no audio]" }
+        if(fmt.ext) { lbl += " \u2022 " + fmt.ext }
+        return lbl
+    }
+    var fmtVideoSize = (fmt) => {
+        if(fmt.filesize > 0) { return (fmt.filesize / 1048576).toFixed(1) + " MB" }
+        if(fmt.filesize_approx > 0) { return "~" + (fmt.filesize_approx / 1048576).toFixed(1) + " MB" }
+        return fmt.format_id
+    }
+
+    var pollYtInfo = () => {
+        asyncBridge("yt_info_poll", "{}", function(d) {
+            if(d.done) {
+                if(ytInfoPollId) { clearInterval(ytInfoPollId); ytInfoPollId = null }
+                ytLoading = false
+                if(d.error) {
+                    ytError = d.error
+                    return
+                }
+                if(d.info) {
+                    try {
+                        var parsed = (typeof d.info === "string") ? JSON.parse(d.info) : d.info
+                        ytInfo = parsed
+                        ytSelectedFormat = "best"
+                        if(parsed.is_playlist && parsed.entries) {
+                            ytPlaylistEntries = parsed.entries
+                            ytPlaylistSelected = parsed.entries.map((_, i) => i)
+                        }
+                    } catch(e) {
+                        ytError = "Failed to parse video info: " + e.message
+                    }
+                }
+            }
+        })
+    }
+
+    var pollYtDownload = () => {
+        asyncBridge("yt_download_poll", "{}", function(d) {
+            ytDlProgress = d.progress || 0
+            ytDlSpeed = d.speed || ""
+            ytDlEta = d.eta || ""
+            ytDlStatus = d.status || ""
+            if(d.done) {
+                if(ytDlPollId) { clearInterval(ytDlPollId); ytDlPollId = null }
+                ytDownloading = false
+                if(d.error) {
+                    ytDlError = d.error
+                    showToast("Download failed: " + d.error, "error")
+                } else {
+                    ytDlDone = true
+                    showToast("Video download complete!", "success")
+                    ytOpen = false
+                    refresh()
+                }
+            }
+        })
+    }
+
+    var pollYtPlaylist = () => {
+        asyncBridge("yt_download_playlist_poll", "{}", function(d) {
+            ytPlProgress = d.progress || 0
+            ytPlSpeed = d.speed || ""
+            ytPlEta = d.eta || ""
+            ytPlItemsDone = d.items_done || 0
+            ytPlItemsTotal = d.items_total || 0
+            if(d.done) {
+                if(ytPlPollId) { clearInterval(ytPlPollId); ytPlPollId = null }
+                ytDownloading = false
+                if(d.error) {
+                    ytPlError = d.error
+                    showToast("Playlist download failed: " + d.error, "error")
+                } else {
+                    ytPlDone = true
+                    showToast("Playlist download complete!", "success")
+                    ytOpen = false
+                    refresh()
+                }
+            }
+        })
+    }
+
+    var cancelYtDownload = () => {
+        asyncBridge("yt_cancel", "{}", function(d) {
+            ytDownloading = false
+            if(ytDlPollId) { clearInterval(ytDlPollId); ytDlPollId = null }
+            if(ytPlPollId) { clearInterval(ytPlPollId); ytPlPollId = null }
+            showToast("Download cancelled", "info")
+        })
+    }
+
     var fetchYtInfo = () => {
         var u = ytUrl.trim()
         if(u === "") return
@@ -324,72 +446,54 @@
         ytLoading = true
         ytError = ""
         ytInfo = null
-        // Use setTimeout to allow UI update before blocking call
-        setTimeout(() => {
-            asyncBridge("yt_info", JSON.stringify({ url: u }), function(d) {
-            ytLoading = false
+        asyncBridge("yt_info", JSON.stringify({ url: u }), function(d) {
             if(d.error) {
+                ytLoading = false
                 ytError = d.error
                 return
             }
-            ytInfo = d
-            // Auto-select best format
-            if(d.formats && d.formats.length > 0) {
-                var best = d.formats.find(f => f.is_combined)
-                if(best) {
-                    ytSelectedFormat = best.format_id
-                } else {
-                    ytSelectedFormat = d.formats[0].format_id
-                }
-            }
-            // If playlist, select all entries
-            if(d.is_playlist && d.entries) {
-                ytPlaylistEntries = d.entries
-                ytPlaylistSelected = d.entries.map((_, i) => i)
-            }
-            })
-        }, 50)
+            if(ytInfoPollId) { clearInterval(ytInfoPollId) }
+            ytInfoPollId = setInterval(pollYtInfo, 500)
+            pollYtInfo()
+        })
     }
 
     var startYtDownload = () => {
         if(!ytInfo) return
         ytDownloading = true
         ytError = ""
+        ytDlProgress = 0
+        ytDlSpeed = ""
+        ytDlEta = ""
+        ytDlStatus = ""
         var u = ytUrl.trim()
+        var fmt = ytSelectedFormat || "best"
         if(ytInfo.is_playlist) {
-            // Download playlist
-            var fmt = ytSelectedFormat || "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             var body = { url: u, format: fmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
-            setTimeout(() => {
-                asyncBridge("yt_download_playlist", JSON.stringify(body), function(d) {
-                ytDownloading = false
+            asyncBridge("yt_download_playlist", JSON.stringify(body), function(d) {
                 if(d.error) {
+                    ytDownloading = false
                     ytError = d.error
                     showToast("Playlist download failed: " + d.error, "error")
-                } else {
-                    showToast("Playlist download started!", "success")
-                    ytOpen = false
-                    refresh()
+                    return
                 }
-                })
-            }, 50)
+                if(ytPlPollId) { clearInterval(ytPlPollId) }
+                ytPlPollId = setInterval(pollYtPlaylist, 500)
+                pollYtPlaylist()
+            })
         } else {
-            // Single video
-            var fmt = ytSelectedFormat || "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             var body = { url: u, format: fmt }
-            setTimeout(() => {
-                asyncBridge("yt_download", JSON.stringify(body), function(d) {
-                ytDownloading = false
+            asyncBridge("yt_download", JSON.stringify(body), function(d) {
                 if(d.error) {
+                    ytDownloading = false
                     ytError = d.error
                     showToast("Download failed: " + d.error, "error")
-                } else {
-                    showToast("Video download started!", "success")
-                    ytOpen = false
-                    refresh()
+                    return
                 }
-                })
-            }, 50)
+                if(ytDlPollId) { clearInterval(ytDlPollId) }
+                ytDlPollId = setInterval(pollYtDownload, 500)
+                pollYtDownload()
+            })
         }
     }
 
@@ -777,12 +881,19 @@
                                     <div>
                                         <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", marginBottom: "4px", display: "block" }}>Quality</label>
                                         <div class="cdm-yt-formats">
-                                            {ytInfo.formats.filter(f => f.is_combined || f.is_video_only).map((fmt) => (
-                                                <div class={"cdm-yt-format-item" + (ytSelectedFormat === fmt.format_id ? " cdm-yt-format-item-selected" : "")}
-                                                    onClick={() => { ytSelectedFormat = fmt.format_id }}>
-                                                    <span class="cdm-yt-format-label">{fmt.label}</span>
-                                                    <span class="cdm-yt-format-size">{fmt.format_id}</span>
-                                                </div>
+                                            <div class={"cdm-yt-format-item" + (ytSelectedFormat === "best" ? " cdm-yt-format-item-selected" : "")}
+                                                onClick={() => { ytSelectedFormat = "best" }}>
+                                                <span class="cdm-yt-format-label">Best quality (auto)</span>
+                                                <span class="cdm-yt-format-size">mp4</span>
+                                            </div>
+                                            {ytInfo.formats.map((fmt) => (
+                                                fmt.vcodec && fmt.vcodec !== "none" ? (
+                                                    <div class={"cdm-yt-format-item" + (ytSelectedFormat === fmt.format_id ? " cdm-yt-format-item-selected" : "")}
+                                                        onClick={() => { ytSelectedFormat = fmt.format_id }}>
+                                                        <span class="cdm-yt-format-label">{fmtVideoLabel(fmt)}</span>
+                                                        <span class="cdm-yt-format-size">{fmtVideoSize(fmt)}</span>
+                                                    </div>
+                                                ) : null
                                             ))}
                                         </div>
                                     </div>
@@ -790,13 +901,25 @@
                             </div>
                         ) : null}
                     </div>
+                    {ytDownloading ? (
+                        <div class="cdm-yt-dl-progress">
+                            <div class="cdm-progress" style="height:10px;margin-bottom:8px;">
+                                <div class="cdm-progress-fill" style={"width: " + ytDlProgress + "%;"}></div>
+                            </div>
+                            <div class="cdm-yt-dl-meta">
+                                <span class="cdm-yt-dl-pct">{ytDlProgress.toFixed(1)}%</span>
+                                <span class="cdm-yt-dl-speed">{ytDlSpeed}</span>
+                                <span class="cdm-yt-dl-eta">{ytDlEta}</span>
+                            </div>
+                        </div>
+                    ) : null}
                     <div class="cdm-dialog-footer">
                         <button class="cdm-btn" onClick={() => { if(!ytLoading && !ytDownloading) ytOpen = false }}>Cancel</button>
-                        {ytInfo ? (
-                            <button class="cdm-yt-btn" onClick={startYtDownload} disabled={ytDownloading}>
-                                {ytDownloading ? <span class="cdm-yt-spinner"></span> : null}
-                                {ytDownloading ? "Downloading..." : "Download"}
-                            </button>
+                        {ytDownloading ? (
+                            <button class="cdm-btn cdm-btn-danger" onClick={cancelYtDownload}>Cancel Download</button>
+                        ) : null}
+                        {ytInfo && !ytDownloading ? (
+                            <button class="cdm-yt-btn" onClick={startYtDownload}>Download</button>
                         ) : null}
                     </div>
                 </div>

@@ -745,5 +745,30 @@ public func CdmTheme(page : &mut HtmlPage) {
             margin-left: auto;
             flex-shrink: 0;
         }
+        .cdm-yt-dl-progress {
+            padding: 12px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .cdm-yt-dl-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: hsl(var(--muted-foreground));
+            align-items: center;
+        }
+        .cdm-yt-dl-pct {
+            font-weight: 700;
+            color: hsl(var(--foreground));
+            min-width: 48px;
+        }
+        .cdm-yt-dl-speed {
+            color: hsl(var(--info));
+            font-weight: 600;
+        }
+        .cdm-yt-dl-eta {
+            margin-left: auto;
+        }
     """)
 }
