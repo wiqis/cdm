@@ -42,6 +42,9 @@
     state ytSelectedFormat = ""
     state ytSelectedAudio = "best"
     state ytFormatMode = "merged"
+    state ytAudioExpanded = false
+    state ytAutoMerge = true
+    state ytDeleteSeparate = true
     state ytDownloading = false
     state ytMinQuality = 0
     state ytMaxQuality = 0
@@ -337,6 +340,9 @@
         ytSelectedFormat = "best"
         ytSelectedAudio = "best"
         ytFormatMode = "merged"
+        ytAudioExpanded = false
+        ytAutoMerge = true
+        ytDeleteSeparate = true
         ytDownloading = false
         ytPlaylistEntries = []
         ytPlaylistSelected = []
@@ -484,7 +490,7 @@
         var audioFmt = ytSelectedAudio || "best"
         var mode = ytFormatMode || "merged"
         if(ytInfo.is_playlist) {
-            var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
+            var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality, auto_merge: ytAutoMerge, delete_separate: ytDeleteSeparate }
             asyncBridge("yt_download_playlist", JSON.stringify(body), function(d) {
                 if(d.error) {
                     ytDownloading = false
@@ -499,7 +505,7 @@
                 refresh()
             })
         } else {
-            var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
+            var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality, auto_merge: ytAutoMerge, delete_separate: ytDeleteSeparate }
             asyncBridge("yt_download", JSON.stringify(body), function(d) {
                 if(d.error) {
                     ytDownloading = false
@@ -943,6 +949,21 @@
                                         </div>
                                     </div>
                                 ) : null}
+
+                                <div class="cdm-toggle-row" style="margin-top:10px;">
+                                    <label class="cdm-toggle-label">
+                                        <input type="checkbox" checked={ytAutoMerge}
+                                            onChange={(e) => { ytAutoMerge = e.target.checked }} />
+                                        Auto-merge video + audio
+                                    </label>
+                                </div>
+                                <div class="cdm-toggle-row">
+                                    <label class="cdm-toggle-label">
+                                        <input type="checkbox" checked={ytDeleteSeparate}
+                                            onChange={(e) => { ytDeleteSeparate = e.target.checked }} />
+                                        Delete separate files after merge
+                                    </label>
+                                </div>
                             </div>
                         ) : null}
                     </div>

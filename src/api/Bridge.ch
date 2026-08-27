@@ -486,6 +486,8 @@ using std::Result;
             var audio_fmt = json_field(args, string_view::make_no_len("audio_format"))
             var min_q = json_int_field(args, string_view::make_no_len("min_quality"), 0)
             var max_q = json_int_field(args, string_view::make_no_len("max_quality"), 0)
+            var auto_merge = json_bool_field(args, string_view::make_no_len("auto_merge"), true)
+            var del_sep = json_bool_field(args, string_view::make_no_len("delete_separate"), true)
             // Check tools are available.
             if(!ytdlp_is_available()) {
                 var msg = string::make_no_len("yt-dlp is not installed. Use yt_install to set it up.")
@@ -507,6 +509,13 @@ using std::Result;
                 string_view::make_view(&output_dir),
                 dm
             )
+            // Set merge preferences after start (they're read by merge monitor).
+            if(start_err.size() == 0u) {
+                g_async_dl.mu.lock()
+                g_async_dl.auto_merge = auto_merge
+                g_async_dl.delete_separate = del_sep
+                g_async_dl.mu.unlock()
+            }
             if(start_err.size() > 0u) {
                 return err_json(&start_err)
             }

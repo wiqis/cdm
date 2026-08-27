@@ -49,7 +49,11 @@ using std::mutex;
         var eta : string
         var status_line : string
         var title : string
-        var dm_task_id : string   // ID of the item added to the DM (for progress tracking)
+        var dm_task_id : string   // ID of the video item added to the DM
+        var audio_task_id : string // ID of the audio item (when 2 URLs)
+        var needs_merge : bool    // true when both video+audio are downloaded
+        var auto_merge : bool     // merge with ffmpeg after download
+        var delete_separate : bool // delete individual files after merge
         var url : string
         var format : string
         var mode : string
@@ -66,7 +70,8 @@ using std::mutex;
                 error = string(), progress = 0.0,
                 speed = string(), eta = string(),
                 status_line = string(), title = string(),
-                dm_task_id = string(),
+                dm_task_id = string(), audio_task_id = string(),
+                needs_merge = false, auto_merge = true, delete_separate = true,
                 url = string(), format = string(),
                 mode = string(), audio_format = string(),
                 min_quality = 0, max_quality = 0,
@@ -377,6 +382,29 @@ using std::mutex;
         return string()
     }
 
+
+    // Merge separate video+audio files using ffmpeg via popen (safe in threads).
+    // Returns true on success.
+    func ffmpeg_merge_popen(video_path : string_view, audio_path : string_view,
+                            output_path : string_view) : bool {
+        var ffmpeg = ffmpeg_resolved_path()
+        var cmd = string()
+        cmd.append_string(&ffmpeg)
+        cmd.append_view(string_view::make_no_len(" -i "))
+        cmd.append_string(&sh_escape(video_path))
+        cmd.append_view(string_view::make_no_len(" -i "))
+        cmd.append_string(&sh_escape(audio_path))
+        cmd.append_view(string_view::make_no_len(" -c copy -y "))
+        cmd.append_string(&sh_escape(output_path))
+        fprintf(stderr, "[CDM-MERGE] %s\n", cmd.data())
+        var fp = popen(cmd.data(), "r")
+        if(fp == null) { return false }
+        while(true) { var ch = fgetc(fp); if(ch == -1) { break } }
+        var exit_code = pclose(fp)
+        if(exit_code != 0) { return false }
+        return fs::exists(output_path.data())
+    }
+
     // ---- Download thread (NON-BLOCKING) ----
     // Extracts URLs, adds to DM, returns immediately.
     // Does NOT wait for the download to complete.
@@ -473,9 +501,13 @@ using std::mutex;
                 audio_name.append_view(string_view::make_no_len(".m4a"))
                 var a_url_d = urls.get_ptr(1).data()
                 var a_url_s = urls.get_ptr(1).size()
-                add_task_ex(&mut *dm, string_view(a_url_d, a_url_s),
+                var audio_id = add_task_ex(&mut *dm, string_view(a_url_d, a_url_s),
                             string_view::make_view(&g_async_dl.output_dir),
                             string_view::make_view(&audio_name), 0, 0)
+                g_async_dl.mu.lock()
+                g_async_dl.audio_task_id = audio_id.copy()
+                g_async_dl.needs_merge = true
+                g_async_dl.mu.unlock()
             }
         }
 
@@ -486,7 +518,151 @@ using std::mutex;
         g_async_dl.done = true
         g_async_dl.running = false
         g_async_dl.mu.unlock()
+
+        // Start merge monitor if this was a 2-URL download.
+        maybe_start_merge_monitor(dm)
         return null
+    }
+
+
+    // ---- Merge monitor thread ----
+    // Waits for both video and audio tasks to complete, then merges with ffmpeg.
+    // Runs only when auto_merge is enabled and 2 URLs were extracted.
+
+    func merge_monitor_entry(arg : *void) : *void {
+        var dm = g_async_dl.dm
+        var vid_id = string()
+        var aud_id = string()
+        var vid_dir = string()
+        var vid_fname = string()
+        var aud_fname = string()
+        var title = string()
+        var del_separate = false
+
+        g_async_dl.mu.lock()
+        vid_id = g_async_dl.dm_task_id.copy()
+        aud_id = g_async_dl.audio_task_id.copy()
+        vid_dir = g_async_dl.output_dir.copy()
+        title = g_async_dl.title.copy()
+        del_separate = g_async_dl.delete_separate
+        g_async_dl.mu.unlock()
+
+        // Build expected filenames.
+        vid_fname = suggest_yt_filename(string_view::make_view(&title), string_view::make_no_len("mp4"))
+        aud_fname = string::make_no_len("audio_")
+        aud_fname.append_string(&title)
+        aud_fname.append_view(string_view::make_no_len(".m4a"))
+
+        // Poll until both tasks are done or failed.
+        var vid_done = false
+        var aud_done = false
+        var merge_error = string()
+        var poll_count = 0
+
+        while(!vid_done || !aud_done) {
+            std::concurrent.sleep_ms(2000u)
+            poll_count = poll_count + 1
+
+            // Timeout after 2 hours.
+            if(poll_count > 3600) {
+                merge_error = string::make_no_len("merge timeout")
+                break
+            }
+
+            var snap = snapshot(&mut *dm)
+            vid_done = false
+            aud_done = false
+            var vid_failed = false
+            var aud_failed = false
+
+            for(var i = 0u; i < snap.size(); i++) {
+                var it = snap.get_ptr(i)
+                if(it.id.equals(&vid_id)) {
+                    if(it.state == STATE_DONE) { vid_done = true }
+                    if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) { vid_failed = true }
+                }
+                if(it.id.equals(&aud_id)) {
+                    if(it.state == STATE_DONE) { aud_done = true }
+                    if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) { aud_failed = true }
+                }
+            }
+
+            if(vid_failed) {
+                merge_error = string::make_no_len("video download failed")
+                break
+            }
+            if(aud_failed) {
+                merge_error = string::make_no_len("audio download failed")
+                break
+            }
+        }
+
+        // Update status.
+        g_async_dl.mu.lock()
+        if(merge_error.size() > 0u) {
+            g_async_dl.status_line = string::make_no_len("Merge failed: ")
+            g_async_dl.status_line.append_string(&merge_error)
+            g_async_dl.error = merge_error.copy()
+        } else {
+            g_async_dl.status_line = string::make_no_len("Merging video + audio...")
+        }
+        g_async_dl.mu.unlock()
+
+        // Perform the merge if both downloads succeeded.
+        if(merge_error.size() == 0u) {
+            var video_path = string()
+            video_path.append_string(&vid_dir)
+            video_path.append('/')
+            video_path.append_string(&vid_fname)
+
+            var audio_path = string()
+            audio_path.append_string(&vid_dir)
+            audio_path.append('/')
+            audio_path.append_string(&aud_fname)
+
+            var output_path = string()
+            output_path.append_string(&vid_dir)
+            output_path.append('/')
+            output_path.append_string(&vid_fname)
+
+            var merged = ffmpeg_merge_popen(
+                string_view::make_view(&video_path),
+                string_view::make_view(&audio_path),
+                string_view::make_view(&output_path))
+
+            if(merged) {
+                g_async_dl.mu.lock()
+                g_async_dl.status_line = string::make_no_len("Merged successfully")
+                g_async_dl.mu.unlock()
+
+                // Delete separate files if requested.
+                if(del_separate) {
+                    remove(video_path.data())
+                    remove(audio_path.data())
+                }
+
+                // Rename the merged file to drop the (1) suffix if needed.
+                // The merged file has the same name as the video file.
+            } else {
+                g_async_dl.mu.lock()
+                g_async_dl.status_line = string::make_no_len("ffmpeg merge failed")
+                g_async_dl.error = string::make_no_len("ffmpeg merge failed — files kept separately")
+                g_async_dl.mu.unlock()
+            }
+        }
+
+        return null
+    }
+
+    // Start merge monitor after adding both video+audio to DM.
+    func maybe_start_merge_monitor(dm : *mut DownloadManager) {
+        g_async_dl.mu.lock()
+        var needs = g_async_dl.needs_merge
+        var auto = g_async_dl.auto_merge
+        g_async_dl.mu.unlock()
+        if(needs && auto) {
+            std::concurrent.spawn(merge_monitor_entry, null)
+        }
     }
 
     // Poll async download status. Returns the global state directly.
