@@ -52,6 +52,10 @@ using std::mutex;
         var dm_task_id : string   // ID of the item added to the DM (for progress tracking)
         var url : string
         var format : string
+        var mode : string
+        var audio_format : string
+        var min_quality : int
+        var max_quality : int
         var output_dir : string
         var dm : *mut DownloadManager
         var mu : mutex
@@ -63,7 +67,10 @@ using std::mutex;
                 speed = string(), eta = string(),
                 status_line = string(), title = string(),
                 dm_task_id = string(),
-                url = string(), format = string(), output_dir = string(),
+                url = string(), format = string(),
+                mode = string(), audio_format = string(),
+                min_quality = 0, max_quality = 0,
+                output_dir = string(),
                 dm = null,
                 mu = mutex()
             }
@@ -349,6 +356,8 @@ using std::mutex;
     }
 
     public func start_async_download(url : string_view, format : string_view,
+                                        mode : string_view, audio_fmt : string_view,
+                                        min_q : int, max_q : int,
                                         dir : string_view, dm : *mut DownloadManager) : string {
         g_async_dl.mu.lock()
         if(g_async_dl.running) { g_async_dl.mu.unlock(); return string::make_no_len("download already in progress") }
@@ -358,6 +367,9 @@ using std::mutex;
         g_async_dl.dm_task_id = string()
         g_async_dl.url = string(url.data(), url.size())
         g_async_dl.format = string(format.data(), format.size())
+        g_async_dl.mode = string(mode.data(), mode.size())
+        g_async_dl.audio_format = string(audio_fmt.data(), audio_fmt.size())
+        g_async_dl.min_quality = min_q; g_async_dl.max_quality = max_q
         g_async_dl.output_dir = string(dir.data(), dir.size())
         g_async_dl.dm = dm
         g_async_dl.mu.unlock()
@@ -372,22 +384,30 @@ using std::mutex;
     func download_thread_entry(arg : *void) : *void {
         std::concurrent.sleep_ms(10u)
         var dm = g_async_dl.dm
-        // For specific format IDs (not "best"), append +bestaudio if the format
-        // is likely video-only (YouTube separates video and audio at HD+).
+        // Resolve yt-dlp format string based on mode.
         var user_fmt = string_view::make_view(&g_async_dl.format)
-        var is_best = false
-        if(user_fmt.size() == 0u || user_fmt.size() == 4u) {
-            if(user_fmt.size() == 4u) {
-                is_best = (user_fmt.get(0) == 'b' && user_fmt.get(1) == 'e' && user_fmt.get(2) == 's' && user_fmt.get(3) == 't')
-            } else {
-                is_best = true
-            }
+        var dl_mode = string_view::make_view(&g_async_dl.mode)
+        var min_q = g_async_dl.min_quality
+        var max_q = g_async_dl.max_quality
+        // Detect "best" selector (empty string or the word "best").
+        var is_best = (user_fmt.size() == 0u)
+        if(!is_best && user_fmt.size() == 4u) {
+            is_best = (user_fmt.get(0) == 'b' && user_fmt.get(1) == 'e' && user_fmt.get(2) == 's' && user_fmt.get(3) == 't')
+        }
+        // Detect "audio_only" mode.
+        var is_audio_only = false
+        if(dl_mode.size() == 10u) {
+            is_audio_only = (dl_mode.get(0) == 'a' && dl_mode.get(1) == 'u' && dl_mode.get(2) == 'd' && dl_mode.get(3) == 'i' && dl_mode.get(4) == 'o' && dl_mode.get(5) == '_' && dl_mode.get(6) == 'o' && dl_mode.get(7) == 'n' && dl_mode.get(8) == 'l' && dl_mode.get(9) == 'y')
         }
         var fmt = string()
-        if(is_best) {
-            fmt = resolve_yt_format(user_fmt, 0, 0)
+        if(is_audio_only) {
+            // Audio-only mode: download best audio stream.
+            fmt = resolve_yt_format(string_view::make_no_len("bestaudio"), min_q, max_q)
+        } else if(is_best) {
+            // Best quality merged (video+audio).
+            fmt = resolve_yt_format(user_fmt, min_q, max_q)
         } else {
-            // Specific format ID: wrap as "<id>+bestaudio/best" to get audio too
+            // Specific video format: always merge with best audio.
             fmt = string(user_fmt.data(), user_fmt.size())
             fmt.append_view(string_view::make_no_len("+bestaudio/best"))
         }
@@ -621,6 +641,7 @@ using std::mutex;
     }
 
     public func start_async_playlist_download(url : string_view, format : string_view,
+                                              mode : string_view, audio_fmt : string_view,
                                               dir : string_view, min_quality : int,
                                               max_quality : int, dm : *mut DownloadManager) : string {
         g_async_pl.mu.lock()

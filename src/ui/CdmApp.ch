@@ -40,6 +40,8 @@
     state ytLoading = false
     state ytError = ""
     state ytSelectedFormat = ""
+    state ytSelectedAudio = "best"
+    state ytFormatMode = "merged"
     state ytDownloading = false
     state ytMinQuality = 0
     state ytMaxQuality = 0
@@ -332,7 +334,9 @@
         ytUrl = ""
         ytInfo = null
         ytError = ""
-        ytSelectedFormat = ""
+        ytSelectedFormat = "best"
+        ytSelectedAudio = "best"
+        ytFormatMode = "merged"
         ytDownloading = false
         ytPlaylistEntries = []
         ytPlaylistSelected = []
@@ -357,6 +361,14 @@
         if(fmt.filesize > 0) { return (fmt.filesize / 1048576).toFixed(1) + " MB" }
         if(fmt.filesize_approx > 0) { return "~" + (fmt.filesize_approx / 1048576).toFixed(1) + " MB" }
         return fmt.format_id
+    }
+
+    var fmtAudioLabel = (fmt) => {
+        var lbl = ""
+        if(fmt.abr && fmt.abr > 0) { lbl = fmt.abr + " kbps" }
+        if(fmt.acodec && fmt.acodec != "none") { lbl += " \u2022 " + fmt.acodec }
+        if(fmt.ext) { lbl += " \u2022 " + fmt.ext }
+        return lbl || fmt.format_id
     }
 
     var pollYtInfo = () => {
@@ -469,8 +481,10 @@
         ytDlStatus = ""
         var u = ytUrl.trim()
         var fmt = ytSelectedFormat || "best"
+        var audioFmt = ytSelectedAudio || "best"
+        var mode = ytFormatMode || "merged"
         if(ytInfo.is_playlist) {
-            var body = { url: u, format: fmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
+            var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
             asyncBridge("yt_download_playlist", JSON.stringify(body), function(d) {
                 if(d.error) {
                     ytDownloading = false
@@ -485,7 +499,7 @@
                 refresh()
             })
         } else {
-            var body = { url: u, format: fmt }
+            var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality }
             asyncBridge("yt_download", JSON.stringify(body), function(d) {
                 if(d.error) {
                     ytDownloading = false
@@ -884,6 +898,14 @@
 
                                 {!ytInfo.is_playlist && ytInfo.formats && ytInfo.formats.length > 0 ? (
                                     <div>
+                                        <div style="display:flex;gap:6px;margin-bottom:8px;">
+                                            <button class={"cdm-yt-quality-chip" + (ytFormatMode == "merged" ? " cdm-yt-quality-chip-on" : "")}
+                                                onClick={() => { ytFormatMode = "merged" }}>Video + Audio</button>
+                                            <button class={"cdm-yt-quality-chip" + (ytFormatMode == "video_only" ? " cdm-yt-quality-chip-on" : "")}
+                                                onClick={() => { ytFormatMode = "video_only" }}>Video Only</button>
+                                            <button class={"cdm-yt-quality-chip" + (ytFormatMode == "audio_only" ? " cdm-yt-quality-chip-on" : "")}
+                                                onClick={() => { ytFormatMode = "audio_only" }}>Audio Only</button>
+                                        </div>
                                         <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", marginBottom: "4px", display: "block" }}>Quality</label>
                                         <div class="cdm-yt-formats">
                                             <div class={"cdm-yt-format-item" + (ytSelectedFormat === "best" ? " cdm-yt-format-item-selected" : "")}
@@ -900,6 +922,24 @@
                                                     </div>
                                                 ) : null
                                             ))}
+                                        </div>
+                                        <div style="margin-top:8px;">
+                                            <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))" }}>Min Quality</label>
+                                            <div class="cdm-yt-quality-select">
+                                                {[0, 360, 480, 720, 1080, 1440, 2160].map((q) => (
+                                                    <button class={"cdm-yt-quality-chip" + (ytMinQuality === q ? " cdm-yt-quality-chip-on" : "")}
+                                                        onClick={() => { ytMinQuality = q }}>{q === 0 ? "Any" : q + "p"}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div style="margin-top:4px;">
+                                            <label style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))" }}>Max Quality</label>
+                                            <div class="cdm-yt-quality-select">
+                                                {[0, 360, 480, 720, 1080, 1440, 2160].map((q) => (
+                                                    <button class={"cdm-yt-quality-chip" + (ytMaxQuality === q ? " cdm-yt-quality-chip-on" : "")}
+                                                        onClick={() => { ytMaxQuality = q }}>{q === 0 ? "Any" : q + "p"}</button>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 ) : null}

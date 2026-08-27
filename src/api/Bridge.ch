@@ -482,6 +482,10 @@ using std::Result;
             }
             var format = json_field(args, string_view::make_no_len("format"))
             var dir = json_field(args, string_view::make_no_len("dir"))
+            var mode = json_field(args, string_view::make_no_len("mode"))
+            var audio_fmt = json_field(args, string_view::make_no_len("audio_format"))
+            var min_q = json_int_field(args, string_view::make_no_len("min_quality"), 0)
+            var max_q = json_int_field(args, string_view::make_no_len("max_quality"), 0)
             // Check tools are available.
             if(!ytdlp_is_available()) {
                 var msg = string::make_no_len("yt-dlp is not installed. Use yt_install to set it up.")
@@ -497,6 +501,9 @@ using std::Result;
             var start_err = start_async_download(
                 string_view::make_view(&url),
                 string_view::make_view(&format),
+                string_view::make_view(&mode),
+                string_view::make_view(&audio_fmt),
+                min_q, max_q,
                 string_view::make_view(&output_dir),
                 dm
             )
@@ -520,6 +527,8 @@ using std::Result;
             }
             var format = json_field(args, string_view::make_no_len("format"))
             var dir = json_field(args, string_view::make_no_len("dir"))
+            var mode = json_field(args, string_view::make_no_len("mode"))
+            var audio_fmt = json_field(args, string_view::make_no_len("audio_format"))
             var min_q = json_int_field(args, string_view::make_no_len("min_quality"), 0)
             var max_q = json_int_field(args, string_view::make_no_len("max_quality"), 0)
             if(!ytdlp_is_available()) {
@@ -535,6 +544,8 @@ using std::Result;
             var start_err = start_async_playlist_download(
                 string_view::make_view(&url),
                 string_view::make_view(&format),
+                string_view::make_view(&mode),
+                string_view::make_view(&audio_fmt),
                 string_view::make_view(&output_dir),
                 min_q, max_q,
                 dm
