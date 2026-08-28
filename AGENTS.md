@@ -187,8 +187,10 @@ error,total_bytes,downloaded_bytes,speed_bytes_per_sec,priority,max_segments,
 speed_limit_kbps,duplicate_suffix,category(name),percent,eta,retry_count,was_interrupted
 and optional raw `segments` array (pre-serialized by `snapshot_segments_json`).
 
-Blocking bridge methods (`yt_info`, `yt_download`) run yt-dlp synchronously on the GTK
-thread; the UI pre-wraps calls in `setTimeout(...,50)` so the dialog paints first.
+Blocking bridge methods (`yt_info`, `yt_download`) run yt-dlp in **background threads**
+(`src/core/YtAsync.ch`) via `process::execute` (fork-safe), so the GTK thread stays
+responsive; the UI pre-wraps calls in `setTimeout(...,50)` so the dialog paints first and
+polls `yt_info_poll` until the background thread sets `done`.
 
 ### GUI flow (`Main.ch run_gui`)
 
@@ -216,9 +218,17 @@ Before opening the window: load settings → apply to manager → restore queue.
   as regular tasks (priority 100, target `$CDM_TOOLS_DIR`), tracked via globals
   `g_tool_dl_status/g_tool_dl_task_id` in YtTools.ch; `yt_status` polls the manager
   snapshot, chmod +x on completion, removes the task from the queue afterwards.
-- Availability checks deliberately avoid `process::execute` (`fork()` in the
+- Availability checks deliberately avoid spawning a process (`fork()`/`exec` in the
   multi-threaded WebKitGTK process can deadlock) — `find_binary` stats fixed paths
   instead. Version queries also skipped in status polling for this reason.
+- **Actual yt-dlp/ffmpeg execution (`src/core/YtAsync.ch`) MUST use `process::execute`,
+  never raw `popen()`.** `process::execute` is fork-safe (the child does only
+  async-signal-safe ops — close/dup2/chdir/`execve` — no `malloc`/`getenv`/`execvp`),
+  so it cannot deadlock the multithreaded GUI. Raw `popen()`/`fork()` here was the root
+  cause of the "stuck at fetching the info" bug: the info thread forked while another
+  thread held a lock, the child blocked forever, `done` never became true, and the
+  spinner never cleared. `open_file`/`show_in_folder` in `Bridge.ch` were also migrated to
+  `process::execute` for the same reason.
 - **`find_binary` scans `$PATH`** (split on `:` POSIX / `;` Windows) *in addition to* a
   short hardcoded list (`/usr/bin`, `/usr/local/bin`, `/usr/bin/local`, `~/.local/bin`,
   `/opt/homebrew/bin` on macOS, `/snap/bin`, `$CDM_TOOLS_DIR`). A tool installed in any

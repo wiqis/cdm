@@ -124,8 +124,10 @@ Never hardcode palette colors except YouTube brand red (#ff0000 accents are fine
 
 ## Desktop integrations
 
-- `open_file` / `show_in_folder`: build `xdg-open "<path>"` and `popen(...,"r")` (Linux).
-  Keep quoting; paths come from the UI but originate from our own dir/filename resolution.
+- `open_file` / `show_in_folder`: spawn `xdg-open <path>` via
+  `process::execute` (fork-safe, needed because raw `popen()`/`fork()` deadlocks the
+  multithreaded WebKitGTK GUI). Pass the path as a `vector<string>` arg — no shell quoting
+  needed.
 - Clipboard paste: JS `navigator.clipboard.readText()` → validates http(s) → opens Add
   dialog prefilled.
 

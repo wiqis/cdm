@@ -439,7 +439,7 @@ using std::unordered_map;
     // Parse a single video JSON object into YtVideoInfo.
     func parse_video_json(json_str : string_view) : YtVideoInfo {
         var info = YtVideoInfo()
-        var parser = JsonParser(256, 4096)
+        var parser = JsonParser(256, 1048576)
         var ph = ASTJsonHandler.make()
         parser.parse(json_str.data(), json_str.size(), &mut ph)
 
@@ -494,7 +494,7 @@ using std::unordered_map;
         var info = YtPlaylistInfo()
 
         // First try as a single JSON object with "entries" array.
-        var parser = JsonParser(256, 4096)
+        var parser = JsonParser(256, 1048576)
         var ph = ASTJsonHandler.make()
         parser.parse(json_str.data(), json_str.size(), &mut ph)
 
@@ -551,7 +551,7 @@ using std::unordered_map;
             if(trimmed_start >= line_end) { continue }
             if(json_str.get(trimmed_start) != '{') { continue }
 
-            var line_parser = JsonParser(128, 4096)
+            var line_parser = JsonParser(128, 1048576)
             var line_ph = ASTJsonHandler.make()
             line_parser.parse(json_str.data() + trimmed_start, line_end - trimmed_start, &mut line_ph)
 

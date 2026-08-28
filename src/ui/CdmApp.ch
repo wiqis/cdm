@@ -386,23 +386,30 @@
         asyncBridge("yt_info_poll", "{}", function(d) {
             if(d.done) {
                 if(ytInfoPollId) { clearInterval(ytInfoPollId); ytInfoPollId = null }
-                ytLoading = false
                 if(d.error) {
+                    ytLoading = false
                     ytError = d.error
                     return
                 }
-                if(d.info) {
-                    try {
-                        var parsed = (typeof d.info === "string") ? JSON.parse(d.info) : d.info
-                        ytInfo = parsed
-                        ytSelectedFormat = "best"
-                        if(parsed.is_playlist && parsed.entries) {
-                            ytPlaylistEntries = parsed.entries
-                            ytPlaylistSelected = parsed.entries.map((_, i) => i)
+                // Done — fetch the full info in a separate bridge call.
+                // The webview library automatically chunks large responses.
+                if(d.has_info) {
+                    asyncBridge("yt_info_get", "{}", function(infoJson) {
+                        ytLoading = false
+                        try {
+                            var parsed = (typeof infoJson === "string") ? JSON.parse(infoJson) : infoJson
+                            ytInfo = parsed
+                            ytSelectedFormat = "best"
+                            if(parsed.is_playlist && parsed.entries) {
+                                ytPlaylistEntries = parsed.entries
+                                ytPlaylistSelected = parsed.entries.map((_, i) => i)
+                            }
+                        } catch(e) {
+                            ytError = "Failed to parse video info: " + e.message
                         }
-                    } catch(e) {
-                        ytError = "Failed to parse video info: " + e.message
-                    }
+                    })
+                } else {
+                    ytLoading = false
                 }
             }
         })

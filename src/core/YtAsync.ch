@@ -1,7 +1,7 @@
 // ChemicalDM — Async YouTube operations.
 //
-// All yt-dlp operations run in background threads via popen() to keep the
-// webview UI responsive. The download flow extracts direct URLs with
+// All yt-dlp operations run in background threads via process::execute (fork-safe)
+// to keep the webview UI responsive. The download flow extracts direct URLs with
 // yt-dlp --get-url, feeds them to the segmented downloader, and auto-merges
 // separate video+audio streams with ffmpeg.
 
@@ -219,53 +219,71 @@ using std::mutex;
         if(line.find(&merge_marker) != std::NPOS) { *status = string(line.data(), line.size()) }
     }
 
+    // Run a yt-dlp/ffmpeg command and capture its output.
+    //
+    // Uses the `process` library (fork-safe execve in the child: no malloc/getenv
+    // after fork) so it is safe to call from a background thread inside the
+    // multithreaded WebKitGTK GUI. Raw popen()/fork() here would deadlock the
+    // child whenever another thread holds a lock at fork time, leaving the info
+    // fetch (or download) stuck forever.
+    func run_yt_command(args : vector<string>, want_stderr : bool,
+                        out_stdout : *mut string, out_stderr : *mut string, out_exit : *mut int) : bool {
+        var cfg = process::ProcessConfig.default()
+        cfg.args = args
+        cfg.capture_stdout = true
+        cfg.capture_stderr = want_stderr
+        var res = process::execute(cfg)
+        if(res is Result.Err) { return false }
+        var Ok(pr) = res else unreachable
+        *out_stdout = string(pr.output.stdout_data.data() as *char, pr.output.stdout_data.size())
+        *out_stderr = string(pr.output.stderr_data.data() as *char, pr.output.stderr_data.size())
+        *out_exit = pr.status.code
+        return true
+    }
+
     // ---- Info fetch ----
 
     func info_thread_entry(arg : *void) : *void {
         fprintf(stderr, "[CDM-INFO] thread started, url=%s\n", g_async_info.url.data())
         std::concurrent.sleep_ms(10u)
-        var args = vector<string>()
-        args.push_back(ytdlp_resolved_path())
-        args.push_back(string::make_no_len("--dump-json"))
-        args.push_back(string::make_no_len("--no-warnings"))
-        if(g_async_info.is_playlist) { args.push_back(string::make_no_len("--flat-playlist")) }
-        else { args.push_back(string::make_no_len("--no-playlist")) }
-        args.push_back(g_async_info.url.copy())
-        var cmd = build_cmd(&args)
-        fprintf(stderr, "[CDM-INFO] cmd=%s\n", cmd.data())
-        var fp = popen(cmd.data(), "r")
-        if(fp == null) {
-            fprintf(stderr, "[CDM-INFO] popen failed\n")
-            g_async_info.mu.lock()
-            g_async_info.error = string::make_no_len("failed to start yt-dlp")
-            g_async_info.done = true; g_async_info.running = false
-            g_async_info.mu.unlock(); return null
-        }
-        var json_out = string()
-        while(true) {
-            var ch = fgetc(fp)
-            if(ch == -1) { break }
-            json_out.append(ch as char)
-        }
-        var exit_code = pclose(fp)
-        fprintf(stderr, "[CDM-INFO] done, exit=%d, size=%d\n", exit_code, json_out.size() as int)
+    var args = vector<string>()
+    args.push_back(ytdlp_resolved_path())
+    args.push_back(string::make_no_len("--dump-json"))
+    args.push_back(string::make_no_len("--no-warnings"))
+    if(g_async_info.is_playlist) { args.push_back(string::make_no_len("--flat-playlist")) }
+    else { args.push_back(string::make_no_len("--no-playlist")) }
+    args.push_back(g_async_info.url.copy())
+    fprintf(stderr, "[CDM-INFO] spawning yt-dlp via process::execute\n")
+    var json_out = string()
+    var err_out = string()
+    var exit_code = 0
+    var spawned = run_yt_command(args, true, &raw mut json_out, &raw mut err_out, &raw mut exit_code)
+    if(!spawned) {
+        fprintf(stderr, "[CDM-INFO] process::execute failed to start\n")
         g_async_info.mu.lock()
-        if(exit_code != 0 && json_out.size() == 0u) {
-            g_async_info.error = string::make_no_len("yt-dlp failed (exit ")
-            var ecs = string(); ecs.append_integer(exit_code as bigint)
-            g_async_info.error.append_string(&ecs); g_async_info.error.append(')')
-            g_async_info.done = true; g_async_info.running = false
-            g_async_info.mu.unlock(); return null
-        }
-        if(json_out.size() > 0u && json_out.get(0) != '{') {
-            g_async_info.error = json_out.copy()
-            g_async_info.done = true; g_async_info.running = false
-            g_async_info.mu.unlock(); return null
-        }
-        g_async_info.result_json = json_out.copy()
+        g_async_info.error = string::make_no_len("failed to start yt-dlp")
         g_async_info.done = true; g_async_info.running = false
         g_async_info.mu.unlock(); return null
     }
+    fprintf(stderr, "[CDM-INFO] done, exit=%d, size=%d\n", exit_code, json_out.size() as int)
+    g_async_info.mu.lock()
+    if(exit_code != 0 && json_out.size() == 0u) {
+        g_async_info.error = string::make_no_len("yt-dlp failed (exit ")
+        var ecs = string(); ecs.append_integer(exit_code as bigint)
+        g_async_info.error.append_string(&ecs); g_async_info.error.append(')')
+        if(err_out.size() > 0u) { g_async_info.error.append(' '); g_async_info.error.append_string(&err_out) }
+        g_async_info.done = true; g_async_info.running = false
+        g_async_info.mu.unlock(); return null
+    }
+    if(json_out.size() > 0u && json_out.get(0) != '{') {
+        g_async_info.error = json_out.copy()
+        g_async_info.done = true; g_async_info.running = false
+        g_async_info.mu.unlock(); return null
+    }
+    g_async_info.result_json = json_out.copy()
+    g_async_info.done = true; g_async_info.running = false
+    g_async_info.mu.unlock(); return null
+}
 
     public func start_async_info(url : string_view) : string {
         g_async_info.mu.lock()
@@ -282,7 +300,7 @@ using std::mutex;
     public func poll_async_info() : string {
         g_async_info.mu.lock()
         var running = g_async_info.running; var done = g_async_info.done
-        var error = g_async_info.error.copy(); var result = g_async_info.result_json.copy()
+        var error = g_async_info.error.copy()
         var is_pl = g_async_info.is_playlist
         g_async_info.mu.unlock()
         var out = string::make_no_len("{\"running\":")
@@ -293,11 +311,23 @@ using std::mutex;
         out.append_string(&json_string(string_view::make_view(&error)))
         out.append_string(&string::make_no_len("\",\"is_playlist\":\""))
         if(is_pl) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        if(done && error.size() == 0u && result.size() > 0u) {
-            out.append_string(&string::make_no_len("\",\"info\":"))
-            out.append_string(&result)
-        }
+        out.append_string(&string::make_no_len("\",\"has_info\":"))
+        if(done && error.size() == 0u) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append('}'); return out
+    }
+
+    // Retrieve info by parsing the raw yt-dlp JSON into YtVideoInfo,
+    // then serializing only the compact fields the UI needs.
+    public func get_async_info() : string {
+        g_async_info.mu.lock()
+        var raw = g_async_info.result_json.copy()
+        g_async_info.mu.unlock()
+        if(raw.size() == 0u) { return string::make_no_len("{}") }
+        // Parse with the existing JSON parser from YtInfo.ch
+        var info = parse_video_json(std::string_view(raw.data(), raw.size()))
+        var result = info.to_json()
+        fprintf(stderr, "[CDM-INFO] get_async_info: compact=%d bytes (from %d raw)\n", result.size() as int, raw.size() as int)
+        return result
     }
 
     public func cancel_async_info() {
@@ -318,15 +348,13 @@ using std::mutex;
         args.push_back(string::make_no_len("--no-playlist"))
         args.push_back(string::make_no_len("-f"))
         args.push_back(string(format.data(), format.size()))
-        args.push_back(string(url.data(), url.size()))
-        var cmd = build_cmd(&args)
-        var fp = popen(cmd.data(), "r")
-        if(fp == null) { return string() }
-        var urls = string()
-        while(true) { var ch = fgetc(fp); if(ch == -1) { break } urls.append(ch as char) }
-        pclose(fp)
-        return urls
-    }
+    args.push_back(string(url.data(), url.size()))
+    var urls = string()
+    var err_out = string()
+    var exit_code = 0
+    if(!run_yt_command(args, false, &raw mut urls, &raw mut err_out, &raw mut exit_code)) { return string() }
+    return urls
+}
 
     func trim_view(s : string_view) : string_view {
         var start : usize = 0
@@ -395,28 +423,34 @@ using std::mutex;
     }
 
 
-    // Merge separate video+audio files using ffmpeg via popen (safe in threads).
+    // Merge separate video+audio files using ffmpeg via process::execute (fork-safe).
     // Writes to a temp file first, then renames to avoid overwriting the input.
-    func ffmpeg_merge_popen(video_path : string_view, audio_path : string_view,
+    func ffmpeg_merge_files(video_path : string_view, audio_path : string_view,
                             output_path : string_view) : bool {
         var ffmpeg = ffmpeg_resolved_path()
         // Build temp output path: output_path + ".merge_tmp.mp4"
-        var tmp_path = string(output_path.data(), output_path.size())
-        tmp_path.append_view(string_view::make_no_len(".merge_tmp.mp4"))
-        var cmd = string()
-        cmd.append_string(&ffmpeg)
-        cmd.append_view(string_view::make_no_len(" -i "))
-        cmd.append_string(&sh_escape(video_path))
-        cmd.append_view(string_view::make_no_len(" -i "))
-        cmd.append_string(&sh_escape(audio_path))
-        cmd.append_view(string_view::make_no_len(" -c copy -y "))
-        cmd.append_string(&sh_escape(string_view::make_view(&tmp_path)))
-        fprintf(stderr, "[CDM-MERGE] %s\n", cmd.data())
-        var fp = popen(cmd.data(), "r")
-        if(fp == null) { return false }
-        while(true) { var ch = fgetc(fp); if(ch == -1) { break } }
-        var exit_code = pclose(fp)
-        if(exit_code != 0) {
+    var tmp_path = string(output_path.data(), output_path.size())
+    tmp_path.append_view(string_view::make_no_len(".merge_tmp.mp4"))
+    var args = vector<string>()
+    args.push_back(ffmpeg)
+    args.push_back(string::make_no_len("-i"))
+    args.push_back(string(video_path.data(), video_path.size()))
+    args.push_back(string::make_no_len("-i"))
+    args.push_back(string(audio_path.data(), audio_path.size()))
+    args.push_back(string::make_no_len("-c"))
+    args.push_back(string::make_no_len("copy"))
+    args.push_back(string::make_no_len("-y"))
+    args.push_back(string(tmp_path.data(), tmp_path.size()))
+    fprintf(stderr, "[CDM-MERGE] ffmpeg -i %s -i %s -c copy -y %s\n", video_path.data(), audio_path.data(), tmp_path.data())
+    var cfg = process::ProcessConfig.default()
+    cfg.args = args
+    cfg.capture_stdout = false
+    cfg.capture_stderr = false
+    var res = process::execute(cfg)
+    if(res is Result.Err) { return false }
+    var Ok(pr) = res else unreachable
+    var exit_code = pr.status.code
+    if(exit_code != 0) {
             // Clean up temp file on failure.
             remove(tmp_path.data())
             return false
@@ -474,20 +508,21 @@ using std::mutex;
         }
 
         // Step 2: Get the video title for filename.
-        var title_args = vector<string>()
-        title_args.push_back(ytdlp_resolved_path())
-        title_args.push_back(string::make_no_len("--get-title"))
-        title_args.push_back(string::make_no_len("--no-warnings"))
-        title_args.push_back(string::make_no_len("--no-playlist"))
-        title_args.push_back(g_async_dl.url.copy())
-        var title_cmd = build_cmd(&title_args)
-        var title_fp = popen(title_cmd.data(), "r")
-        var video_title = string()
-        if(title_fp != null) {
-            while(true) { var ch = fgetc(title_fp); if(ch == -1 || ch == '\n' as int || ch == '\r' as int) { break } video_title.append(ch as char) }
-            pclose(title_fp)
-        }
-        g_async_dl.mu.lock()
+    var title_args = vector<string>()
+    title_args.push_back(ytdlp_resolved_path())
+    title_args.push_back(string::make_no_len("--get-title"))
+    title_args.push_back(string::make_no_len("--no-warnings"))
+    title_args.push_back(string::make_no_len("--no-playlist"))
+    title_args.push_back(g_async_dl.url.copy())
+    var title_out = string()
+    var title_err = string()
+    var title_exit = 0
+    var video_title = string()
+    if(run_yt_command(title_args, false, &raw mut title_out, &raw mut title_err, &raw mut title_exit)) {
+        var ti = 0u
+        while(ti < title_out.size() && title_out.get(ti) != '\n' && title_out.get(ti) != '\r') { video_title.append(title_out.get(ti)); ti = ti + 1u }
+    }
+    g_async_dl.mu.lock()
         g_async_dl.title = video_title.copy()
         g_async_dl.mu.unlock()
 
@@ -661,7 +696,7 @@ using std::mutex;
         output_path.append('/')
         output_path.append_string(&vid_fname)
 
-        var merged = ffmpeg_merge_popen(
+        var merged = ffmpeg_merge_files(
             string_view::make_view(&video_path),
             string_view::make_view(&audio_path),
             string_view::make_view(&output_path))
@@ -670,7 +705,7 @@ using std::mutex;
         if(!merged) {
             fprintf(stderr, "[CDM-MERGE] first merge attempt failed, retrying...\n")
             std::concurrent.sleep_ms(1000u)
-            merged = ffmpeg_merge_popen(
+            merged = ffmpeg_merge_files(
                 string_view::make_view(&video_path),
                 string_view::make_view(&audio_path),
                 string_view::make_view(&output_path))
@@ -783,17 +818,16 @@ using std::mutex;
         args.push_back(string::make_no_len("%(url)s|||%(title)s|||%(duration)s"))
         args.push_back(string::make_no_len("--no-warnings"))
         args.push_back(g_async_pl.url.copy())
-        var cmd = build_cmd(&args)
-        var fp = popen(cmd.data(), "r")
-        if(fp == null) {
+        var entries_raw = string()
+        var pl_err = string()
+        var pl_exit = 0
+        var spawned = run_yt_command(args, false, &raw mut entries_raw, &raw mut pl_err, &raw mut pl_exit)
+        if(!spawned) {
             g_async_pl.mu.lock()
             g_async_pl.error = string::make_no_len("failed to start yt-dlp")
             g_async_pl.done = true; g_async_pl.running = false
             g_async_pl.mu.unlock(); return null
         }
-        var entries_raw = string()
-        while(true) { var ch = fgetc(fp); if(ch == -1) { break } entries_raw.append(ch as char) }
-        pclose(fp)
 
         var entries = vector<string>()
         var line_start : usize = 0; var k : usize = 0

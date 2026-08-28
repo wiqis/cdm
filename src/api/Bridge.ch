@@ -401,10 +401,14 @@ using std::Result;
                 var msg = string::make_no_len("missing path")
                 return err_json(&msg)
             }
-            var cmd = string::make_no_len("xdg-open \"")
-            cmd.append_string(&path)
-            cmd.append('"')
-            popen(cmd.data(), "r")
+            var cmd_args = vector<string>()
+            cmd_args.push_back(string::make_no_len("xdg-open"))
+            cmd_args.push_back(path.copy())
+            var cfg = process::ProcessConfig.default()
+            cfg.args = cmd_args
+            cfg.capture_stdout = false
+            cfg.capture_stderr = false
+            process::execute(cfg)
             return ok_json()
         }
         var m_show_folder = string_view::make_no_len("show_in_folder")
@@ -414,10 +418,14 @@ using std::Result;
                 var msg = string::make_no_len("missing path")
                 return err_json(&msg)
             }
-            var cmd = string::make_no_len("xdg-open \"")
-            cmd.append_string(&path)
-            cmd.append('"')
-            popen(cmd.data(), "r")
+            var cmd_args = vector<string>()
+            cmd_args.push_back(string::make_no_len("xdg-open"))
+            cmd_args.push_back(path.copy())
+            var cfg = process::ProcessConfig.default()
+            cfg.args = cmd_args
+            cfg.capture_stdout = false
+            cfg.capture_stderr = false
+            process::execute(cfg)
             return ok_json()
         }
         // ---- YouTube / yt-dlp methods ----
@@ -471,6 +479,11 @@ using std::Result;
         var m_yt_info_poll = string_view::make_no_len("yt_info_poll")
         if(method.equals(&m_yt_info_poll)) {
             return poll_async_info()
+        }
+        // yt_info_get: retrieve the stored info JSON (called after poll reports done).
+        var m_yt_info_get = string_view::make_no_len("yt_info_get")
+        if(method.equals(&m_yt_info_get)) {
+            return get_async_info()
         }
         // yt_download: starts async download in a background thread (non-blocking).
         var m_yt_download = string_view::make_no_len("yt_download")
