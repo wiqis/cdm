@@ -377,6 +377,17 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-yt-merge-ok { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: hsl(142 76% 36% / 0.15); color: hsl(142 76% 50%); font-weight: 600; font-size: 13px; }
         .cdm-yt-merge-fail { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: hsl(0 84% 60% / 0.15); color: hsl(0 84% 65%); font-weight: 600; font-size: 13px; word-break: break-word; }
         .cdm-yt-merge-wait { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: hsl(48 96% 53% / 0.15); color: hsl(48 96% 60%); font-weight: 600; font-size: 13px; }
+        .cdm-yt-playlist { border-left: 3px solid hsl(280 75% 60%); }
+        .cdm-badge-ok { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: hsl(142 76% 36% / 0.2); color: hsl(142 76% 46%); font-weight: 600; font-size: 12px; }
+        .cdm-badge-busy { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: hsl(48 96% 53% / 0.2); color: hsl(48 96% 53%); font-weight: 600; font-size: 12px; }
+        .cdm-yt-pl-list { margin: 8px 0 4px 0; }
+        .cdm-yt-pl-video { border-top: 1px solid hsl(var(--border) / 0.5); padding: 4px 0; }
+        .cdm-yt-pl-video:first-of-type { border-top: none; }
+        .cdm-yt-pl-row { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 2px; }
+        .cdm-yt-pl-row:hover { background: hsl(var(--muted) / 0.4); }
+        .cdm-yt-pl-caret { width: 14px; text-align: center; color: hsl(var(--muted-foreground)); font-size: 12px; }
+        .cdm-yt-pl-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+        .cdm-yt-pl-detail { padding: 4px 0 6px 18px; }
         .cdm-ctx-menu {
             position: fixed;
             z-index: 2000;

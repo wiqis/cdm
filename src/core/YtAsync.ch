@@ -60,6 +60,8 @@ using std::mutex;
         var audio_format : string
         var min_quality : int
         var max_quality : int
+        var retry_count : int
+        var max_retries : int
         var output_dir : string
         var dm : *mut DownloadManager
         var mu : mutex
@@ -76,6 +78,7 @@ using std::mutex;
                 url = string(), format = string(),
                 mode = string(), audio_format = string(),
                 min_quality = 0, max_quality = 0,
+                retry_count = 0, max_retries = 0,
                 output_dir = string(),
                 dm = null,
                 mu = mutex()
@@ -84,6 +87,51 @@ using std::mutex;
     }
 
     @never_destructed public unsafe var g_async_dl = zeroed<AsyncDlState>()
+
+    // ---- Per-playlist-item state ----
+    // Each playlist entry gets its own AsyncDlState so video+audio+merge run
+    // independently (and can be retried/link-refreshed) like a single download.
+    public struct YtPlItem {
+        var index : int
+        var entry_url : string       // original YouTube watch URL (used for link refresh)
+        var title : string
+        var dl : AsyncDlState        // embedded per-item download/merge state
+        var retry_count : int
+        var max_retries : int
+
+        @constructor func constructor() {
+            return YtPlItem {
+                index = 0, entry_url = string(), title = string(),
+                dl = AsyncDlState(),
+                retry_count = 0, max_retries = 0
+            }
+        }
+    }
+
+    // ---- Persisted yt link record (for cross-session link refresh) ----
+    public struct YtLinkRecord {
+        var video_id : string
+        var audio_id : string
+        var youtube_url : string
+        var format : string
+        var mode : string
+        var audio_format : string
+        var min_q : int
+        var max_q : int
+        var output_dir : string
+
+        @constructor func constructor() {
+            return YtLinkRecord {
+                video_id = string(), audio_id = string(), youtube_url = string(),
+                format = string(), mode = string(), audio_format = string(),
+                min_q = 0, max_q = 0, output_dir = string()
+            }
+        }
+    }
+
+    public var g_yt_links : *mut vector<YtLinkRecord> = null
+
+    public const YT_DEFAULT_MAX_RETRIES : int = 3
 
     // ---- Async playlist download state ----
 
@@ -103,6 +151,8 @@ using std::mutex;
         var output_dir : string
         var min_quality : int
         var max_quality : int
+        var max_retries : int
+        var items : *mut vector<*mut YtPlItem>   // stable heap vector of item pointers
         var dm : *mut DownloadManager
         var mu : mutex
 
@@ -114,7 +164,8 @@ using std::mutex;
                 status_line = string(), items_done = 0,
                 items_total = 0, current_title = string(),
                 url = string(), format = string(), output_dir = string(),
-                min_quality = 0, max_quality = 0, dm = null,
+                min_quality = 0, max_quality = 0, max_retries = YT_DEFAULT_MAX_RETRIES,
+                items = null, dm = null,
                 mu = mutex()
             }
         }
@@ -352,8 +403,15 @@ using std::mutex;
         g_async_info.mu.unlock()
         if(raw.size() == 0u) { return string::make_no_len("{}") }
         // Parse with the existing JSON parser from YtInfo.ch
-        var info = parse_video_json(std::string_view(raw.data(), raw.size()))
-        var result = info.to_json()
+        var result = string()
+        if(g_async_info.is_playlist) {
+            var pinfo = parse_playlist_json(std::string_view(raw.data(), raw.size()))
+            pinfo.is_playlist = true
+            result = pinfo.to_json()
+        } else {
+            var info = parse_video_json(std::string_view(raw.data(), raw.size()))
+            result = info.to_json()
+        }
         var vparser = JsonParser(256, 1048576)
         var vph = ASTJsonHandler.make()
         var vres = vparser.parse(result.data(), result.size(), &mut vph)
@@ -521,13 +579,15 @@ using std::mutex;
     // ---- Download thread (NON-BLOCKING) ----
     // Extracts URLs, adds to DM, returns immediately.
 
-    func download_thread_entry(arg : *void) : *void {
-        std::concurrent.sleep_ms(10u)
-        var dm = g_async_dl.dm
-        var user_fmt = string_view::make_view(&g_async_dl.format)
-        var dl_mode = string_view::make_view(&g_async_dl.mode)
-        var min_q = g_async_dl.min_quality
-        var max_q = g_async_dl.max_quality
+    // ---- Per-item download (reused by single + playlist) ----
+    // Extracts URLs, adds video/audio to DM, starts merge monitor. Returns true
+    // if queued. Does NOT set the caller's done/running flags.
+    func do_item_download(dl : *mut AsyncDlState) : bool {
+        var dm = dl.dm
+        var user_fmt = string_view::make_view(&dl.format)
+        var dl_mode = string_view::make_view(&dl.mode)
+        var min_q = dl.min_quality
+        var max_q = dl.max_quality
         var is_best = (user_fmt.size() == 0u)
         if(!is_best && user_fmt.size() == 4u) {
             is_best = (user_fmt.get(0) == 'b' && user_fmt.get(1) == 'e' && user_fmt.get(2) == 's' && user_fmt.get(3) == 't')
@@ -551,60 +611,64 @@ using std::mutex;
             fmt.append_string(&no_hls_filter())
         }
 
-        // Step 1: Extract direct URLs via yt-dlp --get-url
-        g_async_dl.mu.lock()
-        g_async_dl.status_line = string::make_no_len("Extracting download URLs...")
-        g_async_dl.mu.unlock()
+        dl.mu.lock()
+        dl.status_line = string::make_no_len("Extracting download URLs...")
+        dl.retry_count = 0
+        dl.mu.unlock()
 
-        var raw_urls = extract_urls(string_view::make_view(&g_async_dl.url), string_view::make_view(&fmt))
+        var raw_urls = extract_urls(string_view::make_view(&dl.url), string_view::make_view(&fmt))
         var urls = split_urls(string_view::make_view(&raw_urls))
 
         if(urls.size() == 0u) {
-            g_async_dl.mu.lock()
-            g_async_dl.error = string::make_no_len("Failed to extract download URLs from yt-dlp")
-            g_async_dl.done = true; g_async_dl.running = false
-            g_async_dl.mu.unlock(); return null
+            dl.mu.lock()
+            dl.error = string::make_no_len("Failed to extract download URLs from yt-dlp")
+            dl.merge_status = string::make_no_len("failed")
+            dl.mu.unlock()
+            return false
         }
 
-        // Step 2: Get the video title for filename.
-    var title_args = vector<string>()
-    title_args.push_back(ytdlp_resolved_path())
-    title_args.push_back(string::make_no_len("--get-title"))
-    title_args.push_back(string::make_no_len("--no-warnings"))
-    title_args.push_back(string::make_no_len("--no-playlist"))
-    title_args.push_back(g_async_dl.url.copy())
-    var title_out = string()
-    var title_err = string()
-    var title_exit = 0
-    var video_title = string()
-    if(run_yt_command(title_args, false, &raw mut title_out, &raw mut title_err, &raw mut title_exit)) {
-        var ti = 0u
-        while(ti < title_out.size() && title_out.get(ti) != '\n' && title_out.get(ti) != '\r') { video_title.append(title_out.get(ti)); ti = ti + 1u }
-    }
-    g_async_dl.mu.lock()
-        g_async_dl.title = video_title.copy()
-        g_async_dl.mu.unlock()
+        // Remember the resolved format so a later link-refresh reuses the same quality.
+        dl.mu.lock()
+        dl.format = fmt.copy()
+        dl.mu.unlock()
 
-        // Step 3: Add URL(s) to the download manager and return.
+        // Get the video title for filename.
+        var title_args = vector<string>()
+        title_args.push_back(ytdlp_resolved_path())
+        title_args.push_back(string::make_no_len("--get-title"))
+        title_args.push_back(string::make_no_len("--no-warnings"))
+        title_args.push_back(string::make_no_len("--no-playlist"))
+        title_args.push_back(dl.url.copy())
+        var title_out = string()
+        var title_err = string()
+        var title_exit = 0
+        var video_title = string()
+        if(run_yt_command(title_args, false, &raw mut title_out, &raw mut title_err, &raw mut title_exit)) {
+            var ti = 0u
+            while(ti < title_out.size() && title_out.get(ti) != '\n' && title_out.get(ti) != '\r') { video_title.append(title_out.get(ti)); ti = ti + 1u }
+        }
+        dl.mu.lock()
+        dl.title = video_title.copy()
+        dl.mu.unlock()
+
         if(dm != null) {
             var fname = suggest_yt_filename(string_view::make_view(&video_title), string_view::make_no_len("mp4"))
-            g_async_dl.mu.lock()
-            g_async_dl.status_line = string::make_no_len("Queued in download manager")
-            g_async_dl.mu.unlock()
+            dl.mu.lock()
+            dl.status_line = string::make_no_len("Queued in download manager")
+            dl.mu.unlock()
 
             var url0s = urls.get_ptr(0).size()
             var url0d = urls.get_ptr(0).data()
             var id = add_task_ex(&mut *dm, string_view(url0d, url0s),
-                                 string_view::make_view(&g_async_dl.output_dir),
+                                 string_view::make_view(&dl.output_dir),
                                  string_view::make_view(&fname), 0, 0)
 
             if(id.size() > 0u) {
-                g_async_dl.mu.lock()
-                g_async_dl.dm_task_id = id.copy()
-                g_async_dl.mu.unlock()
+                dl.mu.lock()
+                dl.dm_task_id = id.copy()
+                dl.mu.unlock()
             }
 
-            // If we have 2 URLs (separate video+audio), add the audio too.
             if(urls.size() >= 2u) {
                 var audio_name = string::make_no_len("audio_")
                 audio_name.append_string(&video_title)
@@ -612,35 +676,211 @@ using std::mutex;
                 var a_url_d = urls.get_ptr(1).data()
                 var a_url_s = urls.get_ptr(1).size()
                 var audio_id = add_task_ex(&mut *dm, string_view(a_url_d, a_url_s),
-                            string_view::make_view(&g_async_dl.output_dir),
+                            string_view::make_view(&dl.output_dir),
                             string_view::make_view(&audio_name), 0, 0)
-                g_async_dl.mu.lock()
-                g_async_dl.audio_task_id = audio_id.copy()
-                g_async_dl.needs_merge = true
-                g_async_dl.merge_status = string::make_no_len("waiting")
-                g_async_dl.mu.unlock()
+                dl.mu.lock()
+                dl.audio_task_id = audio_id.copy()
+                dl.needs_merge = true
+                dl.merge_status = string::make_no_len("waiting")
+                dl.mu.unlock()
             }
+            record_yt_link(dl)
         }
 
-        // Mark as done — the URL extraction and DM add are complete.
+        dl.mu.lock()
+        dl.status_line = string::make_no_len("Download started")
+        dl.mu.unlock()
+
+        maybe_start_merge_monitor(dl)
+        return true
+    }
+
+    // Single-download thread wrapper (sets the global's done/running flags).
+    func download_thread_entry(arg : *void) : *void {
+        std::concurrent.sleep_ms(10u)
+        do_item_download(&raw mut g_async_dl)
         g_async_dl.mu.lock()
-        g_async_dl.status_line = string::make_no_len("Download started")
         g_async_dl.done = true
         g_async_dl.running = false
         g_async_dl.mu.unlock()
-
-        // Start merge monitor if this was a 2-URL download.
-        maybe_start_merge_monitor(dm)
         return null
     }
 
 
+    // Re-queue a failed item with freshly extracted (auto-refreshed) links, using
+    // the same quality settings. change_url() resets the task and re-queues it.
+    func requeue_item(dl : *mut AsyncDlState) : bool {
+        var dm = dl.dm
+        if(dm == null) { return false }
+        var raw_urls = extract_urls(string_view::make_view(&dl.url), string_view::make_view(&dl.format))
+        var urls = split_urls(string_view::make_view(&raw_urls))
+        if(urls.size() == 0u) { return false }
+        if(dl.dm_task_id.size() > 0u) {
+            change_url(&mut *dm, &dl.dm_task_id, string_view(urls.get_ptr(0).data(), urls.get_ptr(0).size()))
+        }
+        if(urls.size() >= 2u && dl.audio_task_id.size() > 0u) {
+            change_url(&mut *dm, &dl.audio_task_id, string_view(urls.get_ptr(1).data(), urls.get_ptr(1).size()))
+        }
+        dl.mu.lock()
+        dl.merge_status = string::make_no_len("waiting")
+        dl.merge_error = string()
+        dl.error = string()
+        dl.mu.unlock()
+        return true
+    }
+
+    func parse_int_tsv(s : string_view) : int {
+        var v = parse_double_view(s)
+        return v as int
+    }
+
+    // Persist a mapping from a DM task to its original YouTube URL + settings so
+    // links can be refreshed after the app is restarted (media URLs expire).
+    func record_yt_link(dl : *mut AsyncDlState) {
+        if(g_yt_links == null) {
+            g_yt_links = new vector<YtLinkRecord>()
+        }
+        var rec = YtLinkRecord()
+        rec.video_id = dl.dm_task_id.copy()
+        rec.audio_id = dl.audio_task_id.copy()
+        rec.youtube_url = dl.url.copy()
+        rec.format = dl.format.copy()
+        rec.mode = dl.mode.copy()
+        rec.audio_format = dl.audio_format.copy()
+        rec.min_q = dl.min_quality
+        rec.max_q = dl.max_quality
+        rec.output_dir = dl.output_dir.copy()
+        g_yt_links.push_back(rec)
+        save_yt_links()
+    }
+
+    func yt_links_file() : string {
+        var dir = settings_dir()
+        var path = dir.copy()
+        path.append('/')
+        path.append_string(&string::make_no_len("yt_links.txt"))
+        return path
+    }
+
+    func save_yt_links() {
+        if(g_yt_links == null) { return }
+        var path = yt_links_file()
+        var f = fopen(path.data(), "w")
+        if(f == null) { return }
+        for(var i = 0u; i < g_yt_links.size(); i++) {
+            var r = g_yt_links.get_ptr(i)
+            var line = string()
+            line.append_string(&r.video_id)
+            line.append('\t'); line.append_string(&r.audio_id)
+            line.append('\t'); line.append_string(&r.youtube_url)
+            line.append('\t'); line.append_string(&r.format)
+            line.append('\t'); line.append_string(&r.mode)
+            line.append('\t'); line.append_string(&r.audio_format)
+            var mqs = string(); mqs.append_integer(r.min_q as bigint)
+            line.append('\t'); line.append_string(&mqs)
+            var mxs = string(); mxs.append_integer(r.max_q as bigint)
+            line.append('\t'); line.append_string(&mxs)
+            line.append('\t'); line.append_string(&r.output_dir)
+            line.append('\n')
+            fprintf(f, "%s", line.data())
+        }
+        fclose(f)
+    }
+
+    func load_yt_links() {
+        var path = yt_links_file()
+        var f = fopen(path.data(), "rb")
+        if(f == null) { return }
+        if(g_yt_links == null) {
+            g_yt_links = new vector<YtLinkRecord>()
+        } else {
+            g_yt_links.clear()
+        }
+        unsafe var chunk : [8192u]u8
+        var content = string()
+        while(true) {
+            var n = fread(&raw mut chunk[0], 1, 8192u, f)
+            if(n == 0u) { break }
+            content.append_with_len(&raw mut chunk[0] as *char, n)
+        }
+        fclose(f)
+        // Split into lines, then tab-separated fields.
+        var line = string()
+        var line_started = false
+        for(var i = 0u; i < content.size(); i++) {
+            var c = content.get(i)
+            if(c == '\n' || c == '\r') {
+                if(line_started) {
+                    var rec = YtLinkRecord()
+                    var parts = vector<string>()
+                    var start : usize = 0
+                    for(var k = 0u; k <= line.size(); k++) {
+                        if(k == line.size() || line.get(k) == '\t') {
+                            var lv = string_view::make_view(&line)
+                            parts.push_back(string(lv.subview(start, k).data(), lv.subview(start, k).size()))
+                            start = k + 1u
+                        }
+                    }
+                    if(parts.size() >= 9u) {
+                        rec.video_id = parts.get_ptr(0).copy()
+                        rec.audio_id = parts.get_ptr(1).copy()
+                        rec.youtube_url = parts.get_ptr(2).copy()
+                        rec.format = parts.get_ptr(3).copy()
+                        rec.mode = parts.get_ptr(4).copy()
+                        rec.audio_format = parts.get_ptr(5).copy()
+                        rec.min_q = parse_int_tsv(string_view::make_view(parts.get_ref(6)))
+                        rec.max_q = parse_int_tsv(string_view::make_view(parts.get_ref(7)))
+                        rec.output_dir = parts.get_ptr(8).copy()
+                        g_yt_links.push_back(rec)
+                    }
+                    line = string()
+                    line_started = false
+                }
+            } else {
+                line.append(c)
+                line_started = true
+            }
+        }
+    }
+
+    // At launch, refresh any incomplete yt tasks whose stored media URL may have
+    // expired, so a half-finished download resumes cleanly after a long break.
+    public func refresh_stale_yt_links(dm : *mut DownloadManager) {
+        load_yt_links()
+        if(g_yt_links == null || g_yt_links.size() == 0u) { return }
+        var snap = snapshot(&mut *dm)
+        for(var i = 0u; i < g_yt_links.size(); i++) {
+            var r = g_yt_links.get_ptr(i)
+            var found = false
+            var state = 0
+            for(var s = 0u; s < snap.size(); s++) {
+                var it = snap.get_ptr(s)
+                if(it.id.equals(&r.video_id)) { found = true; state = it.state; break }
+            }
+            if(!found) { continue }
+            if(state == STATE_DONE || state == STATE_DOWNLOADING) { continue }
+            var raw_urls = extract_urls(string_view::make_view(&r.youtube_url), string_view::make_no_len("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"))
+            var urls = split_urls(string_view::make_view(&raw_urls))
+            if(urls.size() == 0u) { continue }
+            if(r.video_id.size() > 0u) {
+                change_url(&mut *dm, &r.video_id, string_view(urls.get_ptr(0).data(), urls.get_ptr(0).size()))
+            }
+            if(urls.size() >= 2u && r.audio_id.size() > 0u) {
+                change_url(&mut *dm, &r.audio_id, string_view(urls.get_ptr(1).data(), urls.get_ptr(1).size()))
+            }
+            fprintf(stderr, "[CDM-LINK] refreshed stale link for %s\n", r.video_id.data())
+        }
+    }
+
     // ---- Merge monitor thread ----
-    // Waits for both video and audio tasks to complete, then merges with ffmpeg.
-    // Retries merge once on failure.
+    // Waits for both video+audio tasks to finish, then merges with ffmpeg. On a
+    // download or merge failure it refreshes the (possibly expired) links and
+    // retries up to dl.max_retries times before giving up.
 
     func merge_monitor_entry(arg : *void) : *void {
-        var dm = g_async_dl.dm
+        var dl = arg as *mut AsyncDlState
+        var dm = dl.dm
+        if(dm == null) { return null }
         var vid_id = string()
         var aud_id = string()
         var vid_dir = string()
@@ -649,174 +889,133 @@ using std::mutex;
         var title = string()
         var del_separate = false
 
-        g_async_dl.mu.lock()
-        vid_id = g_async_dl.dm_task_id.copy()
-        aud_id = g_async_dl.audio_task_id.copy()
-        vid_dir = g_async_dl.output_dir.copy()
-        title = g_async_dl.title.copy()
-        del_separate = g_async_dl.delete_separate
-        g_async_dl.mu.unlock()
+        dl.mu.lock()
+        vid_id = dl.dm_task_id.copy()
+        aud_id = dl.audio_task_id.copy()
+        vid_dir = dl.output_dir.copy()
+        title = dl.title.copy()
+        del_separate = dl.delete_separate
+        dl.mu.unlock()
 
-        // Build expected filenames.
         vid_fname = suggest_yt_filename(string_view::make_view(&title), string_view::make_no_len("mp4"))
         aud_fname = string::make_no_len("audio_")
         aud_fname.append_string(&title)
         aud_fname.append_view(string_view::make_no_len(".m4a"))
 
-        // Poll until both tasks are done or failed.
-        var vid_done = false
-        var aud_done = false
-        var merge_error = string()
-        var poll_count = 0
-
-        fprintf(stderr, "[CDM-MERGE] monitor started: vid=%s aud=%s\n", vid_id.data(), aud_id.data())
-
-        while(!vid_done || !aud_done) {
-            std::concurrent.sleep_ms(2000u)
-            poll_count = poll_count + 1
-
-            // Timeout after 2 hours.
-            if(poll_count > 3600) {
-                merge_error = string::make_no_len("merge timeout")
-                break
-            }
-
-            var snap = snapshot(&mut *dm)
-            vid_done = false
-            aud_done = false
+        var attempt = 0
+        while(true) {
+            var vid_done = false
+            var aud_done = false
             var vid_failed = false
             var aud_failed = false
-
-            for(var i = 0u; i < snap.size(); i++) {
-                var it = snap.get_ptr(i)
-                if(it.id.equals(&vid_id)) {
-                    if(it.state == STATE_DONE) { vid_done = true }
-                    if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) { vid_failed = true }
+            var wait_loops = 0
+            while(!vid_done || !aud_done) {
+                std::concurrent.sleep_ms(2000u)
+                wait_loops = wait_loops + 1
+                if(wait_loops > 3600) {
+                    dl.mu.lock()
+                    dl.error = string::make_no_len("download timeout")
+                    dl.merge_status = string::make_no_len("failed")
+                    dl.merge_error = string::make_no_len("download timeout")
+                    dl.mu.unlock()
+                    fprintf(stderr, "[CDM-MERGE] timeout vid=%s aud=%s\n", vid_id.data(), aud_id.data())
+                    return null
                 }
-                if(it.id.equals(&aud_id)) {
-                    if(it.state == STATE_DONE) { aud_done = true }
-                    if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) { aud_failed = true }
+                var snap = snapshot(&mut *dm)
+                vid_done = false; aud_done = false; vid_failed = false; aud_failed = false
+                for(var i = 0u; i < snap.size(); i++) {
+                    var it = snap.get_ptr(i)
+                    if(vid_id.size() > 0u && it.id.equals(&vid_id)) {
+                        if(it.state == STATE_DONE) { vid_done = true }
+                        if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) { vid_failed = true }
+                    }
+                    if(aud_id.size() > 0u && it.id.equals(&aud_id)) {
+                        if(it.state == STATE_DONE) { aud_done = true }
+                        if(it.state == STATE_FAILED || it.state == STATE_CANCELLED) { aud_failed = true }
+                    }
+                }
+                if(vid_failed || aud_failed) {
+                    if(attempt < dl.max_retries) {
+                        attempt = attempt + 1
+                        dl.mu.lock()
+                        dl.status_line = string::make_no_len("Link error - refreshing download URL and retrying...")
+                        dl.retry_count = attempt
+                        dl.mu.unlock()
+                        fprintf(stderr, "[CDM-MERGE] link error, refresh+retry %d/%d vid=%s\n", attempt, dl.max_retries, vid_id.data())
+                        requeue_item(dl)
+                        vid_done = false; aud_done = false; vid_failed = false; aud_failed = false
+                    } else {
+                        dl.mu.lock()
+                        if(vid_failed) { dl.error = string::make_no_len("video download failed"); dl.merge_error = string::make_no_len("video download failed") }
+                        else { dl.error = string::make_no_len("audio download failed"); dl.merge_error = string::make_no_len("audio download failed") }
+                        dl.merge_status = string::make_no_len("failed")
+                        dl.mu.unlock()
+                        fprintf(stderr, "[CDM-MERGE] failed (no retries left) vid=%s aud=%s\n", vid_id.data(), aud_id.data())
+                        return null
+                    }
+                } else if(vid_done && !aud_done) {
+                    dl.mu.lock(); dl.status_line = string::make_no_len("Waiting for audio download..."); dl.mu.unlock()
+                } else if(!vid_done && aud_done) {
+                    dl.mu.lock(); dl.status_line = string::make_no_len("Waiting for video download..."); dl.mu.unlock()
                 }
             }
 
-            if(vid_failed) {
-                merge_error = string::make_no_len("video download failed")
-                break
-            }
-            if(aud_failed) {
-                merge_error = string::make_no_len("audio download failed")
-                break
-            }
+            dl.mu.lock()
+            dl.status_line = string::make_no_len("Merging video + audio...")
+            dl.merge_status = string::make_no_len("merging")
+            dl.mu.unlock()
 
-            // Update status so UI shows waiting progress.
-            if(vid_done && !aud_done) {
-                g_async_dl.mu.lock()
-                g_async_dl.status_line = string::make_no_len("Waiting for audio download...")
-                g_async_dl.mu.unlock()
-            } else if(!vid_done && aud_done) {
-                g_async_dl.mu.lock()
-                g_async_dl.status_line = string::make_no_len("Waiting for video download...")
-                g_async_dl.mu.unlock()
+            var video_path = string()
+            video_path.append_string(&vid_dir); video_path.append('/'); video_path.append_string(&vid_fname)
+            var audio_path = string()
+            audio_path.append_string(&vid_dir); audio_path.append('/'); audio_path.append_string(&aud_fname)
+            var output_path = string()
+            output_path.append_string(&vid_dir); output_path.append('/'); output_path.append_string(&vid_fname)
+
+            var merge_err_s = string()
+            var merged = ffmpeg_merge_files(string_view::make_view(&video_path), string_view::make_view(&audio_path), string_view::make_view(&output_path), &mut merge_err_s)
+            if(merged) {
+                dl.mu.lock()
+                dl.status_line = string::make_no_len("Merged successfully")
+                dl.merge_status = string::make_no_len("merged")
+                dl.mu.unlock()
+                fprintf(stderr, "[CDM-MERGE] merge succeeded vid=%s\n", vid_id.data())
+                if(del_separate) { remove(audio_path.data()); fprintf(stderr, "[CDM-MERGE] deleted separate audio file\n") }
+                return null
             }
-        }
-
-        var both_int = 0
-        if(vid_done && aud_done) { both_int = 1 }
-        fprintf(stderr, "[CDM-MERGE] both done=%d, error=%s\n", both_int, merge_error.data())
-
-        // Update status.
-        g_async_dl.mu.lock()
-        if(merge_error.size() > 0u) {
-            g_async_dl.status_line = string::make_no_len("Merge failed: ")
-            g_async_dl.status_line.append_string(&merge_error)
-            g_async_dl.error = merge_error.copy()
-            g_async_dl.merge_status = string::make_no_len("failed")
-            g_async_dl.merge_error = merge_error.copy()
-            g_async_dl.mu.unlock()
+            if(attempt < dl.max_retries) {
+                attempt = attempt + 1
+                dl.mu.lock()
+                dl.status_line = string::make_no_len("Merge failed - refreshing links and retrying...")
+                dl.retry_count = attempt
+                dl.mu.unlock()
+                fprintf(stderr, "[CDM-MERGE] merge failed, refresh+retry %d/%d vid=%s\n", attempt, dl.max_retries, vid_id.data())
+                requeue_item(dl)
+                continue
+            }
+            dl.mu.lock()
+            dl.status_line = string::make_no_len("ffmpeg merge failed")
+            dl.error = string::make_no_len("ffmpeg merge failed - files kept separately")
+            dl.merge_status = string::make_no_len("failed")
+            if(merge_err_s.size() > 0u) { dl.merge_error = merge_err_s.copy() } else { dl.merge_error = string::make_no_len("ffmpeg merge failed") }
+            dl.mu.unlock()
+            fprintf(stderr, "[CDM-MERGE] merge failed after retries: %s\n", dl.merge_error.data())
             return null
         }
-        g_async_dl.status_line = string::make_no_len("Merging video + audio...")
-        g_async_dl.merge_status = string::make_no_len("merging")
-        g_async_dl.mu.unlock()
-
-        // Perform the merge (with one retry).
-        var video_path = string()
-        video_path.append_string(&vid_dir)
-        video_path.append('/')
-        video_path.append_string(&vid_fname)
-
-        var audio_path = string()
-        audio_path.append_string(&vid_dir)
-        audio_path.append('/')
-        audio_path.append_string(&aud_fname)
-
-        var output_path = string()
-        output_path.append_string(&vid_dir)
-        output_path.append('/')
-        output_path.append_string(&vid_fname)
-
-        var merge_err_s = string()
-        var merged = ffmpeg_merge_files(
-            string_view::make_view(&video_path),
-            string_view::make_view(&audio_path),
-            string_view::make_view(&output_path),
-            &mut merge_err_s)
-
-        // Retry once on failure.
-        if(!merged) {
-            fprintf(stderr, "[CDM-MERGE] first merge attempt failed, retrying...\n")
-            std::concurrent.sleep_ms(1000u)
-            merge_err_s = string()
-            merged = ffmpeg_merge_files(
-                string_view::make_view(&video_path),
-                string_view::make_view(&audio_path),
-                string_view::make_view(&output_path),
-                &mut merge_err_s)
-        }
-
-        if(merged) {
-            g_async_dl.mu.lock()
-            g_async_dl.status_line = string::make_no_len("Merged successfully")
-            g_async_dl.merge_status = string::make_no_len("merged")
-            g_async_dl.mu.unlock()
-            fprintf(stderr, "[CDM-MERGE] merge succeeded\n")
-
-            // Delete the *separate audio* file if requested. The merged result is
-            // written to output_path, which equals the video task's file, so the
-            // "video" path must NOT be deleted here (it IS the final output).
-            if(del_separate) {
-                remove(audio_path.data())
-                fprintf(stderr, "[CDM-MERGE] deleted separate audio file\n")
-            }
-        } else {
-            g_async_dl.mu.lock()
-            g_async_dl.status_line = string::make_no_len("ffmpeg merge failed")
-            g_async_dl.error = string::make_no_len("ffmpeg merge failed - files kept separately")
-            g_async_dl.merge_status = string::make_no_len("failed")
-            // Surface the real ffmpeg error (or diagnostic) so the UI can show it.
-            if(merge_err_s.size() > 0u) {
-                g_async_dl.merge_error = merge_err_s.copy()
-            } else {
-                g_async_dl.merge_error = string::make_no_len("ffmpeg merge failed")
-            }
-            g_async_dl.mu.unlock()
-            fprintf(stderr, "[CDM-MERGE] merge failed after retry: %s\n", g_async_dl.merge_error.data())
-        }
-
         return null
     }
 
     // Start merge monitor after adding both video+audio to DM.
-    func maybe_start_merge_monitor(dm : *mut DownloadManager) {
-        g_async_dl.mu.lock()
-        var needs = g_async_dl.needs_merge
-        var auto = g_async_dl.auto_merge
-        g_async_dl.mu.unlock()
+    func maybe_start_merge_monitor(dl : *mut AsyncDlState) {
+        dl.mu.lock()
+        var needs = dl.needs_merge
+        var auto = dl.auto_merge
+        dl.mu.unlock()
         var needs_int = 0; if(needs) { needs_int = 1 }
         var auto_int = 0; if(auto) { auto_int = 1 }
         fprintf(stderr, "[CDM-MERGE] maybe_start: needs=%d auto=%d\n", needs_int, auto_int)
         if(needs && auto) {
-            std::concurrent.spawn(merge_monitor_entry, null)
+            std::concurrent.spawn(merge_monitor_entry, dl as *void)
         }
     }
 
@@ -873,6 +1072,13 @@ using std::mutex;
     }
 
     // ---- Playlist download ----
+
+    func pl_push_item(it : *mut YtPlItem) {
+        if(g_async_pl.items == null) {
+            g_async_pl.items = new vector<*mut YtPlItem>()
+        }
+        g_async_pl.items.push_back(it)
+    }
 
     func playlist_thread_entry(arg : *void) : *void {
         std::concurrent.sleep_ms(10u)
@@ -951,33 +1157,73 @@ using std::mutex;
 
             g_async_pl.mu.lock()
             g_async_pl.current_title = string(entry_title.data(), entry_title.size())
-            g_async_pl.status_line = string::make_no_len("Downloading: ")
+            g_async_pl.status_line = string::make_no_len("Queuing: ")
             g_async_pl.status_line.append_view(&entry_title)
             g_async_pl.mu.unlock()
 
-            // Extract URL for this entry and add to DM.
-            var raw_urls = extract_urls(entry_url, string_view::make_view(&fmt))
-            var urls = split_urls(string_view::make_view(&raw_urls))
-            if(urls.size() == 0u) {
-                g_async_pl.mu.lock(); g_async_pl.items_done = g_async_pl.items_done + 1; g_async_pl.mu.unlock()
-                continue
-            }
+            // Allocate a per-item record (heap; lives in g_async_pl.items).
+            // Use `new` (not malloc + assignment) so the embedded mutex is
+            // constructed in place and not destroyed by a temporary's dtor.
+            var item = new YtPlItem()
+            item.index = idx as int
+            item.entry_url = string(entry_url.data(), entry_url.size())
+            item.title = string(entry_title.data(), entry_title.size())
+            item.max_retries = g_async_pl.max_retries
+            item.dl.dm = dm
+            item.dl.url = item.entry_url.copy()
+            item.dl.format = g_async_pl.format.copy()
+            item.dl.mode = string::make_no_len("merged")
+            item.dl.audio_format = string::make_no_len("best")
+            item.dl.min_quality = g_async_pl.min_quality
+            item.dl.max_quality = g_async_pl.max_quality
+            item.dl.output_dir = g_async_pl.output_dir.copy()
+            item.dl.auto_merge = true
+            item.dl.delete_separate = true
+            item.dl.needs_merge = false
+            item.dl.retry_count = 0
+            item.dl.max_retries = g_async_pl.max_retries
+            pl_push_item(item)
 
-            var fname = suggest_yt_filename(entry_title, string_view::make_no_len("mp4"))
-            if(dm != null) {
-                var eu_d = urls.get_ptr(0).data()
-                var eu_s = urls.get_ptr(0).size()
-                add_task_ex(&mut *dm, string_view(eu_d, eu_s),
-                            string_view::make_view(&g_async_pl.output_dir),
-                            string_view::make_view(&fname), 0, 0)
+            // Start this item's download + merge monitor. Blocks only on the
+            // yt-dlp URL extraction; the actual download+merge run via the DM
+            // and the per-item merge monitor thread.
+            var ok = do_item_download(&raw mut item.dl)
+            if(!ok) {
+                item.dl.merge_status = string::make_no_len("failed")
+                fprintf(stderr, "[CDM-PL] item %d failed to extract: %s\n", idx as int, item.title.data())
             }
-
             g_async_pl.mu.lock()
             g_async_pl.items_done = g_async_pl.items_done + 1
-            g_async_pl.progress = (g_async_pl.items_done as double) * 100.0 / (total_entries as double)
             g_async_pl.mu.unlock()
         }
 
+        // Monitor until every item is merged or failed.
+        var finished = false
+        while(!finished) {
+            std::concurrent.sleep_ms(1000u)
+            finished = true
+            var done_count = 0
+            if(g_async_pl.items != null) {
+                for(var i = 0u; i < g_async_pl.items.size(); i++) {
+                    var it = *(g_async_pl.items.get_ptr(i))
+                    var ms = string()
+                    it.dl.mu.lock(); ms = it.dl.merge_status.copy(); it.dl.mu.unlock()
+                    if(ms.equals_view(string_view::make_no_len("merged")) || ms.equals_view(string_view::make_no_len("failed"))) {
+                        done_count = done_count + 1
+                    } else {
+                        finished = false
+                    }
+                }
+            }
+            g_async_pl.mu.lock()
+            g_async_pl.items_done = done_count
+            if(total_entries > 0) {
+                g_async_pl.progress = (done_count as double) * 100.0 / (total_entries as double)
+            } else {
+                g_async_pl.progress = 100.0
+            }
+            g_async_pl.mu.unlock()
+        }
         g_async_pl.mu.lock()
         g_async_pl.done = true; g_async_pl.running = false; g_async_pl.progress = 100.0
         g_async_pl.mu.unlock()
@@ -987,7 +1233,8 @@ using std::mutex;
     public func start_async_playlist_download(url : string_view, format : string_view,
                                               mode : string_view, audio_fmt : string_view,
                                               dir : string_view, min_quality : int,
-                                              max_quality : int, dm : *mut DownloadManager) : string {
+                                              max_quality : int, max_retries : int,
+                                              dm : *mut DownloadManager) : string {
         g_async_pl.mu.lock()
         if(g_async_pl.running) { g_async_pl.mu.unlock(); return string::make_no_len("playlist download already in progress") }
         g_async_pl.running = true; g_async_pl.done = false; g_async_pl.error = string()
@@ -998,10 +1245,81 @@ using std::mutex;
         g_async_pl.format = string(format.data(), format.size())
         g_async_pl.output_dir = string(dir.data(), dir.size())
         g_async_pl.min_quality = min_quality; g_async_pl.max_quality = max_quality
+        if(max_retries <= 0) { g_async_pl.max_retries = YT_DEFAULT_MAX_RETRIES } else { g_async_pl.max_retries = max_retries }
+        g_async_pl.items = null
         g_async_pl.dm = dm
         g_async_pl.mu.unlock()
         std::concurrent.spawn(playlist_thread_entry, null)
         return string()
+    }
+
+    // Retry a single playlist item by index: refresh its (possibly expired) links
+    // with the same quality settings, re-queue the DM tasks, and restart the merge
+    // monitor. Returns "" on success or an error message.
+    public func retry_playlist_item(index : int) : string {
+        g_async_pl.mu.lock()
+        var items_ptr = g_async_pl.items
+        var dm = g_async_pl.dm
+        g_async_pl.mu.unlock()
+        if(items_ptr == null) { return string::make_no_len("no playlist in progress") }
+        var found : *mut YtPlItem = null
+        for(var i = 0u; i < items_ptr.size(); i++) {
+            var it = *(items_ptr.get_ptr(i))
+            if(it.index == index) { found = it; break }
+        }
+        if(found == null) { return string::make_no_len("playlist item not found") }
+        if(dm == null) { return string::make_no_len("download manager unavailable") }
+        // Reset merge state and re-queue with refreshed links.
+        found.dl.mu.lock()
+        found.dl.merge_status = string::make_no_len("waiting")
+        found.dl.merge_error = string()
+        found.dl.error = string()
+        found.dl.mu.unlock()
+        var ok = requeue_item(&raw mut found.dl)
+        if(!ok) { return string::make_no_len("failed to refresh download URLs") }
+        maybe_start_merge_monitor(&raw mut found.dl)
+        return string()
+    }
+
+    // Open the merged file for a finished playlist item (best-effort path string).
+    public func playlist_item_output_path(index : int) : string {
+        g_async_pl.mu.lock()
+        var items_ptr = g_async_pl.items
+        g_async_pl.mu.unlock()
+        if(items_ptr == null) { return string() }
+        for(var i = 0u; i < items_ptr.size(); i++) {
+            var it = *(items_ptr.get_ptr(i))
+            if(it.index != index) { continue }
+            it.dl.mu.lock()
+            var title = it.dl.title.copy()
+            if(title.size() == 0u) { title = it.title.copy() }
+            var od = it.dl.output_dir.copy()
+            it.dl.mu.unlock()
+            var p = string()
+            p.append_string(&od)
+            p.append('/')
+            p.append_string(&suggest_yt_filename(string_view::make_view(&title), string_view::make_no_len("mp4")))
+            return p
+        }
+        return string()
+    }
+
+    // Compute a 0..100 combined progress for one DM task id from a snapshot.
+    func pl_task_percent(snap : &vector<DownloadItem>, id : string_view, out_state : *mut int) : double {
+        if(id.size() == 0u) { *out_state = 0; return 0.0 }
+        for(var s = 0u; s < snap.size(); s++) {
+            var si = snap.get_ptr(s)
+            if(si.id.equals_view(&id)) {
+                *out_state = si.state
+                if(si.state == STATE_DONE || si.state == STATE_FAILED || si.state == STATE_CANCELLED) { return 100.0 }
+                if(si.total_bytes > 0) {
+                    return (si.downloaded_bytes as double) * 100.0 / (si.total_bytes as double)
+                }
+                return 0.0
+            }
+        }
+        *out_state = 0
+        return 0.0
     }
 
     public func poll_async_playlist_download() : string {
@@ -1010,7 +1328,13 @@ using std::mutex;
         var error = g_async_pl.error.copy(); var progress = g_async_pl.progress
         var items_done = g_async_pl.items_done; var items_total = g_async_pl.items_total
         var current_title = g_async_pl.current_title.copy(); var status = g_async_pl.status_line.copy()
+        var items_ptr = g_async_pl.items
+        var dm = g_async_pl.dm
         g_async_pl.mu.unlock()
+
+        var snap = vector<DownloadItem>()
+        if(dm != null) { snap = snapshot(&mut *dm) }
+
         var out = string::make_no_len("{\"running\":")
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"done\":"))
@@ -1027,6 +1351,82 @@ using std::mutex;
         out.append_string(&json_string(string_view::make_view(&current_title)))
         out.append_string(&string::make_no_len(",\"status\":"))
         out.append_string(&json_string(string_view::make_view(&status)))
+        out.append_string(&string::make_no_len(",\"videos\":["))
+        if(items_ptr != null) {
+            for(var i = 0u; i < items_ptr.size(); i++) {
+                var it = *(items_ptr.get_ptr(i))
+                it.dl.mu.lock()
+                var title = it.dl.title.copy()
+                if(title.size() == 0u) { title = it.title.copy() }
+                var vid_id = it.dl.dm_task_id.copy()
+                var aud_id = it.dl.audio_task_id.copy()
+                var merge_st = it.dl.merge_status.copy()
+                var merge_err = it.dl.merge_error.copy()
+                var rc = it.dl.retry_count
+                var mstatus = it.dl.status_line.copy()
+                var od = it.dl.output_dir.copy()
+                it.dl.mu.unlock()
+
+                var vid_state = 0; var aud_state = 0
+                var vid_pct = pl_task_percent(&snap, string_view::make_view(&vid_id), &raw mut vid_state)
+                var aud_pct = pl_task_percent(&snap, string_view::make_view(&aud_id), &raw mut aud_state)
+
+                var combined = 0.0
+                var state_str = string::make_no_len("queued")
+                if(merge_st.equals_view(string_view::make_no_len("merged"))) {
+                    state_str = string::make_no_len("done"); combined = 100.0
+                } else if(merge_st.equals_view(string_view::make_no_len("failed"))) {
+                    state_str = string::make_no_len("failed"); combined = 100.0
+                } else if(merge_st.equals_view(string_view::make_no_len("merging"))) {
+                    state_str = string::make_no_len("merging")
+                    if(aud_id.size() > 0u) { combined = (vid_pct + aud_pct) / 2.0 } else { combined = vid_pct }
+                } else {
+                    if(vid_id.size() == 0u) {
+                        state_str = string::make_no_len("queued")
+                    } else if(vid_state == STATE_DOWNLOADING || aud_state == STATE_DOWNLOADING) {
+                        state_str = string::make_no_len("downloading")
+                        if(aud_id.size() > 0u) { combined = (vid_pct + aud_pct) / 2.0 } else { combined = vid_pct }
+                    } else if(vid_state == STATE_DONE && (aud_id.size() == 0u || aud_state == STATE_DONE)) {
+                        state_str = string::make_no_len("merging"); combined = 100.0
+                    } else {
+                        state_str = string::make_no_len("queued")
+                        if(aud_id.size() > 0u) { combined = (vid_pct + aud_pct) / 2.0 } else { combined = vid_pct }
+                    }
+                }
+
+                var out_path = string()
+                out_path.append_string(&od)
+                out_path.append('/')
+                out_path.append_string(&suggest_yt_filename(string_view::make_view(&title), string_view::make_no_len("mp4")))
+
+                if(i > 0u) { out.append(',') }
+                out.append('{')
+                out.append_string(&string::make_no_len("\"index\":"))
+                var is = string(); is.append_integer(it.index as bigint); out.append_string(&is)
+                out.append_string(&string::make_no_len(",\"title\":"))
+                out.append_string(&json_string(string_view::make_view(&title)))
+                out.append_string(&string::make_no_len(",\"state\":"))
+                out.append_string(&json_string(string_view::make_view(&state_str)))
+                out.append_string(&string::make_no_len(",\"progress\":"))
+                var cps = string(); cps.append_double(combined, 1); out.append_string(&cps)
+                out.append_string(&string::make_no_len(",\"video_task_id\":"))
+                out.append_string(&json_string(string_view::make_view(&vid_id)))
+                out.append_string(&string::make_no_len(",\"audio_task_id\":"))
+                out.append_string(&json_string(string_view::make_view(&aud_id)))
+                out.append_string(&string::make_no_len(",\"merge_status\":"))
+                out.append_string(&json_string(string_view::make_view(&merge_st)))
+                out.append_string(&string::make_no_len(",\"merge_error\":"))
+                out.append_string(&json_string(string_view::make_view(&merge_err)))
+                out.append_string(&string::make_no_len(",\"status\":"))
+                out.append_string(&json_string(string_view::make_view(&mstatus)))
+                out.append_string(&string::make_no_len(",\"retry_count\":"))
+                var rcs = string(); rcs.append_integer(rc as bigint); out.append_string(&rcs)
+                out.append_string(&string::make_no_len(",\"output_path\":"))
+                out.append_string(&json_string(string_view::make_view(&out_path)))
+                out.append('}')
+            }
+        }
+        out.append(']')
         out.append('}'); return out
     }
 

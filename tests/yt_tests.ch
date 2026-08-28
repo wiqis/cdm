@@ -598,6 +598,24 @@ public func CDM_yt_playlist_info_json(env : &mut TestEnv) {
     if(json.find("entry_count") == std::NPOS) { env.error("missing entry_count"); return }
 }
 
+// Regression: yt-dlp --flat-playlist --dump-json emits NDJSON (one JSON object
+// per line). The info dialog previously parsed this with the single-video parser,
+// which only saw the first line and reported "0 videos" with a single video's title.
+// parse_playlist_json must enumerate every NDJSON line and derive the playlist title
+// from the per-entry "playlist" field.
+@test
+public func CDM_yt_playlist_ndjson_entries(env : &mut TestEnv) {
+    var ndjson = string::make_no_len("")
+    ndjson.append_string(&string::make_no_len("{\"id\":\"abc\",\"title\":\"Dog eats Bean Burrito in 1 second\",\"url\":\"https://youtube.com/watch?v=abc\",\"playlist\":\"My Playlist\",\"playlist_id\":\"PLxxxx\",\"duration\":14}\n"))
+    ndjson.append_string(&string::make_no_len("{\"id\":\"def\",\"title\":\"Another video\",\"url\":\"https://youtube.com/watch?v=def\",\"playlist\":\"My Playlist\",\"playlist_id\":\"PLxxxx\",\"duration\":20}\n"))
+    var info = cdm::parse_playlist_json(string_view::make_view(&ndjson))
+    if(info.entry_count() != 2) { env.error("expected 2 entries"); return }
+    if(!info.title.equals_view(string_view::make_no_len("My Playlist"))) { env.error("title should be playlist title, not a video title"); return }
+    var json = info.to_json()
+    if(json.find("\"is_playlist\":true") == std::NPOS) { env.error("missing is_playlist:true"); return }
+    if(json.find("Another video") == std::NPOS) { env.error("missing second entry"); return }
+}
+
 // Regression: the async poll builders (info / download / playlist) must emit
 // VALID JSON. They previously wrapped json_string() — which already adds the
 // surrounding quotes — with manual "..." quotes, producing e.g. "error":""..."

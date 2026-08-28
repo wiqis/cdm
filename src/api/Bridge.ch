@@ -564,6 +564,7 @@ using std::Result;
             var audio_fmt = json_field(args, string_view::make_no_len("audio_format"))
             var min_q = json_int_field(args, string_view::make_no_len("min_quality"), 0)
             var max_q = json_int_field(args, string_view::make_no_len("max_quality"), 0)
+            var max_retries = json_int_field(args, string_view::make_no_len("max_retries"), 0)
             if(!ytdlp_is_available()) {
                 var msg = string::make_no_len("yt-dlp is not installed")
                 return err_json(&msg)
@@ -580,7 +581,7 @@ using std::Result;
                 string_view::make_view(&mode),
                 string_view::make_view(&audio_fmt),
                 string_view::make_view(&output_dir),
-                min_q, max_q,
+                min_q, max_q, max_retries,
                 dm
             )
             if(start_err.size() > 0u) {
@@ -592,6 +593,30 @@ using std::Result;
         var m_yt_download_playlist_poll = string_view::make_no_len("yt_download_playlist_poll")
         if(method.equals(&m_yt_download_playlist_poll)) {
             return poll_async_playlist_download()
+        }
+        // yt_download_playlist_retry: retry a single failed playlist item by index.
+        var m_yt_download_playlist_retry = string_view::make_no_len("yt_download_playlist_retry")
+        if(method.equals(&m_yt_download_playlist_retry)) {
+            var idx = json_int_field(args, string_view::make_no_len("index"), -1)
+            var rerr = retry_playlist_item(idx)
+            if(rerr.size() > 0u) { return err_json(&rerr) }
+            return ok_json()
+        }
+        // yt_download_playlist_open: open a finished playlist item's merged file.
+        var m_yt_download_playlist_open = string_view::make_no_len("yt_download_playlist_open")
+        if(method.equals(&m_yt_download_playlist_open)) {
+            var idx = json_int_field(args, string_view::make_no_len("index"), -1)
+            var path = playlist_item_output_path(idx)
+            if(path.size() == 0u) { return err_json(&string::make_no_len("no such item")) }
+            var cmd_args = vector<string>()
+            cmd_args.push_back(string::make_no_len("xdg-open"))
+            cmd_args.push_back(path.copy())
+            var ocfg = process::ProcessConfig.default()
+            ocfg.args = cmd_args
+            ocfg.capture_stdout = false
+            ocfg.capture_stderr = false
+            process::execute(ocfg)
+            return ok_json()
         }
         // yt_cancel: cancel any active async YouTube operation.
         var m_yt_cancel = string_view::make_no_len("yt_cancel")

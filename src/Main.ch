@@ -96,6 +96,10 @@ func run_gui() : int {
         printf("ChemicalDM: restored %d pending downloads\n", restored)
     }
 
+    // Refresh any stored YouTube media URLs that may have expired while the app
+    // was closed, so half-finished playlist/single downloads resume cleanly.
+    cdm::refresh_stale_yt_links(&raw mut dm)
+
     // Render the UI before opening the window so the page is ready instantly.
     var ui_html = build_ui_html()
 

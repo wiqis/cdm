@@ -314,13 +314,15 @@ using std::unordered_map;
         var title : string
         var entries : vector<YtPlaylistEntry>
         var webpage_url : string
+        var is_playlist : bool
 
         @constructor func constructor() {
             return YtPlaylistInfo {
                 id = string(),
                 title = string(),
                 entries = vector<YtPlaylistEntry>(),
-                webpage_url = string()
+                webpage_url = string(),
+                is_playlist = false
             }
         }
 
@@ -333,6 +335,8 @@ using std::unordered_map;
             out.append_string(&json_string(string_view::make_view(&self.id)))
             out.append_string(&string::make_no_len(",\"title\":"))
             out.append_string(&json_string(string_view::make_view(&self.title)))
+            out.append_string(&string::make_no_len(",\"is_playlist\":"))
+            if(self.is_playlist) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
             out.append_string(&string::make_no_len(",\"entry_count\":"))
             var cs = string()
             cs.append_integer(self.entry_count() as bigint)
@@ -496,10 +500,62 @@ using std::unordered_map;
 
     // Parse playlist JSON (may be one JSON object with entries array,
     // or NDJSON — one JSON per line).
-    func parse_playlist_json(json_str : string_view) : YtPlaylistInfo {
+    public     func parse_playlist_json(json_str : string_view) : YtPlaylistInfo {
         var info = YtPlaylistInfo()
+        info.is_playlist = true
 
-        // First try as a single JSON object with "entries" array.
+        // Try NDJSON first (yt-dlp --flat-playlist --dump-json emits one
+        // JSON object per line). Each line is a simplified entry.
+        var ndjson_entries = vector<YtPlaylistEntry>()
+        var ndjson_id = string()
+        var ndjson_title = string()
+        var ndjson_url = string()
+        var pos : usize = 0
+        var line_num = 0
+        while(pos < json_str.size()) {
+            var line_start = pos
+            while(pos < json_str.size() && json_str.get(pos) != '\n') {
+                pos = pos + 1u
+            }
+            var line_end = pos
+            if(pos < json_str.size()) { pos = pos + 1u }  // skip \n
+            if(line_end <= line_start) { continue }
+            var trimmed_start = line_start
+            while(trimmed_start < line_end && (json_str.get(trimmed_start) == ' ' || json_str.get(trimmed_start) == '\t' || json_str.get(trimmed_start) == '\r')) {
+                trimmed_start = trimmed_start + 1u
+            }
+            if(trimmed_start >= line_end) { continue }
+            if(json_str.get(trimmed_start) != '{') { continue }
+
+            var line_parser = JsonParser(128, 1048576)
+            var line_ph = ASTJsonHandler.make()
+            line_parser.parse(json_str.data() + trimmed_start, line_end - trimmed_start, &mut line_ph)
+
+            if(line_ph.root is JsonValue.Object) {
+                var Object(line_map) = line_ph.root else unreachable
+                var entry = parse_playlist_entry_copy(&line_map)
+                line_num = line_num + 1
+                entry.index = line_num
+                ndjson_entries.push_back(entry)
+                // First line may carry playlist-level metadata.
+                if(ndjson_id.empty()) {
+                    ndjson_id = json_get_string_field(&line_map, "playlist_id")
+                    ndjson_title = json_get_string_field(&line_map, "playlist")
+                    ndjson_url = json_get_string_field(&line_map, "webpage_url")
+                }
+            }
+        }
+
+        if(ndjson_entries.size() > 0u) {
+            info.entries = ndjson_entries
+            info.id = ndjson_id.copy()
+            info.title = ndjson_title.copy()
+            info.webpage_url = ndjson_url.copy()
+            if(info.title.empty()) { info.title = string::make_no_len("Playlist") }
+            return info
+        }
+
+        // Fall back to a single JSON object (with or without "entries").
         var parser = JsonParser(256, 1048576)
         var ph = ASTJsonHandler.make()
         parser.parse(json_str.data(), json_str.size(), &mut ph)
@@ -537,50 +593,10 @@ using std::unordered_map;
             return info
         }
 
-        // NDJSON: one JSON object per line (yt-dlp output for playlists).
-        var pos : usize = 0
-        var line_num = 0
-        while(pos < json_str.size()) {
-            var line_start = pos
-            while(pos < json_str.size() && json_str.get(pos) != '\n') {
-                pos = pos + 1u
-            }
-            var line_end = pos
-            if(pos < json_str.size()) { pos = pos + 1u }  // skip \n
-            if(line_end <= line_start) { continue }
-            var line = json_str.subview(line_start, line_end)
-            // Skip whitespace-only lines.
-            var trimmed_start = line_start
-            while(trimmed_start < line_end && (json_str.get(trimmed_start) == ' ' || json_str.get(trimmed_start) == '\t' || json_str.get(trimmed_start) == '\r')) {
-                trimmed_start = trimmed_start + 1u
-            }
-            if(trimmed_start >= line_end) { continue }
-            if(json_str.get(trimmed_start) != '{') { continue }
-
-            var line_parser = JsonParser(128, 1048576)
-            var line_ph = ASTJsonHandler.make()
-            line_parser.parse(json_str.data() + trimmed_start, line_end - trimmed_start, &mut line_ph)
-
-            if(line_ph.root is JsonValue.Object) {
-                var Object(line_map) = line_ph.root else unreachable
-                var entry = parse_playlist_entry_copy(&line_map)
-                line_num = line_num + 1
-                entry.index = line_num
-                info.entries.push_back(entry)
-                // First line may contain playlist-level metadata.
-                if(info.id.empty()) {
-                    info.id = json_get_string_field(&line_map, "playlist_id")
-                    info.title = json_get_string_field(&line_map, "playlist")
-                    info.webpage_url = json_get_string_field(&line_map, "webpage_url")
-                }
-            }
-        }
-
         // If we still don't have a title, try to derive from URL.
         if(info.title.empty()) {
             info.title = string::make_no_len("Playlist")
         }
-
         return info
     }
 
