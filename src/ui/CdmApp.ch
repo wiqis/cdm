@@ -73,6 +73,7 @@
     state ytPlError = ""
     state ytPlDone = false
     state ytPlVideos = []        // per-item status from the backend poll
+    state ytPlTaskIds = {}       // video/audio DM task ids that belong to the playlist (hide from main list)
     state ytPlExpanded = {}      // index -> bool (expanded detail view)
     state ytPlMaxRetries = 3     // retries per video on link/merge failure
     state ytInfoPollId = null
@@ -473,7 +474,18 @@
             ytPlEta = d.eta || ""
             ytPlItemsDone = d.items_done || 0
             ytPlItemsTotal = d.items_total || 0
-            if(d.videos) { ytPlVideos = d.videos }
+            if(d.videos) {
+                ytPlVideos = d.videos
+                // Collect the child video/audio task ids so we can hide them
+                // from the main queue list (the playlist card is enough).
+                var ids = {}
+                for(var k = 0; k < d.videos.length; k++) {
+                    var v = d.videos[k]
+                    if(v.video_task_id) { ids[v.video_task_id] = true }
+                    if(v.audio_task_id) { ids[v.audio_task_id] = true }
+                }
+                ytPlTaskIds = ids
+            }
             if(d.done) {
                 if(ytPlPollId) { clearInterval(ytPlPollId); ytPlPollId = null }
                 ytDownloading = false
@@ -550,6 +562,7 @@
         var mode = ytFormatMode || "merged"
         if(ytInfo.is_playlist) {
             ytPlVideos = []
+            ytPlTaskIds = {}
             ytPlExpanded = {}
             var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality, max_retries: ytPlMaxRetries, auto_merge: ytAutoMerge, delete_separate: ytDeleteSeparate }
             asyncBridge("yt_download_playlist", JSON.stringify(body), function(d) {
@@ -559,9 +572,10 @@
                     showToast("Playlist download failed: " + d.error, "error")
                     return
                 }
-                // Close dialog immediately — download runs in background
+                // Close dialog immediately — download runs in background.
+                // Keep ytDownloading = true so the main list stays suppressed
+                // until pollYtPlaylist (d.done) clears it.
                 ytOpen = false
-                ytDownloading = false
                 showToast("Playlist download queued", "success")
                 if(ytPlPollId) { clearInterval(ytPlPollId) }
                 ytPlPollId = setInterval(pollYtPlaylist, 1000)
@@ -664,7 +678,8 @@
         ctxOpen = false
     }
 
-    var visibleItems = items.filter((u) => {
+    var mainItems = items.filter((u) => !ytPlTaskIds[u.id])
+    var visibleItems = mainItems.filter((u) => {
         if(!filterMatches(u.state, u.category)) return false
         if(searchQuery.trim() !== "") {
             var q = searchQuery.trim().toLowerCase()
@@ -687,9 +702,9 @@
         if(sortBy === "size") return (b.total_bytes || 0) - (a.total_bytes || 0)
         return 0
     })
-    var totalCount = items.length
-    var activeCount = items.filter((u) => u.state === "Downloading").length
-    var doneCount = items.filter((u) => u.state === "Done").length
+    var totalCount = mainItems.length
+    var activeCount = mainItems.filter((u) => u.state === "Downloading").length
+    var doneCount = mainItems.filter((u) => u.state === "Done").length
 
     return <div class="cdm-app">
         <header class="cdm-header">
@@ -1194,10 +1209,10 @@
 
         {loading ? <div class="cdm-empty">Loading downloads&#8230;</div> : null}
 
-        {!loading && visibleItems.length === 0 ? (
+        {!loading && visibleItems.length === 0 && !ytDownloading ? (
             <div class="cdm-empty">
                 <div class="cdm-empty-icon">&#128229;</div>
-                <p>{items.length === 0 ? "No downloads yet." : "No downloads match this filter."}</p>
+                <p>{mainItems.length === 0 ? "No downloads yet." : "No downloads match this filter."}</p>
                 <p class="cdm-empty-sub">Paste a URL above, or click the Paste button to grab one from your clipboard.</p>
             </div>
         ) : null}

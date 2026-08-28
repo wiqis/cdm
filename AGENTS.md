@@ -415,6 +415,80 @@ Project-specific ones:
 - `if` requires `else`; no bare ifs. No `defer`. Every `switch` on variants must cover all
   cases or provide `default`.
 
+### YouTube playlist architecture (design decisions)
+
+A playlist download is one logical job, but it fans out into N independent video+audio
+downloads + ffmpeg merges. Decisions that are easy to break:
+
+- **Per-item `AsyncDlState`**: each playlist entry gets its own `YtPlItem` (heap) embedding
+  an `AsyncDlState` (`src/core/YtAsync.ch`). The video+audio+merge run exactly like a
+  single YouTube download, so retry/link-refresh/merge logic is shared with `do_item_download`
+  / `merge_monitor_entry`. Do NOT try to drive the whole playlist through one global
+  `AsyncDlState` — that loses per-video retry and per-video merge error reporting.
+- **`g_async_pl` global** (`@never_destructed`) holds `items : *mut vector<*mut YtPlItem>`,
+  `dm : *mut DownloadManager`, `items_total/items_done`, `max_retries`, etc. The background
+  thread `playlist_thread_entry` extracts entries with `yt-dlp --flat-playlist --print
+  "%(url)s|||%(title)s|||%(duration)s"`, pushes a `YtPlItem` per line, and calls
+  `do_item_download(&raw mut item.dl)` for each. After queuing, it loops until every item's
+  `merge_status` is `merged` or `failed` (do NOT cancel mid-loop on `running=false`; the loop
+  keys off `merge_status`, not `g_async_pl.running`).
+- **One monitor thread per item**: `maybe_start_merge_monitor(dl)` spawns `merge_monitor_entry`
+  which `snapshot(dm)`-polls the video+audio task ids, runs `ffmpeg_merge_files`, and on
+  link/merge failure calls `requeue_item(dl)` (which `change_url` re-queues the DM tasks with
+  refreshed URLs) and restarts the monitor, up to `dl.max_retries`. `retry_playlist_item(index)`
+  does the same on demand from the UI.
+- **Poll shape**: `yt_download_playlist_poll` returns a flat `videos` array — one object per
+  item with `index,title,state,progress,video_task_id,audio_task_id,merge_status,merge_error,
+  status,retry_count,output_path`. The UI renders the collapsible playlist card from this array
+  and matches the per-video/audio segmented bars by `video_task_id`/`audio_task_id` against the
+  DM `state` (`items`).
+- **Cross-session link refresh**: resolved direct URLs expire. `g_yt_links : *mut vector<YtLinkRecord>`
+  (heap, allocated with `new`, NOT a constructor call) persists `video_id/audio_id/youtube_url/format/...`
+  to `~/.chemicaldm/yt_links.txt`. `refresh_stale_yt_links(&raw mut dm)` is called at launch
+  (in `src/core/Main.ch` after `restore_queue`) and re-queues any stale links. Keep this call.
+- **UI hides the child items**: the playlist's individual video/audio `DownloadItem`s are real
+  DM tasks, but the main queue list must NOT show them as separate cards (the playlist card is
+  enough). Track their task ids in `ytPlTaskIds` (rebuilt every `pollYtPlaylist` from
+  `v.video_task_id`/`v.audio_task_id`) and filter `items` → `mainItems` before rendering. Keep
+  `ytDownloading = true` for the whole playlist (clear it only in `pollYtPlaylist` when `d.done`)
+  so the "No downloads yet" empty state stays suppressed while the playlist downloads.
+- **Open file**: `yt_download_playlist_open` resolves `playlist_item_output_path(index)` then
+  launches the merged file with `process::execute("xdg-open", path, ...)`. There is NO
+  `open_file` symbol in this module — use `process::execute` (fork-safe; see the yt-dlp rule).
+
+### Lessons learned (Chemical / cdm gotchas)
+
+These bit us and cost real debugging time — honor them:
+
+1. **`malloc` + assignment is a heap-corruption bug for structs with a `mutex`/destructor.**
+   `var p = malloc(sizeof(T)) as *mut T; *p = T()` constructs a temporary, move/copies it into
+   the malloc'd region, then the **temporary's destructor runs** and destroys the embedded
+   `mutex` (or runs the dtor) — leaving the heap struct's mutex invalid. A later `mu.lock()`
+   in a worker thread then corrupts the heap → `free(): invalid pointer` / `abort()`.
+   **Always use `new T()` to construct in place.** (Fixed in `playlist_thread_entry`.)
+2. **The test module can only call `public` functions.** A `tests/*.ch` test calling an internal
+   `func foo(...)` fails symbol resolution and the build aborts with
+   `[lab] error: failure during symbol resolution in the module chemicaldm` — the actual cause
+   is an unresolved symbol, NOT the pointer-deref *warnings* (those are tolerated). Make the
+   function `public` (as with `parse_playlist_json`).
+3. **`TestEnv` error API**: `env.error(msg : *char)` only. There is **no** `error_int`. Build the
+   message into a `string` (e.g. `env.error("expected 2 entries")`).
+4. **No `==`/`!=` overload for `string`.** Comparing strings with `!=`/`==` fails with
+   "expected the value to have primitive type or have operator overloaded". Use
+   `s.equals_view(&other)` / `s.equals(&other)` / `s.find(...)`.
+5. **Playlist info MUST be parsed with `parse_playlist_json`, not `parse_video_json`.**
+   `yt-dlp --dump-json --flat-playlist` emits **NDJSON** (one JSON object per line). The old
+   `get_async_info` used `parse_video_json`, which only sees the first line → dialog showed a
+   single video's title and "0 videos". `parse_playlist_json` tries NDJSON line-splitting FIRST,
+   then falls back to a single object with an `entries` array. `YtPlaylistInfo` carries
+   `is_playlist` (set `true` inside the parser) and emits it in `to_json()` so the UI branches
+   correctly.
+6. **Pointer deref in safe context** (`&mut *dm`, `*(vec.get_ptr(i))`) is only a *warning* in
+   `--build` but trips the stricter `--test` symres path in some configs. Prefer keeping such
+   expressions valid in both; if unavoidable, wrap in `unsafe { }`.
+7. **`if` requires `else`; no bare `if`; no `defer`; every `switch` on a variant needs all cases
+   or `default`.** Ternary `? :` is NOT supported — use `if/else`.
+
 ### Where to change what (cheat sheet)
 
 | Task | File(s) |
@@ -426,3 +500,5 @@ Project-specific ones:
 | New category/folder mapping | `src/core/Categories.ch` (+ `validate_category_name` in Validation.ch) |
 | Human-readable text | `src/core/Formatters.ch` |
 | yt-dlp invocation / progress parsing / ffmpeg merge | `src/core/YtDownloader.ch` (+ `YtInfo.ch` for metadata, `YtTools.ch` for install/status) |
+| YouTube playlist (async fan-out, per-item `AsyncDlState`, poll `videos` array, retry/link-refresh, hide child cards) | `src/core/YtAsync.ch` (`g_async_pl`, `playlist_thread_entry`, `do_item_download`, `merge_monitor_entry`, `requeue_item`, `retry_playlist_item`, `playlist_item_output_path`, `poll_async_playlist_download`) + `yt_download_playlist*` handlers in `src/api/Bridge.ch` + playlist card / `ytPlTaskIds` filter in `src/ui/CdmApp.ch` |
+| YouTube info parsing (playlist NDJSON vs single video) | `src/core/YtInfo.ch` (`parse_playlist_json` NDJSON-first, `YtPlaylistInfo.is_playlist`) + `get_async_info` playlist dispatch in `src/core/YtAsync.ch` |
