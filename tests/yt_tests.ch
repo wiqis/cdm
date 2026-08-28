@@ -4,6 +4,7 @@
 
 using std::string;
 using std::string_view;
+using std::vector;
 
 // ---- Tool status tests ----
 
@@ -203,6 +204,26 @@ public func CDM_yt_format_json(env : &mut TestEnv) {
     if(json.find("248") == std::NPOS) { env.error("missing format_id"); return }
     if(json.find("720") == std::NPOS) { env.error("missing height"); return }
     if(json.find("is_video_only") == std::NPOS) { env.error("missing is_video_only"); return }
+}
+
+// Regression: a format whose tbr rounds up (e.g. 48.954 -> 49.0) must still
+// serialize to VALID JSON. A previous append_double bug produced "48.49.0"
+// (two decimal points) which made the bridge JSON unparseable and the UI
+// stuck on the info spinner.
+@test
+public func CDM_yt_format_json_roundtrip_valid(env : &mut TestEnv) {
+    var fmt = cdm::YtFormat()
+    fmt.format_id = string::make_no_len("249")
+    fmt.ext = string::make_no_len("webm")
+    fmt.tbr = 48.954
+    fmt.vcodec = string::make_no_len("none")
+    fmt.acodec = string::make_no_len("opus")
+    var json = fmt.to_json()
+    var parser = JsonParser(256, 1048576)
+    var ph = ASTJsonHandler.make()
+    var res = parser.parse(json.data(), json.size(), &mut ph)
+    if(!res.ok) { env.error("to_json produced invalid JSON"); return }
+    if(json.find("49.0") == std::NPOS) { env.error("tbr not rounded correctly"); return }
 }
 
 // ---- Video info tests ----
@@ -575,6 +596,31 @@ public func CDM_yt_playlist_info_json(env : &mut TestEnv) {
     if(json.find("PLabc") == std::NPOS) { env.error("missing id"); return }
     if(json.find("My Playlist") == std::NPOS) { env.error("missing title"); return }
     if(json.find("entry_count") == std::NPOS) { env.error("missing entry_count"); return }
+}
+
+// Regression: the async poll builders (info / download / playlist) must emit
+// VALID JSON. They previously wrapped json_string() — which already adds the
+// surrounding quotes — with manual "..." quotes, producing e.g. "error":""..."
+// (double-quoted). The webview glue does JSON.parse(result) on the bridge
+// result, so the malformed JSON threw, the promise rejected, and the info /
+// download dialogs spun forever ("stuck at fetching the info").
+@test
+public func CDM_yt_poll_json_parseable(env : &mut TestEnv) {
+    var polls = vector<string>()
+    polls.push_back(cdm::poll_async_info())
+    polls.push_back(cdm::poll_async_download())
+    polls.push_back(cdm::poll_async_playlist_download())
+    for(var i = 0u; i < polls.size(); i++) {
+        var js = polls.get_ptr(i)
+        var parser = JsonParser(256, 4096)
+        var ph = ASTJsonHandler.make()
+        var res = parser.parse(js.data(), js.size(), &mut ph)
+        if(!res.ok) {
+            env.error("poll returned INVALID JSON (double-quoted field bug)")
+            env.error(res.msg)
+            return
+        }
+    }
 }
 
 // ---- Validation error message tests ----

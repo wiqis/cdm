@@ -471,8 +471,10 @@ using std::Result;
             // Start async fetch in a background thread.
             var start_err = start_async_info(string_view::make_view(&url))
             if(start_err.size() > 0u) {
+                fprintf(stderr, "[CDM-BRIDGE] yt_info start failed: %s\n", start_err.data())
                 return err_json(&start_err)
             }
+            fprintf(stderr, "[CDM-BRIDGE] yt_info started ok\n")
             return ok_json()
         }
         // yt_info_poll: poll for async info fetch completion.
@@ -483,7 +485,16 @@ using std::Result;
         // yt_info_get: retrieve the stored info JSON (called after poll reports done).
         var m_yt_info_get = string_view::make_no_len("yt_info_get")
         if(method.equals(&m_yt_info_get)) {
+            fprintf(stderr, "[CDM-BRIDGE] yt_info_get called\n")
             return get_async_info()
+        }
+        // debug_log: JS-side diagnostics routed to stderr (so they show in the
+        // terminal that launched the app, where the user watches native logs).
+        var m_debug_log = string_view::make_no_len("debug_log")
+        if(method.equals(&m_debug_log)) {
+            var msg = json_field(args, string_view::make_no_len("msg"))
+            fprintf(stderr, "[CDM-JS-LOG] %s\n", msg.data())
+            return ok_json()
         }
         // yt_download: starts async download in a background thread (non-blocking).
         var m_yt_download = string_view::make_no_len("yt_download")

@@ -27,6 +27,7 @@ using std::unordered_map;
         var format_note : string
         var filesize : i64
         var filesize_approx : i64
+        var protocol : string      // yt-dlp protocol (https, https_dash, m3u8, http_hls, ...)
 
         @constructor func constructor() {
             return YtFormat {
@@ -40,7 +41,8 @@ using std::unordered_map;
                 fps = 0,
                 format_note = string(),
                 filesize = 0,
-                filesize_approx = 0
+                filesize_approx = 0,
+                protocol = string()
             }
         }
 
@@ -57,6 +59,7 @@ using std::unordered_map;
             c.format_note = self.format_note.copy()
             c.filesize = self.filesize
             c.filesize_approx = self.filesize_approx
+            c.protocol = self.protocol.copy()
             return c
         }
 
@@ -149,6 +152,8 @@ using std::unordered_map;
             if(self.is_video_only()) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
             out.append_string(&string::make_no_len(",\"is_audio_only\":"))
             if(self.is_audio_only()) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+            out.append_string(&string::make_no_len(",\"protocol\":"))
+            out.append_string(&json_string(string_view::make_view(&self.protocol)))
             out.append('}')
             return out
         }
@@ -236,9 +241,9 @@ using std::unordered_map;
             var ds = string()
             ds.append_integer(self.duration as bigint)
             out.append_string(&ds)
-            out.append_string(&string::make_no_len(",\"duration_str\":\""))
-            out.append_string(&self.duration_str())
-            out.append_string(&string::make_no_len("\",\"thumbnail\":"))
+            out.append_string(&string::make_no_len(",\"duration_str\":"))
+            out.append_string(&json_string(string_view::make_view(self.duration_str())))
+            out.append_string(&string::make_no_len(",\"thumbnail\":"))
             out.append_string(&json_string(string_view::make_view(&self.thumbnail)))
             out.append_string(&string::make_no_len(",\"webpage_url\":"))
             out.append_string(&json_string(string_view::make_view(&self.webpage_url)))
@@ -291,9 +296,9 @@ using std::unordered_map;
             var ds = string()
             ds.append_integer(self.duration as bigint)
             out.append_string(&ds)
-            out.append_string(&string::make_no_len(",\"duration_str\":\""))
-            out.append_string(&self.duration_str())
-            out.append_string(&string::make_no_len("\",\"index\":"))
+            out.append_string(&string::make_no_len(",\"duration_str\":"))
+            out.append_string(&json_string(string_view::make_view(self.duration_str())))
+            out.append_string(&string::make_no_len(",\"index\":"))
             var is = string()
             is.append_integer(self.index as bigint)
             out.append_string(&is)
@@ -437,7 +442,7 @@ using std::unordered_map;
     // ---- JSON parsing helpers (using the json module) ----
 
     // Parse a single video JSON object into YtVideoInfo.
-    func parse_video_json(json_str : string_view) : YtVideoInfo {
+    public func parse_video_json(json_str : string_view) : YtVideoInfo {
         var info = YtVideoInfo()
         var parser = JsonParser(256, 1048576)
         var ph = ASTJsonHandler.make()
@@ -473,6 +478,7 @@ using std::unordered_map;
                         fmt.ext = json_get_string_field(&fmt_map, "ext")
                         fmt.vcodec = json_get_string_field(&fmt_map, "vcodec")
                         fmt.acodec = json_get_string_field(&fmt_map, "acodec")
+                        fmt.protocol = json_get_string_field(&fmt_map, "protocol")
                         fmt.format_note = json_get_string_field(&fmt_map, "format_note")
                         fmt.height = json_get_int_field(&fmt_map, "height") as int
                         fmt.width = json_get_int_field(&fmt_map, "width") as int

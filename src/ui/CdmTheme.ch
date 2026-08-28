@@ -367,6 +367,16 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-merge-ok { background: hsl(142 76% 36% / 0.2); color: hsl(142 76% 46%); }
         .cdm-merge-fail { background: hsl(0 84% 60% / 0.2); color: hsl(0 84% 60%); }
         .cdm-merge-wait { background: hsl(48 96% 53% / 0.2); color: hsl(48 96% 53%); }
+        .cdm-yt-combined { border-left: 3px solid hsl(265 83% 60%); }
+        .cdm-yt-row { padding: 6px 0 8px 0; border-top: 1px solid hsl(var(--border) / 0.5); }
+        .cdm-yt-row:first-of-type { border-top: none; }
+        .cdm-yt-row-error .cdm-yt-row-label { color: hsl(0 84% 60%); }
+        .cdm-yt-row-head { display: flex; align-items: center; gap: 8px; }
+        .cdm-yt-row-label { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: hsl(var(--muted-foreground)); min-width: 46px; }
+        .cdm-yt-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+        .cdm-yt-merge-ok { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: hsl(142 76% 36% / 0.15); color: hsl(142 76% 50%); font-weight: 600; font-size: 13px; }
+        .cdm-yt-merge-fail { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: hsl(0 84% 60% / 0.15); color: hsl(0 84% 65%); font-weight: 600; font-size: 13px; word-break: break-word; }
+        .cdm-yt-merge-wait { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: hsl(48 96% 53% / 0.15); color: hsl(48 96% 60%); font-weight: 600; font-size: 13px; }
         .cdm-ctx-menu {
             position: fixed;
             z-index: 2000;

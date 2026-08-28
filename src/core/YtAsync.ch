@@ -124,17 +124,42 @@ using std::mutex;
 
     // ---- Quality/format helpers ----
 
+    // yt-dlp protocol filter that EXCLUDES HLS manifests (m3u8). The app's own
+    // segmented HTTP engine cannot download HLS playlists (it would save the
+    // playlist text as the "video file", which ffmpeg then fails to read). We
+    // force progressive / DASH streams that the engine can fetch directly, and
+    // that ffmpeg can mux with -c copy.
+    public func no_hls_filter() : string {
+        return string::make_no_len("[protocol!=m3u8][protocol!=m3u8_native][protocol!=http_hls][protocol!=https_hls]")
+    }
+
     public func quality_to_format(height : int) : string {
+        var proto = no_hls_filter()
         if(height <= 0) {
-            return string::make_no_len("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
+            var fmt = string::make_no_len("bestvideo[ext=mp4]")
+            fmt.append_string(&proto)
+            fmt.append_view(string_view::make_no_len("+bestaudio[ext=m4a]"))
+            fmt.append_string(&proto)
+            fmt.append_view(string_view::make_no_len("/best[ext=mp4]"))
+            fmt.append_string(&proto)
+            fmt.append_view(string_view::make_no_len("/best"))
+            fmt.append_string(&proto)
+            return fmt
         }
-        var fmt = string::make_no_len("bestvideo[height<=")
         var hs = string()
         hs.append_integer(height as bigint)
+        var fmt = string::make_no_len("bestvideo[height<=")
         fmt.append_string(&hs)
-        fmt.append_view(string_view::make_no_len("][ext=mp4]+bestaudio[ext=m4a]/best[height<="))
+        fmt.append_view(string_view::make_no_len("][ext=mp4]"))
+        fmt.append_string(&proto)
+        fmt.append_view(string_view::make_no_len("+bestaudio[ext=m4a]"))
+        fmt.append_string(&proto)
+        fmt.append_view(string_view::make_no_len("/best[height<="))
         fmt.append_string(&hs)
-        fmt.append_view(string_view::make_no_len("][ext=mp4]/best"))
+        fmt.append_view(string_view::make_no_len("][ext=mp4]"))
+        fmt.append_string(&proto)
+        fmt.append_view(string_view::make_no_len("/best"))
+        fmt.append_string(&proto)
         return fmt
     }
 
@@ -307,13 +332,16 @@ using std::mutex;
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"done\":"))
         if(done) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len(",\"error\":\""))
+        out.append_string(&string::make_no_len(",\"error\":"))
         out.append_string(&json_string(string_view::make_view(&error)))
-        out.append_string(&string::make_no_len("\",\"is_playlist\":\""))
+        out.append_string(&string::make_no_len(",\"is_playlist\":"))
         if(is_pl) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len("\",\"has_info\":"))
+        out.append_string(&string::make_no_len(",\"has_info\":"))
         if(done && error.size() == 0u) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append('}'); return out
+        out.append('}')
+        fprintf(stderr, "[CDM-INFO] poll_async_info -> running=%d done=%d has_info=%d json=%s\n",
+                running as int, done as int, (done && error.size() == 0u) as int, out.data())
+        return out
     }
 
     // Retrieve info by parsing the raw yt-dlp JSON into YtVideoInfo,
@@ -326,7 +354,11 @@ using std::mutex;
         // Parse with the existing JSON parser from YtInfo.ch
         var info = parse_video_json(std::string_view(raw.data(), raw.size()))
         var result = info.to_json()
-        fprintf(stderr, "[CDM-INFO] get_async_info: compact=%d bytes (from %d raw)\n", result.size() as int, raw.size() as int)
+        var vparser = JsonParser(256, 1048576)
+        var vph = ASTJsonHandler.make()
+        var vres = vparser.parse(result.data(), result.size(), &mut vph)
+        fprintf(stderr, "[CDM-INFO] get_async_info: compact=%d bytes (from %d raw) JSON_VALID=%d msg=%s\n",
+                result.size() as int, raw.size() as int, vres.ok as int, vres.msg)
         return result
     }
 
@@ -425,32 +457,53 @@ using std::mutex;
 
     // Merge separate video+audio files using ffmpeg via process::execute (fork-safe).
     // Writes to a temp file first, then renames to avoid overwriting the input.
+    // On failure, `err` is filled with the ffmpeg stderr / a diagnostic message so
+    // the UI can surface the real reason (e.g. missing ffmpeg or a codec mismatch).
     func ffmpeg_merge_files(video_path : string_view, audio_path : string_view,
-                            output_path : string_view) : bool {
+                            output_path : string_view, err : &mut string) : bool {
         var ffmpeg = ffmpeg_resolved_path()
-        // Build temp output path: output_path + ".merge_tmp.mp4"
-    var tmp_path = string(output_path.data(), output_path.size())
-    tmp_path.append_view(string_view::make_no_len(".merge_tmp.mp4"))
-    var args = vector<string>()
-    args.push_back(ffmpeg)
-    args.push_back(string::make_no_len("-i"))
-    args.push_back(string(video_path.data(), video_path.size()))
-    args.push_back(string::make_no_len("-i"))
-    args.push_back(string(audio_path.data(), audio_path.size()))
-    args.push_back(string::make_no_len("-c"))
-    args.push_back(string::make_no_len("copy"))
-    args.push_back(string::make_no_len("-y"))
-    args.push_back(string(tmp_path.data(), tmp_path.size()))
-    fprintf(stderr, "[CDM-MERGE] ffmpeg -i %s -i %s -c copy -y %s\n", video_path.data(), audio_path.data(), tmp_path.data())
-    var cfg = process::ProcessConfig.default()
-    cfg.args = args
-    cfg.capture_stdout = false
-    cfg.capture_stderr = false
-    var res = process::execute(cfg)
-    if(res is Result.Err) { return false }
-    var Ok(pr) = res else unreachable
-    var exit_code = pr.status.code
-    if(exit_code != 0) {
+        if(ffmpeg.size() == 0u || !fs::exists(ffmpeg.data())) {
+            err.append_string(&string::make_no_len("ffmpeg not found ("))
+            err.append_string(&ffmpeg)
+            err.append_string(&string::make_no_len(") - install ffmpeg to merge"))
+            fprintf(stderr, "[CDM-MERGE] %s\n", err.data())
+            return false
+        }
+        // Temp output path: output_path + ".merge_tmp.mp4"
+        var tmp_path = string(output_path.data(), output_path.size())
+        tmp_path.append_view(string_view::make_no_len(".merge_tmp.mp4"))
+        var args = vector<string>()
+        args.push_back(ffmpeg)
+        args.push_back(string::make_no_len("-i"))
+        args.push_back(string(video_path.data(), video_path.size()))
+        args.push_back(string::make_no_len("-i"))
+        args.push_back(string(audio_path.data(), audio_path.size()))
+        // `-strict experimental` lets ffmpeg mux codecs like VP9/Opus into an MP4
+        // container (older ffmpeg rejects them without it). Comes before -c copy.
+        args.push_back(string::make_no_len("-strict"))
+        args.push_back(string::make_no_len("experimental"))
+        args.push_back(string::make_no_len("-c"))
+        args.push_back(string::make_no_len("copy"))
+        args.push_back(string::make_no_len("-y"))
+        args.push_back(string(tmp_path.data(), tmp_path.size()))
+        fprintf(stderr, "[CDM-MERGE] ffmpeg -i %s -i %s -strict experimental -c copy -y %s\n", video_path.data(), audio_path.data(), tmp_path.data())
+        var cfg = process::ProcessConfig.default()
+        cfg.args = args
+        cfg.capture_stdout = false
+        cfg.capture_stderr = true
+        var res = process::execute(cfg)
+        if(res is Result.Err) {
+            err.append_string(&string::make_no_len("ffmpeg could not be started"))
+            remove(tmp_path.data())
+            return false
+        }
+        var Ok(pr) = res else unreachable
+        var exit_code = pr.status.code
+        if(exit_code != 0) {
+            // Capture ffmpeg's own diagnostics so the failure is explainable.
+            var sv = pr.stderr_str()
+            err.append_view(&sv)
+            fprintf(stderr, "[CDM-MERGE] ffmpeg exited %d: %s\n", exit_code, sv.data())
             // Clean up temp file on failure.
             remove(tmp_path.data())
             return false
@@ -459,6 +512,7 @@ using std::mutex;
         var rename_res = rename(tmp_path.data(), output_path.data())
         if(rename_res != 0) {
             remove(tmp_path.data())
+            err.append_string(&string::make_no_len("rename of merged file failed"))
             return false
         }
         return fs::exists(output_path.data())
@@ -484,12 +538,17 @@ using std::mutex;
         }
         var fmt = string()
         if(is_audio_only) {
-            fmt = resolve_yt_format(string_view::make_no_len("bestaudio"), min_q, max_q)
+            fmt = string::make_no_len("bestaudio")
+            fmt.append_string(&no_hls_filter())
         } else if(is_best) {
             fmt = resolve_yt_format(user_fmt, min_q, max_q)
         } else {
             fmt = string(user_fmt.data(), user_fmt.size())
-            fmt.append_view(string_view::make_no_len("+bestaudio/best"))
+            fmt.append_string(&no_hls_filter())
+            fmt.append_view(string_view::make_no_len("+bestaudio"))
+            fmt.append_string(&no_hls_filter())
+            fmt.append_view(string_view::make_no_len("/best"))
+            fmt.append_string(&no_hls_filter())
         }
 
         // Step 1: Extract direct URLs via yt-dlp --get-url
@@ -696,19 +755,23 @@ using std::mutex;
         output_path.append('/')
         output_path.append_string(&vid_fname)
 
+        var merge_err_s = string()
         var merged = ffmpeg_merge_files(
             string_view::make_view(&video_path),
             string_view::make_view(&audio_path),
-            string_view::make_view(&output_path))
+            string_view::make_view(&output_path),
+            &mut merge_err_s)
 
         // Retry once on failure.
         if(!merged) {
             fprintf(stderr, "[CDM-MERGE] first merge attempt failed, retrying...\n")
             std::concurrent.sleep_ms(1000u)
+            merge_err_s = string()
             merged = ffmpeg_merge_files(
                 string_view::make_view(&video_path),
                 string_view::make_view(&audio_path),
-                string_view::make_view(&output_path))
+                string_view::make_view(&output_path),
+                &mut merge_err_s)
         }
 
         if(merged) {
@@ -718,20 +781,26 @@ using std::mutex;
             g_async_dl.mu.unlock()
             fprintf(stderr, "[CDM-MERGE] merge succeeded\n")
 
-            // Delete separate files if requested.
+            // Delete the *separate audio* file if requested. The merged result is
+            // written to output_path, which equals the video task's file, so the
+            // "video" path must NOT be deleted here (it IS the final output).
             if(del_separate) {
-                remove(video_path.data())
                 remove(audio_path.data())
-                fprintf(stderr, "[CDM-MERGE] deleted separate files\n")
+                fprintf(stderr, "[CDM-MERGE] deleted separate audio file\n")
             }
         } else {
             g_async_dl.mu.lock()
             g_async_dl.status_line = string::make_no_len("ffmpeg merge failed")
             g_async_dl.error = string::make_no_len("ffmpeg merge failed - files kept separately")
             g_async_dl.merge_status = string::make_no_len("failed")
-            g_async_dl.merge_error = string::make_no_len("ffmpeg merge failed")
+            // Surface the real ffmpeg error (or diagnostic) so the UI can show it.
+            if(merge_err_s.size() > 0u) {
+                g_async_dl.merge_error = merge_err_s.copy()
+            } else {
+                g_async_dl.merge_error = string::make_no_len("ffmpeg merge failed")
+            }
             g_async_dl.mu.unlock()
-            fprintf(stderr, "[CDM-MERGE] merge failed after retry\n")
+            fprintf(stderr, "[CDM-MERGE] merge failed after retry: %s\n", g_async_dl.merge_error.data())
         }
 
         return null
@@ -772,25 +841,25 @@ using std::mutex;
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"done\":"))
         if(done) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len(",\"error\":\""))
+        out.append_string(&string::make_no_len(",\"error\":"))
         out.append_string(&json_string(string_view::make_view(&error)))
-        out.append_string(&string::make_no_len("\",\"progress\":\""))
+        out.append_string(&string::make_no_len(",\"progress\":"))
         var ps = string(); ps.append_double(progress, 1); out.append_string(&ps)
-        out.append_string(&string::make_no_len("\",\"speed\":\""))
+        out.append_string(&string::make_no_len(",\"speed\":"))
         out.append_string(&json_string(string_view::make_view(&speed)))
-        out.append_string(&string::make_no_len("\",\"status\":\""))
+        out.append_string(&string::make_no_len(",\"status\":"))
         out.append_string(&json_string(string_view::make_view(&status)))
-        out.append_string(&string::make_no_len("\",\"title\":\""))
+        out.append_string(&string::make_no_len(",\"title\":"))
         out.append_string(&json_string(string_view::make_view(&title)))
-        out.append_string(&string::make_no_len("\",\"video_task_id\":\""))
+        out.append_string(&string::make_no_len(",\"video_task_id\":"))
         out.append_string(&json_string(string_view::make_view(&vid_id)))
-        out.append_string(&string::make_no_len("\",\"audio_task_id\":\""))
+        out.append_string(&string::make_no_len(",\"audio_task_id\":"))
         out.append_string(&json_string(string_view::make_view(&aud_id)))
-        out.append_string(&string::make_no_len("\",\"merge_status\":\""))
+        out.append_string(&string::make_no_len(",\"merge_status\":"))
         out.append_string(&json_string(string_view::make_view(&merge_st)))
-        out.append_string(&string::make_no_len("\",\"merge_error\":\""))
+        out.append_string(&string::make_no_len(",\"merge_error\":"))
         out.append_string(&json_string(string_view::make_view(&merge_err)))
-        out.append_string(&string::make_no_len("\",\"needs_merge\":"))
+        out.append_string(&string::make_no_len(",\"needs_merge\":"))
         if(needs_merge) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append('}')
         return out
@@ -946,17 +1015,17 @@ using std::mutex;
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"done\":"))
         if(done) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
-        out.append_string(&string::make_no_len(",\"error\":\""))
+        out.append_string(&string::make_no_len(",\"error\":"))
         out.append_string(&json_string(string_view::make_view(&error)))
-        out.append_string(&string::make_no_len("\",\"progress\":\""))
+        out.append_string(&string::make_no_len(",\"progress\":"))
         var ps = string(); ps.append_double(progress, 1); out.append_string(&ps)
-        out.append_string(&string::make_no_len("\",\"items_done\":\""))
+        out.append_string(&string::make_no_len(",\"items_done\":"))
         var ds = string(); ds.append_integer(items_done as bigint); out.append_string(&ds)
-        out.append_string(&string::make_no_len("\",\"items_total\":\""))
+        out.append_string(&string::make_no_len(",\"items_total\":"))
         var ts = string(); ts.append_integer(items_total as bigint); out.append_string(&ts)
-        out.append_string(&string::make_no_len("\",\"current_title\":\""))
+        out.append_string(&string::make_no_len(",\"current_title\":"))
         out.append_string(&json_string(string_view::make_view(&current_title)))
-        out.append_string(&string::make_no_len("\",\"status\":\""))
+        out.append_string(&string::make_no_len(",\"status\":"))
         out.append_string(&json_string(string_view::make_view(&status)))
         out.append('}'); return out
     }

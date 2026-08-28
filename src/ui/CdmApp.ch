@@ -122,6 +122,11 @@
         })
     }
 
+    // Route JS diagnostics to the terminal (native stderr) via the debug_log bridge.
+    var jsLog = (msg) => {
+        try { window.webview_bridge.call("debug_log", JSON.stringify({ msg: String(msg) })) } catch(e) {}
+    }
+
     var refresh = () => {
         asyncBridge("state", "{}", function(d) {
             if(d && d.items) { items = d.items }
@@ -384,6 +389,7 @@
 
     var pollYtInfo = () => {
         asyncBridge("yt_info_poll", "{}", function(d) {
+            jsLog("pollYtInfo typeof(d)=" + typeof d + " d=" + (typeof d === "string" ? d : JSON.stringify(d)))
             if(d.done) {
                 if(ytInfoPollId) { clearInterval(ytInfoPollId); ytInfoPollId = null }
                 if(d.error) {
@@ -395,17 +401,20 @@
                 // The webview library automatically chunks large responses.
                 if(d.has_info) {
                     asyncBridge("yt_info_get", "{}", function(infoJson) {
+                        jsLog("yt_info_get callback fired, typeof=" + typeof infoJson + " len=" + (infoJson ? infoJson.length : 0))
                         ytLoading = false
                         try {
                             var parsed = (typeof infoJson === "string") ? JSON.parse(infoJson) : infoJson
                             ytInfo = parsed
                             ytSelectedFormat = "best"
+                            jsLog("ytInfo set, title=" + (parsed ? (parsed.title || "?") : "null") + " is_playlist=" + (parsed ? parsed.is_playlist : "?"))
                             if(parsed.is_playlist && parsed.entries) {
                                 ytPlaylistEntries = parsed.entries
                                 ytPlaylistSelected = parsed.entries.map((_, i) => i)
                             }
                         } catch(e) {
                             ytError = "Failed to parse video info: " + e.message
+                            jsLog("yt_info_get parse error: " + e.message)
                         }
                     })
                 } else {
@@ -426,6 +435,7 @@
             ytDlMergeStatus = d.merge_status || ""
             ytDlMergeError = d.merge_error || ""
             ytDlNeedsMerge = d.needs_merge || false
+            if(d.title) { ytDlTitle = d.title }
             // Keep polling while merge is in progress (waiting or merging).
             if(d.needs_merge && (d.merge_status === "waiting" || d.merge_status === "merging")) {
                 return
@@ -524,6 +534,14 @@
         ytDlStatus = ""
         var u = ytUrl.trim()
         var fmt = ytSelectedFormat || "best"
+        // Never download an HLS (m3u8) format directly — the HTTP engine can't
+        // fetch playlists; yt-dlp is required for those. Fall back to "best".
+        if(fmt !== "best" && ytInfo && ytInfo.formats) {
+            var sel = ytInfo.formats.find((f) => f.format_id === fmt)
+            if(sel && sel.protocol && (sel.protocol.indexOf("m3u8") >= 0 || sel.protocol.indexOf("hls") >= 0)) {
+                fmt = "best"
+            }
+        }
         var audioFmt = ytSelectedAudio || "best"
         var mode = ytFormatMode || "merged"
         if(ytInfo.is_playlist) {
@@ -539,6 +557,9 @@
                 ytOpen = false
                 ytDownloading = false
                 showToast("Playlist download queued", "success")
+                if(ytPlPollId) { clearInterval(ytPlPollId) }
+                ytPlPollId = setInterval(pollYtPlaylist, 1000)
+                pollYtPlaylist()
                 refresh()
             })
         } else {
@@ -554,6 +575,9 @@
                 ytOpen = false
                 ytDownloading = false
                 showToast("Download queued in main queue", "success")
+                if(ytDlPollId) { clearInterval(ytDlPollId) }
+                ytDlPollId = setInterval(pollYtDownload, 1000)
+                pollYtDownload()
                 refresh()
             })
         }
@@ -958,7 +982,8 @@
                                                 <span class="cdm-yt-format-size">mp4</span>
                                             </div>
                                             {ytInfo.formats.map((fmt) => (
-                                                fmt.vcodec && fmt.vcodec !== "none" ? (
+                                                fmt.vcodec && fmt.vcodec !== "none"
+                                                    && (!fmt.protocol || (fmt.protocol.indexOf("m3u8") < 0 && fmt.protocol.indexOf("hls") < 0)) ? (
                                                     <div class={"cdm-yt-format-item" + (ytSelectedFormat === fmt.format_id ? " cdm-yt-format-item-selected" : "")}
                                                         onClick={() => { ytSelectedFormat = fmt.format_id }}>
                                                         <span class="cdm-yt-format-label">{fmtVideoLabel(fmt)}</span>
@@ -1160,8 +1185,64 @@
             </div>
         ) : null}
 
+        {ytDlNeedsMerge && (ytDlVideoId || ytDlAudioId) ? (() => {
+            var vItem = items.find((it) => it.id === ytDlVideoId)
+            var aItem = items.find((it) => it.id === ytDlAudioId)
+            var cardName = ytDlTitle || (vItem ? (vItem.display_name || vItem.filename) : "YouTube download")
+            var mergeBadge = ytDlMergeStatus === ""
+                ? null
+                : <span class={ytDlMergeStatus === "merged" ? "cdm-merge-ok" : ytDlMergeStatus === "failed" ? "cdm-merge-fail" : "cdm-merge-wait"}>
+                    {ytDlMergeStatus === "merged" ? "✓ Merged" : ytDlMergeStatus === "merging" ? "⟳ Merging..." : ytDlMergeStatus === "waiting" ? "⏳ Waiting..." : ytDlMergeStatus === "failed" ? "✗ Merge failed" : ytDlMergeStatus}
+                </span>
+            var ytRow = (it, label) => {
+                if(!it) return null
+                var p = parseFloat(it.percent); if(isNaN(p)) p = 0; if(p < 0) p = 0; if(p > 100) p = 100
+                var showProg = it.state === "Downloading" || it.state === "Paused"
+                var failed = it.state === "Failed" || it.state === "Cancelled"
+                return <div class={"cdm-yt-row" + (failed ? " cdm-yt-row-error" : "")}>
+                    <div class="cdm-yt-row-head">
+                        <span class="cdm-yt-row-label">{label}</span>
+                        <span class="cdm-yt-row-name" title={it.url}>{it.display_name || it.filename}</span>
+                        <span class={stateClass(it.state)}>{it.state}</span>
+                    </div>
+                    {showProg ? <div class="cdm-progress"><div class="cdm-progress-fill" style={"width: " + p + "%;"}></div></div> : null}
+                    <div class="cdm-item-meta">
+                        <span>{fmtBytes(it.downloaded_bytes)} / {it.total_bytes >= 0 ? fmtBytes(it.total_bytes) : "?"}</span>
+                        <span class="cdm-item-pct">{p.toFixed(1)}%</span>
+                        <span class="cdm-item-speed">{fmtSpeed(it.speed_bytes_per_sec)}</span>
+                        <span class="cdm-item-eta">{it.eta !== "" && showProg ? it.eta : ""}</span>
+                    </div>
+                </div>
+            }
+            return <div class="cdm-item cdm-yt-combined" onContextMenu={(e) => {
+                var target = vItem || aItem
+                if(target) openContextMenu(e, target)
+            }}>
+                <div class="cdm-item-head">
+                    <div class="cdm-item-name" title={cardName}>{cardName}</div>
+                    {mergeBadge}
+                </div>
+                {ytRow(vItem, "Video")}
+                {ytRow(aItem, "Audio")}
+                {ytDlMergeStatus === "merged" ? (
+                    <div class="cdm-yt-merge-ok">✓ Merged into: {vItem ? (vItem.display_name || vItem.filename) : "output file"}</div>
+                ) : ytDlMergeStatus === "failed" ? (
+                    <div class="cdm-yt-merge-fail">✗ Merge failed: {ytDlMergeError !== "" ? ytDlMergeError : "unknown error"}</div>
+                ) : ytDlMergeStatus === "merging" ? (
+                    <div class="cdm-yt-merge-wait">⟳ Merging video + audio...</div>
+                ) : ytDlMergeStatus === "waiting" ? (
+                    <div class="cdm-yt-merge-wait">⏳ Waiting for streams to finish before merging...</div>
+                ) : null}
+                <div class="cdm-item-actions">
+                    {(vItem && (vItem.state === "Downloading" || vItem.state === "Queued")) || (aItem && (aItem.state === "Downloading" || aItem.state === "Queued")) ? (
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => { if(vItem) post("cancel", vItem.id); if(aItem) post("cancel", aItem.id) }}>Cancel</button>
+                    ) : null}
+                </div>
+            </div>
+        })() : null}
+
         <div class="cdm-list">
-            {visibleItems.filter((item) => !(ytDlNeedsMerge && ytDlAudioId && item.id === ytDlAudioId)).map((item) => {
+            {visibleItems.filter((item) => !(ytDlNeedsMerge && (item.id === ytDlAudioId || item.id === ytDlVideoId))).map((item) => {
                 var pct = parseFloat(item.percent)
                 if(isNaN(pct)) pct = 0
                 if(pct < 0) pct = 0
