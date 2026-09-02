@@ -24,7 +24,8 @@ using std::Result;
         out.append_string(&string::make_no_len(",\"version\":"))
         out.append_string(&json_string(version))
         out.append_string(&string::make_no_len(",\"items\":["))
-        var snap = snapshot(dm)
+        var snap = vector<DownloadItem>()
+        snapshot_into(dm, &mut snap)
         for(var i = 0u; i < snap.size(); i++) {
             if(i > 0u) { out.append(',') }
             var it = snap.get_ptr(i)
@@ -161,6 +162,12 @@ using std::Result;
         return out
     }
 
+    // Convenience: build err_json from a C-style string literal.
+    func err_msg(msg : *char) : string {
+        var s = string(msg)
+        return err_json(&s)
+    }
+
     // Serialize the current settings for the UI.
     func settings_json(dm : &DownloadManager) : string {
         var out = string::make_no_len("{\"download_dir\":")
@@ -261,10 +268,12 @@ using std::Result;
             // Apply per-task speed limit if provided.
             var sl = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), 0)
             if(sl > 0) {
+                dm.items_mutex.lock()
                 var idx = find_item_index(&*dm, &id)
                 if(idx < dm.items.size()) {
                     dm.items.get_ptr(idx).speed_limit_kbps = sl as i64
                 }
+                dm.items_mutex.unlock()
             }
             var out = string::make_no_len("{\"ok\":true,\"id\":")
             out.append_string(&json_string(string_view::make_view(&id)))
@@ -298,23 +307,23 @@ using std::Result;
         }
         if(method.equals(&m_retry)) {
             var id = json_field(args, string_view::make_no_len("id"))
-            if(id.size() > 0u) {
-                var ok = retry_task(&mut *dm, &id)
-                if(!ok) {
-                    var msg = string::make_no_len("cannot retry item")
-                    return err_json(&msg)
-                }
+            if(id.size() == 0u) {
+                return err_msg("missing id parameter")
+            }
+            var ok = retry_task(&mut *dm, &id)
+            if(!ok) {
+                return err_msg("cannot retry: item not found or already done")
             }
             return ok_json()
         }
         if(method.equals(&m_restart)) {
             var id = json_field(args, string_view::make_no_len("id"))
-            if(id.size() > 0u) {
-                var ok = restart_task(&mut *dm, &id)
-                if(!ok) {
-                    var msg = string::make_no_len("cannot restart item")
-                    return err_json(&msg)
-                }
+            if(id.size() == 0u) {
+                return err_msg("missing id parameter")
+            }
+            var ok = restart_task(&mut *dm, &id)
+            if(!ok) {
+                return err_msg("cannot restart: item not found or still running")
             }
             return ok_json()
         }
@@ -367,7 +376,22 @@ using std::Result;
             var auto_res = json_bool_field(args, string_view::make_no_len("auto_resume_failed"), dm.auto_resume_failed)
             var retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.retry_policy.max_retries)
             var delay = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_policy.delay_ms as int)
+            // Validate settings before applying.
+            var cv = validate_max_concurrent(conc)
+            if(!cv.is_ok()) { return err_json(&cv.message) }
+            var sv = validate_max_segments(seats)
+            if(!sv.is_ok()) { return err_json(&sv.message) }
+            var slv = validate_speed_limit(speed as i64)
+            if(!slv.is_ok()) { return err_json(&slv.message) }
+            var dv = validate_duplicate_action(dupact)
+            if(!dv.is_ok()) { return err_json(&dv.message) }
+            var rv = validate_max_retries(retries)
+            if(!rv.is_ok()) { return err_json(&rv.message) }
+            var rlv = validate_retry_delay(delay as i64)
+            if(!rlv.is_ok()) { return err_json(&rlv.message) }
             if(dl.size() > 0u) {
+                var dv2 = validate_directory(string_view::make_view(&dl))
+                if(!dv2.is_ok()) { return err_json(&dv2.message) }
                 dm.download_dir = dl.copy()
             }
             if(conc > 0) { dm.max_concurrent = conc }

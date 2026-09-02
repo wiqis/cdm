@@ -167,7 +167,9 @@ using std::vector;
             var current_view = string_view::make_view(&current)
             var url_opt = http::URL::parse(&current_view)
             if(url_opt is Option.None) {
-                return Result.Err<http::Response, string>(string::make_no_len("invalid URL"))
+                var msg = string::make_no_len("invalid URL: ")
+                msg.append_view(&current_view)
+                return Result.Err<http::Response, string>(msg)
             }
             var Some(u) = url_opt else unreachable
 
@@ -192,7 +194,13 @@ using std::vector;
             var res = cl.request(&rb)
             if(res is Result.Err) {
                 var Err(e) = res else unreachable
-                return Result.Err<http::Response, string>(e.copy())
+                // Wrap the library error with the URL for context.
+                var msg = string::make_no_len("network error: ")
+                msg.append_string(&e)
+                msg.append_string(&string::make_no_len(" ("))
+                msg.append_view(&current_view)
+                msg.append(')')
+                return Result.Err<http::Response, string>(msg)
             }
             var Ok(rep) = res else unreachable
 
@@ -204,7 +212,12 @@ using std::vector;
                     redirects = redirects + 1
                     if(redirects > MAX_REDIRECTS) {
                         rep.body.close_socket()
-                        return Result.Err<http::Response, string>(string::make_no_len("too many redirects"))
+                        var msg = string::make_no_len("too many redirects (>")
+                        var r = string()
+                        r.append_integer(MAX_REDIRECTS as bigint)
+                        msg.append_string(&r)
+                        msg.append_string(&string::make_no_len(")"))
+                        return Result.Err<http::Response, string>(msg)
                     }
                     current = loc.copy()
                     continue
@@ -213,7 +226,12 @@ using std::vector;
             }
             return Result.Ok<http::Response, string>(std::replace(&mut rep, http::Response()))
         }
-        return Result.Err<http::Response, string>(string::make_no_len("too many redirects"))
+        var msg = string::make_no_len("too many redirects (>")
+        var r = string()
+        r.append_integer(MAX_REDIRECTS as bigint)
+        msg.append_string(&r)
+        msg.append_string(&string::make_no_len(")"))
+        return Result.Err<http::Response, string>(msg)
     }
 
     // Probe a URL for downloadability without downloading the body:
@@ -229,6 +247,7 @@ using std::vector;
         if(res is Result.Err) {
             var Err(e) = res else unreachable
             probe.error = e.copy()
+            fprintf(stderr, "[CDM] probe failed for %s: %s\n", string(url_str.data(), url_str.size()).data(), e.data())
             return probe
         }
         var Ok(rep) = res else unreachable
@@ -243,6 +262,7 @@ using std::vector;
                 var Some(cr) = cr_opt else unreachable
                 probe.total_bytes = parse_content_range_total(&cr)
             }
+            fprintf(stderr, "[CDM] probe: 206 resume supported, total=%lld\n", probe.total_bytes)
         } else if(rep.status == 200u) {
             probe.ok = true
             probe.supports_resume = false
@@ -251,6 +271,7 @@ using std::vector;
                 var Some(cl) = cl_opt else unreachable
                 probe.total_bytes = parse_content_length(&cl)
             }
+            fprintf(stderr, "[CDM] probe: 200 no resume, total=%lld\n", probe.total_bytes)
         } else if(rep.status == 416u) {
             // Range not satisfiable — server usually gives total via Content-Range.
             probe.ok = true
@@ -260,9 +281,20 @@ using std::vector;
                 var Some(cr) = cr_opt else unreachable
                 probe.total_bytes = parse_content_range_total(&cr)
             }
+            fprintf(stderr, "[CDM] probe: 416 Range not satisfiable, total=%lld\n", probe.total_bytes)
         } else {
-            probe.error = string::make_no_len("unexpected status ")
+            probe.error = string::make_no_len("server returned HTTP ")
             probe.error.append_uinteger(rep.status as ubigint)
+            if(rep.status == 403u) {
+                probe.error.append_string(&string::make_no_len(" (access denied)") )
+            } else if(rep.status == 404u) {
+                probe.error.append_string(&string::make_no_len(" (not found)"))
+            } else if(rep.status == 429u) {
+                probe.error.append_string(&string::make_no_len(" (rate limited — try again later)"))
+            } else if(rep.status >= 500u) {
+                probe.error.append_string(&string::make_no_len(" (server error)"))
+            }
+            fprintf(stderr, "[CDM] probe: HTTP %u\n", rep.status)
         }
 
         // Filename from Content-Disposition, falling back to the URL path.

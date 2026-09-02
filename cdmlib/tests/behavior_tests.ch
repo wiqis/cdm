@@ -109,7 +109,7 @@ func bt_cleanup_dir(path : *char) {
 func bt_write_pattern(path : *char, size : i64) : bool {
     var f = fopen(path, "w")
     if(f == null) { return false }
-    unsafe var buf : [4096u]u8
+    var buf : [4096u]u8
     var written : i64 = 0
     var idx : i64 = 0
     while(written < size) {
@@ -142,7 +142,7 @@ func bt_matches(path : *char, size : i64) : bool {
     var fsz = ftell(f)
     if(fsz != size) { fclose(f); return false }
     fseek(f, 0, SEEK_SET)
-    unsafe var buf : [65536u]u8
+    var buf : [65536u]u8
     var offset : i64 = 0
     while(true) {
         var n = fread(&raw mut buf[0], 1, 65536u, f)
@@ -163,7 +163,7 @@ func bt_matches(path : *char, size : i64) : bool {
 
 func bt_itoa(outp : *mut char, bufsz : usize, val : i64) : usize {
     if(bufsz == 0u) { return 0u }
-    unsafe var tmp : [32]char
+    var tmp : [32]char
     var n = 0
     if(val == 0) { tmp[n] = '0'; n = n + 1 }
     else {
@@ -212,7 +212,7 @@ func bt_parse_range(rng : string_view, size : i64, ostart : *mut i64, oend : *mu
 }
 
 func bt_send_chunked(s : net::Socket, f : *mut FILE, srv : *mut BtServer, total : i64, count_dropped : *mut bool) {
-    unsafe var payload : [8192u]u8
+    var payload : [8192u]u8
     var sent : i64 = 0
     while(sent < total) {
         var want : usize = 8192u
@@ -236,7 +236,7 @@ func bt_send_chunked(s : net::Socket, f : *mut FILE, srv : *mut BtServer, total 
 
 func bt_handle(s : net::Socket, srv : *mut BtServer) {
     var head = string()
-    unsafe var buf : [1024u]u8
+    var buf : [1024u]u8
     var got_headers = false
     while(!got_headers && head.size() < 65536u) {
         var n = net::recv_all(s, &raw mut buf[0], 1024u)
@@ -329,7 +329,7 @@ func bt_handle(s : net::Socket, srv : *mut BtServer) {
         var rc = bt_parse_range(string_view::make_view(&rng), size, &raw mut start, &raw mut end)
         if(rc == -2) {
             var msg = string::make_no_len("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */")
-            unsafe var sb : [24]char
+            var sb : [24]char
             var sl = bt_itoa(&raw mut sb[0], 24u, size)
             msg.append_with_len(&raw mut sb[0], sl)
             msg.append_string(&string::make_no_len("\r\nConnection: close\r\n\r\n"))
@@ -341,19 +341,19 @@ func bt_handle(s : net::Socket, srv : *mut BtServer) {
         if(rc != 0) { fclose(f); net::close_socket(s); return }
         var range_len = end - start + 1
         var h = string::make_no_len("HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes ")
-        unsafe var ab : [24]char
+        var ab : [24]char
         var al = bt_itoa(&raw mut ab[0], 24u, start)
         h.append_with_len(&raw mut ab[0], al)
         h.append('-')
-        unsafe var bb : [24]char
+        var bb : [24]char
         var bl = bt_itoa(&raw mut bb[0], 24u, end)
         h.append_with_len(&raw mut bb[0], bl)
         h.append('/')
-        unsafe var cb : [24]char
+        var cb : [24]char
         var cl2 = bt_itoa(&raw mut cb[0], 24u, size)
         h.append_with_len(&raw mut cb[0], cl2)
         h.append_string(&string::make_no_len("\r\nContent-Length: "))
-        unsafe var db : [24]char
+        var db : [24]char
         var dl = bt_itoa(&raw mut db[0], 24u, range_len)
         h.append_with_len(&raw mut db[0], dl)
         h.append_string(&string::make_no_len("\r\nConnection: close\r\n\r\n"))
@@ -370,7 +370,7 @@ func bt_handle(s : net::Socket, srv : *mut BtServer) {
     var h2 = string::make_no_len("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream")
     if(srv.send_content_length) {
         h2.append_string(&string::make_no_len("\r\nContent-Length: "))
-        unsafe var eb : [24]char
+        var eb : [24]char
         var el = bt_itoa(&raw mut eb[0], 24u, size)
         h2.append_with_len(&raw mut eb[0], el)
     }

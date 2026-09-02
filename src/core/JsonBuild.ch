@@ -130,6 +130,10 @@ using std::vector;
         json_kv(&mut out, "category", &cat_s, &mut first)
         json_kv(&mut out, "percent", &percent_s, &mut first)
         json_kv(&mut out, "eta", &eta_s, &mut first)
+        var type_s = json_int(item.card_type)
+        json_kv(&mut out, "card_type", &type_s, &mut first)
+        var parent_s = json_string(string_view::make_view(&item.parent_id))
+        json_kv(&mut out, "parent_id", &parent_s, &mut first)
         var retry_s = json_int(item.retry_count)
         json_kv(&mut out, "retry_count", &retry_s, &mut first)
         var interrupted_s = if(item.was_interrupted) "true" else "false"

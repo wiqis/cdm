@@ -65,6 +65,7 @@ using std::vector;
         var supports_resume : bool
         var enable_resume : bool
         var retry_policy : RetryPolicy
+        var manager : *mut DownloadManager
 
         @constructor func constructor(id_ : string) {
             return TaskRuntime {
@@ -84,7 +85,8 @@ using std::vector;
                 max_segments = DEFAULT_MAX_SEGMENTS,
                 supports_resume = false,
                 enable_resume = true,
-                retry_policy = RetryPolicy()
+                retry_policy = RetryPolicy(),
+                manager = null
             }
         }
     }
@@ -184,11 +186,14 @@ using std::vector;
         rt.info_mutex.unlock()
     }
 
-    public func snapshot_progress(rt : *mut TaskRuntime) : TaskProgress {
+    public func snapshot_progress_into(rt : *mut TaskRuntime, out : &mut TaskProgress) {
         rt.info_mutex.lock()
-        var p = rt.progress.copy()
+        out.total_bytes = rt.progress.total_bytes
+        out.downloaded_bytes = rt.progress.downloaded_bytes
+        out.speed_bytes_per_sec = rt.progress.speed_bytes_per_sec
+        out.state = rt.progress.state
+        out.error = rt.progress.error.copy()
         rt.info_mutex.unlock()
-        return p
     }
 
     // Serialize the live segment array under the lock. Returns an empty
@@ -394,10 +399,11 @@ using std::vector;
     // When max_bytes >= 0, stops after that many bytes have been written.
     // When written_out != null, updates it with bytes written (for segment progress).
     func stream_body(rt : *mut TaskRuntime, body : &mut http::Body, ofile : *mut FILE, max_bytes : i64, written_out : *mut i64) : int {
-        unsafe var buf : [STREAM_BUF_SIZE]u8
+        var buf : [STREAM_BUF_SIZE]u8
         var sample_start = now_millis()
         var sample_bytes : i64 = 0
         var written : i64 = 0
+        var consecutive_errors = 0
 
         while(true) {
             if(should_cancel(rt)) {
@@ -422,6 +428,8 @@ using std::vector;
 
             var n = body.read(&raw mut buf[0], want)
             if(n < 0) {
+                consecutive_errors = consecutive_errors + 1
+                fprintf(stderr, "[CDM] stream_body: read error (consecutive=%d)\n", consecutive_errors)
                 // socket error — keep whatever we have; caller will retry
                 fflush(ofile)
                 return 0
@@ -431,10 +439,13 @@ using std::vector;
                 fflush(ofile)
                 return 1
             }
+            consecutive_errors = 0
 
             var wrote = fwrite(&raw mut buf[0], 1, n as usize, ofile)
             if(wrote < (n as usize)) {
                 // disk full / write error
+                fprintf(stderr, "[CDM] stream_body: disk write error (wrote=%zu wanted=%d)\n", wrote, n)
+                locked_set_error(rt, &string::make_no_len("disk write error — check free space"))
                 return 0
             }
 
@@ -500,6 +511,9 @@ using std::vector;
         var resume_from = start + copied_in
         var res = open_download_range(url, resume_from, end)
         if(res is Result.Err) {
+            var Err(e) = res else unreachable
+            fprintf(stderr, "[CDM] segment %d: connection failed: %s\n", start as int, e.data())
+            locked_set_error(rt, &e)
             return 0
         }
         var Ok(rep) = res else unreachable
@@ -509,10 +523,18 @@ using std::vector;
             // Server ignored our Range. Only valid for the first segment.
             if(resume_from != 0) {
                 rep.body.close_socket()
+                var msg = string::make_no_len("server does not support range requests for resume")
+                locked_set_error(rt, &msg)
                 return 0
             }
             var ofile = open_output(part_path, 0)
-            if(ofile == null) { rep.body.close_socket(); return 0 }
+            if(ofile == null) {
+                rep.body.close_socket()
+                var msg = string::make_no_len("cannot open part file: ")
+                msg.append_char_ptr(part_path)
+                locked_set_error(rt, &msg)
+                return 0
+            }
             var code = stream_body(rt, &mut rep.body, ofile, -1, seg_copied_out)
             fclose(ofile)
             rep.body.close_socket()
@@ -524,11 +546,21 @@ using std::vector;
 
         if(st != 206u) {
             rep.body.close_socket()
+            var msg = string::make_no_len("unexpected HTTP status ")
+            msg.append_uinteger(st as ubigint)
+            msg.append_string(&string::make_no_len(" in segment request"))
+            locked_set_error(rt, &msg)
             return 0
         }
 
         var ofile = open_output(part_path, copied_in)
-        if(ofile == null) { rep.body.close_socket(); return 0 }
+        if(ofile == null) {
+            rep.body.close_socket()
+            var msg = string::make_no_len("cannot open part file for resume: ")
+            msg.append_char_ptr(part_path)
+            locked_set_error(rt, &msg)
+            return 0
+        }
         var remaining = end - resume_from + 1
         if(remaining < 0) { remaining = 0 }
         var code = stream_body(rt, &mut rep.body, ofile, remaining, seg_copied_out)
@@ -601,7 +633,7 @@ using std::vector;
 
         var out = fopen(dest.data(), "wb")
         if(out == null) { return false }
-        unsafe var buf : [1024u * 1024u]u8
+        var buf : [1024u * 1024u]u8
 
         // Sort segments by index (they are built in order, so just iterate).
         // Iterate the runtime's segments under the lock.
@@ -886,8 +918,18 @@ using std::vector;
                 }
 
                 var ofile = open_output(path.data(), resume_from)
+                if(ofile == null && resume_from > 0) {
+                    // Output file missing — cannot resume from a non-existent file.
+                    // Reset progress and try a fresh download from byte 0.
+                    fprintf(stderr, "[CDM] output file missing for resume, starting fresh: %s\n", path.data())
+                    locked_set_downloaded(rt, 0)
+                    resume_from = 0
+                    // Rebuild the output file (truncating).
+                    ofile = fopen(path.data(), "wb")
+                }
                 if(ofile == null) {
-                    var msg = string::make_no_len("cannot open output file")
+                    var msg = string::make_no_len("cannot open output file: ")
+                    msg.append_string(&path)
                     locked_set_error(rt, &msg)
                     rep.body.close_socket()
                     retries = retries + 1
@@ -911,9 +953,20 @@ using std::vector;
                     if(should_cancel(rt)) {
                         return
                     }
-                    var msg = string::make_no_len("connection lost while downloading")
+                    var dl = locked_get_downloaded(rt)
+                    var tot = locked_get_total(rt)
+                    var msg = string::make_no_len("connection lost (")
+                    var dl_s = string()
+                    dl_s.append_integer(dl as bigint)
+                    msg.append_string(&dl_s)
+                    msg.append('/')
+                    var tot_s = string()
+                    tot_s.append_integer(tot as bigint)
+                    msg.append_string(&tot_s)
+                    msg.append_string(&string::make_no_len(" bytes)"))
                     locked_set_error(rt, &msg)
                     retries = retries + 1
+                    fprintf(stderr, "[CDM] connection lost, retry %d/%d\n", retries, rt.retry_policy.max_retries)
                     if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                     continue
                 }
@@ -940,9 +993,11 @@ using std::vector;
                 // recoverable; fail immediately instead of retrying.
                 if(st >= 400u && st < 500u && st != 429u) {
                     locked_set_state(rt, STATE_FAILED)
+                    fprintf(stderr, "[CDM] permanent HTTP error %u\n", st)
                     return
                 }
                 retries = retries + 1
+                fprintf(stderr, "[CDM] HTTP %u, retry %d/%d\n", st, retries, rt.retry_policy.max_retries)
                 if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
                 continue
             }
@@ -971,9 +1026,22 @@ using std::vector;
     // Worker entry point (matches std::concurrent::spawn signature).
     func download_entry(arg : *void) : *void {
         var job = arg as *mut DownloadJob
+        // Capture the manager pointer up front, while `rt` is guaranteed alive.
+        // The app may detach+delete `rt` the moment the download finishes (e.g. the
+        // playlist merge monitor frees completed video/audio tasks), so we must NOT
+        // dereference `job.rt` after run_download_task returns — doing so is a
+        // use-after-free that corrupts the heap ("double free or corruption").
+        var mgr = job.rt.manager
         run_download_task(job.rt, string_view::make_view(&job.url),
                           string_view::make_view(&job.dir),
                           string_view::make_view(&job.filename))
+        // When the task finishes, re-run the scheduler so any queued task past
+        // max_concurrent gets a chance to start. Without this, queued tasks beyond
+        // max_concurrent stay Queued forever. count_active() counts via runtime
+        // progress, so no item-state bookkeeping is needed here.
+        if(mgr != null) {
+            unsafe { cdm::start_pending(&mut *mgr) }
+        }
         // The job was heap-allocated by the manager; free it here.
         delete job
         return null

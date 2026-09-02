@@ -65,7 +65,7 @@ using std::Option;
 
         // read whole file
         var content = string()
-        unsafe var chunk : [4096u]u8
+        var chunk : [4096u]u8
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 4096u, f)
             if(n == 0u) { break }

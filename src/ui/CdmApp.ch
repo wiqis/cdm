@@ -73,7 +73,7 @@
     state ytPlError = ""
     state ytPlDone = false
     state ytPlVideos = []        // per-item status from the backend poll
-    state ytPlTaskIds = {}       // video/audio DM task ids that belong to the playlist (hide from main list)
+    state ytPlContainerId = ""   // id of the PLAYLIST container card currently being polled
     state ytPlExpanded = {}      // index -> bool (expanded detail view)
     state ytPlMaxRetries = 3     // retries per video on link/merge failure
     state ytInfoPollId = null
@@ -439,6 +439,7 @@
             ytDlMergeStatus = d.merge_status || ""
             ytDlMergeError = d.merge_error || ""
             ytDlNeedsMerge = d.needs_merge || false
+            if(d.container_id) { ytDlContainerId = d.container_id }
             if(d.title) { ytDlTitle = d.title }
             // Keep polling while merge is in progress (waiting or merging).
             if(d.needs_merge && (d.merge_status === "waiting" || d.merge_status === "merging")) {
@@ -476,16 +477,8 @@
             ytPlItemsTotal = d.items_total || 0
             if(d.videos) {
                 ytPlVideos = d.videos
-                // Collect the child video/audio task ids so we can hide them
-                // from the main queue list (the playlist card is enough).
-                var ids = {}
-                for(var k = 0; k < d.videos.length; k++) {
-                    var v = d.videos[k]
-                    if(v.video_task_id) { ids[v.video_task_id] = true }
-                    if(v.audio_task_id) { ids[v.audio_task_id] = true }
-                }
-                ytPlTaskIds = ids
             }
+            if(d.container_id) { ytPlContainerId = d.container_id }
             if(d.done) {
                 if(ytPlPollId) { clearInterval(ytPlPollId); ytPlPollId = null }
                 ytDownloading = false
@@ -562,7 +555,6 @@
         var mode = ytFormatMode || "merged"
         if(ytInfo.is_playlist) {
             ytPlVideos = []
-            ytPlTaskIds = {}
             ytPlExpanded = {}
             var body = { url: u, format: fmt, mode: mode, audio_format: audioFmt, min_quality: ytMinQuality, max_quality: ytMaxQuality, max_retries: ytPlMaxRetries, auto_merge: ytAutoMerge, delete_separate: ytDeleteSeparate }
             asyncBridge("yt_download_playlist", JSON.stringify(body), function(d) {
@@ -678,7 +670,14 @@
         ctxOpen = false
     }
 
-    var mainItems = items.filter((u) => !ytPlTaskIds[u.id])
+    var CARD_NORMAL = 0
+    var CARD_PLAYLIST = 1
+    var CARD_YT_SINGLE = 2
+    var CARD_YT_CHILD = 3
+    // Children (video/audio streams of a playlist / single-YT job) are real DM
+    // tasks, but they live NESTED inside their parent card — never as top-level
+    // cards. Top-level cards are NORMAL, PLAYLIST, or YT_SINGLE.
+    var mainItems = items.filter((u) => u.card_type !== CARD_YT_CHILD)
     var visibleItems = mainItems.filter((u) => {
         if(!filterMatches(u.state, u.category)) return false
         if(searchQuery.trim() !== "") {
@@ -702,9 +701,261 @@
         if(sortBy === "size") return (b.total_bytes || 0) - (a.total_bytes || 0)
         return 0
     })
-    var totalCount = mainItems.length
-    var activeCount = mainItems.filter((u) => u.state === "Downloading").length
-    var doneCount = mainItems.filter((u) => u.state === "Done").length
+        var totalCount = mainItems.length
+        var activeCount = mainItems.filter((u) => u.state === "Downloading").length
+        var doneCount = mainItems.filter((u) => u.state === "Done").length
+
+        // --- Shared nested-row renderer (used by playlist + single-YT cards) ---
+        var ytStreamRow = (it, label) => {
+            if(!it) return null
+            var p = parseFloat(it.percent); if(isNaN(p)) p = 0; if(p < 0) p = 0; if(p > 100) p = 100
+            var showProg = it.state === "Downloading" || it.state === "Paused"
+            var failed = it.state === "Failed" || it.state === "Cancelled"
+            var segs = []
+            if(it.segments && it.segments.length > 0) { segs = it.segments }
+            var hasSegs = segs.length > 1
+            return <div class={"cdm-yt-row" + (failed ? " cdm-yt-row-error" : "")}>
+                <div class="cdm-yt-row-head">
+                    <span class="cdm-yt-row-label">{label}</span>
+                    <span class="cdm-yt-row-name" title={it.url}>{it.display_name || it.filename}</span>
+                    <span class={stateClass(it.state)}>{it.state}</span>
+                </div>
+                {showProg ? <div class="cdm-progress"><div class="cdm-progress-fill" style={"width: " + p + "%;"}></div></div> : null}
+                {showProg && hasSegs ? (
+                    <div class="cdm-segments">
+                        {segs.map((seg) => {
+                            var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
+                            var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
+                            return <div class={"cdm-seg " + segClass}
+                                title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
+                                style={"width:" + (100 / segs.length) + "%;"}>
+                                <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
+                            </div>
+                        })}
+                    </div>
+                ) : null}
+                <div class="cdm-item-meta">
+                    <span>{fmtBytes(it.downloaded_bytes)} / {it.total_bytes >= 0 ? fmtBytes(it.total_bytes) : "?"}</span>
+                    <span class="cdm-item-pct">{p.toFixed(1)}%</span>
+                    <span class="cdm-item-speed">{fmtSpeed(it.speed_bytes_per_sec)}</span>
+                    <span class="cdm-item-eta">{it.eta !== "" && showProg ? it.eta : ""}</span>
+                </div>
+            </div>
+        }
+
+        // --- PLAYLIST card: a container whose children render nested inside it ---
+        var renderPlaylistCard = (item) => {
+            var isActive = item.id === ytPlContainerId
+            var videos = isActive ? ytPlVideos : []
+            var sorted = videos.slice().sort((a, b) => (a.index || 0) - (b.index || 0))
+            var itemsDone = isActive ? ytPlItemsDone : (item.total_bytes > 0 ? item.downloaded_bytes : 0)
+            var itemsTotal = isActive ? ytPlItemsTotal : (item.total_bytes > 0 ? item.total_bytes : 0)
+            var plProg = isActive ? ytPlProgress : (itemsTotal > 0 ? (itemsDone * 100 / itemsTotal) : 0)
+            var plDone = item.state === "Done"
+            var plName = item.display_name || item.filename || item.url || "YouTube Playlist"
+            return <div class="cdm-item cdm-yt-playlist" onContextMenu={(e) => { openContextMenu(e, item) }}>
+                <div class="cdm-item-head">
+                    <div class="cdm-item-name">
+                        <span style={{ marginRight: "6px" }}>&#128228;</span>
+                        <span>{plName}</span>
+                        {plDone ? <span class="cdm-badge-ok">Complete</span>
+                            : <span class="cdm-badge-busy">Downloading…</span>}
+                    </div>
+                    <span class="cdm-item-pct">{itemsDone}/{itemsTotal}</span>
+                </div>
+                <div class="cdm-progress" style={{ margin: "4px 0" }}>
+                    <div class="cdm-progress-fill" style={"width: " + (plProg || 0) + "%;"}></div>
+                </div>
+                {sorted.map((v) => {
+                    var expanded = ytPlExpanded[v.index]
+                    var vItem = v.video_task_id ? items.find((it) => it.id === v.video_task_id) : null
+                    var aItem = v.audio_task_id ? items.find((it) => it.id === v.audio_task_id) : null
+                    var stateClass2 = v.state === "done" ? "cdm-merge-ok"
+                        : v.state === "failed" ? "cdm-merge-fail"
+                        : v.state === "merging" || v.state === "downloading" ? "cdm-merge-wait"
+                        : "cdm-badge-busy"
+                    return <div class="cdm-yt-pl-video">
+                        <div class="cdm-yt-pl-row" onClick={() => {
+                            var next = Object.assign({}, ytPlExpanded)
+                            next[v.index] = !expanded
+                            ytPlExpanded = next
+                            refresh()
+                        }}>
+                            <span class="cdm-yt-pl-caret">{expanded ? "▾" : "▸"}</span>
+                            <span class="cdm-yt-pl-title" title={v.title}>{v.title}</span>
+                            <span class={stateClass2}>{v.state}</span>
+                            <span class="cdm-item-pct">{(v.progress || 0).toFixed(1)}%</span>
+                        </div>
+                        <div class="cdm-progress" style={{ margin: "2px 0 4px 18px" }}>
+                            <div class="cdm-progress-fill" style={"width: " + (v.progress || 0) + "%;"}></div>
+                        </div>
+                        {expanded ? (
+                            <div class="cdm-yt-pl-detail">
+                                {ytStreamRow(vItem, "Video")}
+                                {ytStreamRow(aItem, "Audio")}
+                                {v.merge_status === "merged" ? (
+                                    <div class="cdm-yt-merge-ok">✓ Merged into: {v.output_path ? v.output_path : "output file"}</div>
+                                ) : v.merge_status === "failed" ? (
+                                    <div class="cdm-yt-merge-fail">✗ Merge failed: {v.merge_error ? v.merge_error : "unknown error"}</div>
+                                ) : v.merge_status === "merging" ? (
+                                    <div class="cdm-yt-merge-wait">⟳ Merging video + audio…</div>
+                                ) : null}
+                                <div class="cdm-item-actions">
+                                    {v.state === "failed" ? (
+                                        <button class="cdm-btn cdm-btn-warn"
+                                            onClick={() => { asyncBridge("yt_download_playlist_retry", JSON.stringify({ index: v.index }), function() { pollYtPlaylist() }) }}>
+                                            Retry
+                                        </button>
+                                    ) : null}
+                                    {v.state === "done" ? (
+                                        <button class="cdm-btn"
+                                            onClick={() => { asyncBridge("yt_download_playlist_open", JSON.stringify({ index: v.index })) }}>
+                                            Open
+                                        </button>
+                                    ) : null}
+                                    {(vItem && (vItem.state === "Downloading" || vItem.state === "Queued")) ? (
+                                        <button class="cdm-btn cdm-btn-danger"
+                                            onClick={() => { post("cancel", vItem.id); if(aItem) post("cancel", aItem.id) }}>
+                                            Cancel
+                                        </button>
+                                    ) : null}
+                                </div>
+                            </div>
+                        ) : null}
+                    </div>
+                })}
+                <div class="cdm-item-actions">
+                    {item.state === "Downloading" ? (
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => { asyncBridge("yt_cancel", "{}", function() { }) }}>Cancel Playlist</button>
+                    ) : null}
+                    {item.state !== "Downloading" && item.state !== "Queued" ? (
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove", item.id)}>Remove</button>
+                    ) : null}
+                </div>
+            </div>
+        }
+
+        // --- SINGLE YOUTUBE VIDEO card: container with nested video+audio ---
+        var renderYtVideoCard = (item) => {
+            var isActive = item.id === ytDlContainerId
+            var vItem = isActive ? (ytDlVideoId ? items.find((it) => it.id === ytDlVideoId) : null) : null
+            var aItem = isActive ? (ytDlAudioId ? items.find((it) => it.id === ytDlAudioId) : null) : null
+            var cardName = isActive && ytDlTitle ? ytDlTitle : (item.display_name || item.filename || "YouTube download")
+            var mergeBadge = (isActive && ytDlMergeStatus !== "") ? (
+                <span class={ytDlMergeStatus === "merged" ? "cdm-merge-ok" : ytDlMergeStatus === "failed" ? "cdm-merge-fail" : "cdm-merge-wait"}>
+                    {ytDlMergeStatus === "merged" ? "✓ Merged" : ytDlMergeStatus === "merging" ? "⟳ Merging..." : ytDlMergeStatus === "waiting" ? "⏳ Waiting..." : ytDlMergeStatus === "failed" ? "✗ Merge failed" : ytDlMergeStatus}
+                </span>
+            ) : null
+            return <div class="cdm-item cdm-yt-combined" onContextMenu={(e) => {
+                var target = vItem || aItem
+                if(target) openContextMenu(e, target)
+            }}>
+                <div class="cdm-item-head">
+                    <div class="cdm-item-name" title={cardName}>{cardName}</div>
+                    {mergeBadge}
+                </div>
+                {ytStreamRow(vItem, "Video")}
+                {ytStreamRow(aItem, "Audio")}
+                {isActive && ytDlMergeStatus === "merged" ? (
+                    <div class="cdm-yt-merge-ok">✓ Merged into: {vItem ? (vItem.display_name || vItem.filename) : "output file"}</div>
+                ) : isActive && ytDlMergeStatus === "failed" ? (
+                    <div class="cdm-yt-merge-fail">✗ Merge failed: {ytDlMergeError !== "" ? ytDlMergeError : "unknown error"}</div>
+                ) : isActive && ytDlMergeStatus === "merging" ? (
+                    <div class="cdm-yt-merge-wait">⟳ Merging video + audio...</div>
+                ) : isActive && ytDlMergeStatus === "waiting" ? (
+                    <div class="cdm-yt-merge-wait">⏳ Waiting for streams to finish before merging...</div>
+                ) : null}
+                <div class="cdm-item-actions">
+                    {(vItem && (vItem.state === "Downloading" || vItem.state === "Queued")) || (aItem && (aItem.state === "Downloading" || aItem.state === "Queued")) ? (
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => { if(vItem) post("cancel", vItem.id); if(aItem) post("cancel", aItem.id) }}>Cancel</button>
+                    ) : null}
+                </div>
+            </div>
+        }
+
+        // --- NORMAL download card ---
+        var renderNormalCard = (item) => {
+            var pct = parseFloat(item.percent)
+            if(isNaN(pct)) pct = 0
+            if(pct < 0) pct = 0
+            if(pct > 100) pct = 100
+            var showProgress = item.state === "Downloading" || item.state === "Paused"
+            var failed = item.state === "Failed" || item.state === "Cancelled"
+            var running = item.state === "Downloading" || item.state === "Queued"
+            var name = item.display_name || item.filename
+            var segs = []
+            if(item.segments && item.segments.length > 0) { segs = item.segments }
+            var hasSegs = segs.length > 1
+            return <div class={"cdm-item" + (failed ? " cdm-item-error" : "")}
+                onContextMenu={(e) => openContextMenu(e, item)}>
+                <div class="cdm-item-head">
+                    <div class="cdm-item-name" title={item.url}>{name}</div>
+                    <span class={stateClass(item.state)}>{item.state}</span>
+                </div>
+                <div class="cdm-item-meta-line">
+                    <span class="cdm-item-cat">{item.category}</span>
+                    <span class="cdm-item-prio">P{item.priority}</span>
+                    {item.max_segments > 0 ? <span class="cdm-item-cat">segs {item.max_segments}</span> : null}
+                    {item.speed_limit_kbps > 0 ? <span class="cdm-item-cat">&#9203; {item.speed_limit_kbps} KB/s</span> : null}
+                    <span class="cdm-item-dir" title={item.dir}>{item.dir}</span>
+                </div>
+                {showProgress ? (
+                    <div class="cdm-progress">
+                        <div class="cdm-progress-fill" style={"width: " + pct + "%;"}></div>
+                    </div>
+                ) : null}
+                {showProgress && hasSegs ? (
+                    <div class="cdm-segments">
+                        {segs.map((seg) => {
+                            var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
+                            var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
+                            return <div class={"cdm-seg " + segClass}
+                                title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
+                                style={"width:" + (100 / segs.length) + "%;"}>
+                                <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
+                            </div>
+                        })}
+                    </div>
+                ) : null}
+                <div class="cdm-item-meta">
+                    <span>{fmtBytes(item.downloaded_bytes)} / {item.total_bytes >= 0 ? fmtBytes(item.total_bytes) : "?"}</span>
+                    <span class="cdm-item-pct">{pct.toFixed(1)}%</span>
+                    <span class="cdm-item-speed">{fmtSpeed(item.speed_bytes_per_sec)}</span>
+                    <span class="cdm-item-eta">{item.eta !== "" && showProgress ? item.eta : ""}</span>
+                </div>
+                {item.error !== "" ? <div class="cdm-item-error-text">{item.error}</div> : null}
+                <div class="cdm-item-actions">
+                    {item.state === "Downloading" || item.state === "Queued" ? (
+                        <button class="cdm-btn" onClick={() => post("pause", item.id)}>Pause</button>
+                    ) : null}
+                    {(item.state === "Paused" || (item.state === "Failed" && item.error === "interrupted by shutdown")) ? (
+                        <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
+                    ) : null}
+                    {item.state === "Failed" && item.error !== "interrupted by shutdown" ? (
+                        <button class="cdm-btn" onClick={() => post("retry", item.id)}>Retry</button>
+                    ) : null}
+                    {item.state === "Cancelled" && item.downloaded_bytes > 0 ? (
+                        <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
+                    ) : null}
+                    {item.state === "Done" || item.state === "Failed" || item.state === "Cancelled" ? (
+                        <button class="cdm-btn" onClick={() => post("restart", item.id)}>&#10227; Restart</button>
+                    ) : null}
+                    {item.state !== "Downloading" && item.state !== "Queued" ? (
+                        <button class="cdm-btn" onClick={() => { changeUrlItem = item; changeUrlValue = item.url; changeUrlOpen = true }}>Change URL</button>
+                    ) : null}
+                    {running ? (
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("cancel", item.id)}>Cancel</button>
+                    ) : null}
+                    {item.state !== "Downloading" && item.state !== "Queued" ? (
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove_file", item.id)}>&#128465; Remove file</button>
+                    ) : null}
+                    {item.state !== "Downloading" && item.state !== "Queued" ? (
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove", item.id)}>Remove</button>
+                    ) : null}
+                </div>
+            </div>
+        }
+
 
     return <div class="cdm-app">
         <header class="cdm-header">
@@ -1217,281 +1468,12 @@
             </div>
         ) : null}
 
-        {ytPlItemsTotal > 0 || (ytPlVideos && ytPlVideos.length > 0) ? (() => {
-            var sorted = ytPlVideos.slice().sort((a, b) => (a.index || 0) - (b.index || 0))
-            var plYtRow = (it, label) => {
-                if(!it) return null
-                var p = parseFloat(it.percent); if(isNaN(p)) p = 0; if(p < 0) p = 0; if(p > 100) p = 100
-                var showProg = it.state === "Downloading" || it.state === "Paused"
-                var failed = it.state === "Failed" || it.state === "Cancelled"
-                var segs = []
-                if(it.segments && it.segments.length > 0) { segs = it.segments }
-                var hasSegs = segs.length > 1
-                return <div class={"cdm-yt-row" + (failed ? " cdm-yt-row-error" : "")}>
-                    <div class="cdm-yt-row-head">
-                        <span class="cdm-yt-row-label">{label}</span>
-                        <span class="cdm-yt-row-name" title={it.url}>{it.display_name || it.filename}</span>
-                        <span class={stateClass(it.state)}>{it.state}</span>
-                    </div>
-                    {showProg ? <div class="cdm-progress"><div class="cdm-progress-fill" style={"width: " + p + "%;"}></div></div> : null}
-                    {showProg && hasSegs ? (
-                        <div class="cdm-segments">
-                            {segs.map((seg) => {
-                                var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
-                                var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
-                                return <div class={"cdm-seg " + segClass}
-                                    title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
-                                    style={"width:" + (100 / segs.length) + "%;"}>
-                                    <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
-                                </div>
-                            })}
-                        </div>
-                    ) : null}
-                    <div class="cdm-item-meta">
-                        <span>{fmtBytes(it.downloaded_bytes)} / {it.total_bytes >= 0 ? fmtBytes(it.total_bytes) : "?"}</span>
-                        <span class="cdm-item-pct">{p.toFixed(1)}%</span>
-                        <span class="cdm-item-speed">{fmtSpeed(it.speed_bytes_per_sec)}</span>
-                    </div>
-                </div>
-            }
-            return <div class="cdm-item cdm-yt-playlist">
-                <div class="cdm-item-head">
-                    <div class="cdm-item-name">
-                        <span style={{ marginRight: "6px" }}>&#128228;</span>
-                        <span>YouTube Playlist</span>
-                        {ytPlDone ? <span class="cdm-badge-ok">Complete</span>
-                            : <span class="cdm-badge-busy">Downloading…</span>}
-                    </div>
-                    <span class="cdm-item-pct">{ytPlItemsDone}/{ytPlItemsTotal}</span>
-                </div>
-                <div class="cdm-progress" style={{ margin: "4px 0" }}>
-                    <div class="cdm-progress-fill" style={"width: " + (ytPlProgress || 0) + "%;"}></div>
-                </div>
-                {ytPlError ? <div class="cdm-yt-merge-fail">{ytPlError}</div> : null}
-                <div class="cdm-yt-pl-list">
-                    {sorted.map((v) => {
-                        var expanded = ytPlExpanded[v.index]
-                        var vItem = v.video_task_id ? items.find((it) => it.id === v.video_task_id) : null
-                        var aItem = v.audio_task_id ? items.find((it) => it.id === v.audio_task_id) : null
-                        var stateClass2 = v.state === "done" ? "cdm-merge-ok"
-                            : v.state === "failed" ? "cdm-merge-fail"
-                            : v.state === "merging" || v.state === "downloading" ? "cdm-merge-wait"
-                            : "cdm-badge-busy"
-                        return <div class="cdm-yt-pl-video">
-                            <div class="cdm-yt-pl-row" onClick={() => {
-                                var next = Object.assign({}, ytPlExpanded)
-                                next[v.index] = !expanded
-                                ytPlExpanded = next
-                                refresh()
-                            }}>
-                                <span class="cdm-yt-pl-caret">{expanded ? "▾" : "▸"}</span>
-                                <span class="cdm-yt-pl-title" title={v.title}>{v.title}</span>
-                                <span class={stateClass2}>{v.state}</span>
-                                <span class="cdm-item-pct">{(v.progress || 0).toFixed(1)}%</span>
-                            </div>
-                            <div class="cdm-progress" style={{ margin: "2px 0 4px 18px" }}>
-                                <div class="cdm-progress-fill" style={"width: " + (v.progress || 0) + "%;"}></div>
-                            </div>
-                            {expanded ? (
-                                <div class="cdm-yt-pl-detail">
-                                    {plYtRow(vItem, "Video")}
-                                    {plYtRow(aItem, "Audio")}
-                                    {v.merge_status === "merged" ? (
-                                        <div class="cdm-yt-merge-ok">✓ Merged into: {v.output_path ? v.output_path : "output file"}</div>
-                                    ) : v.merge_status === "failed" ? (
-                                        <div class="cdm-yt-merge-fail">✗ Merge failed: {v.merge_error ? v.merge_error : "unknown error"}</div>
-                                    ) : v.merge_status === "merging" ? (
-                                        <div class="cdm-yt-merge-wait">⟳ Merging video + audio…</div>
-                                    ) : null}
-                                    <div class="cdm-item-actions">
-                                        {v.state === "failed" ? (
-                                            <button class="cdm-btn cdm-btn-warn"
-                                                onClick={() => { asyncBridge("yt_download_playlist_retry", JSON.stringify({ index: v.index }), function() { pollYtPlaylist() }) }}>
-                                                Retry
-                                            </button>
-                                        ) : null}
-                                        {v.state === "done" ? (
-                                            <button class="cdm-btn"
-                                                onClick={() => { asyncBridge("yt_download_playlist_open", JSON.stringify({ index: v.index })) }}>
-                                                Open
-                                            </button>
-                                        ) : null}
-                                        {(vItem && (vItem.state === "Downloading" || vItem.state === "Queued")) ? (
-                                            <button class="cdm-btn cdm-btn-danger"
-                                                onClick={() => { post("cancel", vItem.id); if(aItem) post("cancel", aItem.id) }}>
-                                                Cancel
-                                            </button>
-                                        ) : null}
-                                    </div>
-                                </div>
-                            ) : null}
-                        </div>
-                    })}
-                </div>
-            </div>
-        })() : null}
-
-        {ytDlNeedsMerge && (ytDlVideoId || ytDlAudioId) ? (() => {
-            var vItem = items.find((it) => it.id === ytDlVideoId)
-            var aItem = items.find((it) => it.id === ytDlAudioId)
-            var cardName = ytDlTitle || (vItem ? (vItem.display_name || vItem.filename) : "YouTube download")
-            var mergeBadge = ytDlMergeStatus === ""
-                ? null
-                : <span class={ytDlMergeStatus === "merged" ? "cdm-merge-ok" : ytDlMergeStatus === "failed" ? "cdm-merge-fail" : "cdm-merge-wait"}>
-                    {ytDlMergeStatus === "merged" ? "✓ Merged" : ytDlMergeStatus === "merging" ? "⟳ Merging..." : ytDlMergeStatus === "waiting" ? "⏳ Waiting..." : ytDlMergeStatus === "failed" ? "✗ Merge failed" : ytDlMergeStatus}
-                </span>
-            var ytRow = (it, label) => {
-                if(!it) return null
-                var p = parseFloat(it.percent); if(isNaN(p)) p = 0; if(p < 0) p = 0; if(p > 100) p = 100
-                var showProg = it.state === "Downloading" || it.state === "Paused"
-                var failed = it.state === "Failed" || it.state === "Cancelled"
-                var segs = []
-                if(it.segments && it.segments.length > 0) { segs = it.segments }
-                var hasSegs = segs.length > 1
-                return <div class={"cdm-yt-row" + (failed ? " cdm-yt-row-error" : "")}>
-                    <div class="cdm-yt-row-head">
-                        <span class="cdm-yt-row-label">{label}</span>
-                        <span class="cdm-yt-row-name" title={it.url}>{it.display_name || it.filename}</span>
-                        <span class={stateClass(it.state)}>{it.state}</span>
-                    </div>
-                    {showProg ? <div class="cdm-progress"><div class="cdm-progress-fill" style={"width: " + p + "%;"}></div></div> : null}
-                    {showProg && hasSegs ? (
-                        <div class="cdm-segments">
-                            {segs.map((seg) => {
-                                var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
-                                var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
-                                return <div class={"cdm-seg " + segClass}
-                                    title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
-                                    style={"width:" + (100 / segs.length) + "%;"}>
-                                    <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
-                                </div>
-                            })}
-                        </div>
-                    ) : null}
-                    <div class="cdm-item-meta">
-                        <span>{fmtBytes(it.downloaded_bytes)} / {it.total_bytes >= 0 ? fmtBytes(it.total_bytes) : "?"}</span>
-                        <span class="cdm-item-pct">{p.toFixed(1)}%</span>
-                        <span class="cdm-item-speed">{fmtSpeed(it.speed_bytes_per_sec)}</span>
-                        <span class="cdm-item-eta">{it.eta !== "" && showProg ? it.eta : ""}</span>
-                    </div>
-                </div>
-            }
-            return <div class="cdm-item cdm-yt-combined" onContextMenu={(e) => {
-                var target = vItem || aItem
-                if(target) openContextMenu(e, target)
-            }}>
-                <div class="cdm-item-head">
-                    <div class="cdm-item-name" title={cardName}>{cardName}</div>
-                    {mergeBadge}
-                </div>
-                {ytRow(vItem, "Video")}
-                {ytRow(aItem, "Audio")}
-                {ytDlMergeStatus === "merged" ? (
-                    <div class="cdm-yt-merge-ok">✓ Merged into: {vItem ? (vItem.display_name || vItem.filename) : "output file"}</div>
-                ) : ytDlMergeStatus === "failed" ? (
-                    <div class="cdm-yt-merge-fail">✗ Merge failed: {ytDlMergeError !== "" ? ytDlMergeError : "unknown error"}</div>
-                ) : ytDlMergeStatus === "merging" ? (
-                    <div class="cdm-yt-merge-wait">⟳ Merging video + audio...</div>
-                ) : ytDlMergeStatus === "waiting" ? (
-                    <div class="cdm-yt-merge-wait">⏳ Waiting for streams to finish before merging...</div>
-                ) : null}
-                <div class="cdm-item-actions">
-                    {(vItem && (vItem.state === "Downloading" || vItem.state === "Queued")) || (aItem && (aItem.state === "Downloading" || aItem.state === "Queued")) ? (
-                        <button class="cdm-btn cdm-btn-danger" onClick={() => { if(vItem) post("cancel", vItem.id); if(aItem) post("cancel", aItem.id) }}>Cancel</button>
-                    ) : null}
-                </div>
-            </div>
-        })() : null}
 
         <div class="cdm-list">
-            {visibleItems.filter((item) => !(ytDlNeedsMerge && (item.id === ytDlAudioId || item.id === ytDlVideoId))).map((item) => {
-                var pct = parseFloat(item.percent)
-                if(isNaN(pct)) pct = 0
-                if(pct < 0) pct = 0
-                if(pct > 100) pct = 100
-                var showProgress = item.state === "Downloading" || item.state === "Paused"
-                var failed = item.state === "Failed" || item.state === "Cancelled"
-                var running = item.state === "Downloading" || item.state === "Queued"
-                var name = item.display_name || item.filename
-                // Parse segments JSON for per-segment progress display
-                var segs = []
-                if(item.segments && item.segments.length > 0) {
-                    segs = item.segments
-                }
-                var hasSegs = segs.length > 1
-                return <div class={"cdm-item" + (failed ? " cdm-item-error" : "")}
-                    onContextMenu={(e) => openContextMenu(e, item)}>
-                    <div class="cdm-item-head">
-                        <div class="cdm-item-name" title={item.url}>{name}</div>
-                        {ytDlNeedsMerge && (item.id === ytDlVideoId || item.id === ytDlAudioId) && ytDlMergeStatus !== "" ? (
-                            <span class={ytDlMergeStatus === "merged" ? "cdm-merge-ok" : ytDlMergeStatus === "failed" ? "cdm-merge-fail" : "cdm-merge-wait"}>
-                                {ytDlMergeStatus === "merged" ? "✓ Merged" : ytDlMergeStatus === "merging" ? "⟳ Merging..." : ytDlMergeStatus === "waiting" ? "⏳ Waiting..." : ytDlMergeStatus === "failed" ? "✗ Merge failed" : ytDlMergeStatus}
-                            </span>
-                        ) : null}
-                        <span class={stateClass(item.state)}>{item.state}</span>
-                    </div>
-                    <div class="cdm-item-meta-line">
-                        <span class="cdm-item-cat">{item.category}</span>
-                        <span class="cdm-item-prio">P{item.priority}</span>
-                        {item.max_segments > 0 ? <span class="cdm-item-cat">segs {item.max_segments}</span> : null}
-                        {item.speed_limit_kbps > 0 ? <span class="cdm-item-cat">&#9203; {item.speed_limit_kbps} KB/s</span> : null}
-                        <span class="cdm-item-dir" title={item.dir}>{item.dir}</span>
-                    </div>
-                    {showProgress ? (
-                        <div class="cdm-progress">
-                            <div class="cdm-progress-fill" style={"width: " + pct + "%;"}></div>
-                        </div>
-                    ) : null}
-                    {showProgress && hasSegs ? (
-                        <div class="cdm-segments">
-                            {segs.map((seg) => {
-                                var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
-                                var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
-                                return <div class={"cdm-seg " + segClass}
-                                    title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
-                                    style={"width:" + (100 / segs.length) + "%;"}>
-                                    <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
-                                </div>
-                            })}
-                        </div>
-                    ) : null}
-                    <div class="cdm-item-meta">
-                        <span>{fmtBytes(item.downloaded_bytes)} / {item.total_bytes >= 0 ? fmtBytes(item.total_bytes) : "?"}</span>
-                        <span class="cdm-item-pct">{pct.toFixed(1)}%</span>
-                        <span class="cdm-item-speed">{fmtSpeed(item.speed_bytes_per_sec)}</span>
-                        <span class="cdm-item-eta">{item.eta !== "" && showProgress ? item.eta : ""}</span>
-                    </div>
-                    {item.error !== "" ? <div class="cdm-item-error-text">{item.error}</div> : null}
-                    <div class="cdm-item-actions">
-                        {item.state === "Downloading" || item.state === "Queued" ? (
-                            <button class="cdm-btn" onClick={() => post("pause", item.id)}>Pause</button>
-                        ) : null}
-                        {(item.state === "Paused" || (item.state === "Failed" && item.error === "interrupted by shutdown")) ? (
-                            <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
-                        ) : null}
-                        {item.state === "Failed" && item.error !== "interrupted by shutdown" ? (
-                            <button class="cdm-btn" onClick={() => post("retry", item.id)}>Retry</button>
-                        ) : null}
-                        {item.state === "Cancelled" && item.downloaded_bytes > 0 ? (
-                            <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
-                        ) : null}
-                        {item.state === "Done" || item.state === "Failed" || item.state === "Cancelled" ? (
-                            <button class="cdm-btn" onClick={() => post("restart", item.id)}>&#10227; Restart</button>
-                        ) : null}
-                        {item.state !== "Downloading" && item.state !== "Queued" ? (
-                            <button class="cdm-btn" onClick={() => { changeUrlItem = item; changeUrlValue = item.url; changeUrlOpen = true }}>Change URL</button>
-                        ) : null}
-                        {running ? (
-                            <button class="cdm-btn cdm-btn-danger" onClick={() => post("cancel", item.id)}>Cancel</button>
-                        ) : null}
-                        {item.state !== "Downloading" && item.state !== "Queued" ? (
-                            <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove_file", item.id)}>&#128465; Remove file</button>
-                        ) : null}
-                        {item.state !== "Downloading" && item.state !== "Queued" ? (
-                            <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove", item.id)}>Remove</button>
-                        ) : null}
-                    </div>
-                </div>
+            {visibleItems.map((item) => {
+                if(item.card_type === CARD_PLAYLIST) { return renderPlaylistCard(item) }
+                if(item.card_type === CARD_YT_SINGLE) { return renderYtVideoCard(item) }
+                return renderNormalCard(item)
             })}
         </div>
         {<ErrorOverlay />}

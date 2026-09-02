@@ -102,7 +102,7 @@ func test_parse_range(rng : string_view, size : i64, ostart : *mut i64, oend : *
 
 func test_srv_itoa(out : *mut char, bufsz : usize, val : i64) : usize {
     if(bufsz == 0u) { return 0u }
-    unsafe var tmp : [32]char
+    var tmp : [32]char
     var n = 0
     if(val == 0) { tmp[n] = '0'; n = n + 1 }
     else {
@@ -126,7 +126,7 @@ func test_srv_itoa(out : *mut char, bufsz : usize, val : i64) : usize {
 // Handle one connection: read the request, send the response, close.
 func test_srv_handle(s : net::Socket, srv : *mut TestServer) {
     var head = string()
-    unsafe var buf : [1024u]u8
+    var buf : [1024u]u8
     var got_headers = false
     while(!got_headers && head.size() < 65536u) {
         var n = net::recv_all(s, &raw mut buf[0], 1024u)
@@ -192,7 +192,7 @@ func test_srv_handle(s : net::Socket, srv : *mut TestServer) {
         var rc = test_parse_range(string_view::make_view(&rng), size as i64, &raw mut start, &raw mut end)
         if(rc == -2) {
             var msg = string::make_no_len("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */")
-            unsafe var sbuf : [24]char
+            var sbuf : [24]char
             var slen = test_srv_itoa(&raw mut sbuf[0], 24u, size as i64)
             msg.append_with_len(&raw mut sbuf[0], slen)
             msg.append_string(&string::make_no_len("\r\nConnection: close\r\n\r\n"))
@@ -208,19 +208,19 @@ func test_srv_handle(s : net::Socket, srv : *mut TestServer) {
         }
         var range_len = end - start + 1
         var resp_head = string::make_no_len("HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes ")
-        unsafe var a_buf : [24]char
+        var a_buf : [24]char
         var a_len = test_srv_itoa(&raw mut a_buf[0], 24u, start)
         resp_head.append_with_len(&raw mut a_buf[0], a_len)
         resp_head.append('-')
-        unsafe var b_buf : [24]char
+        var b_buf : [24]char
         var b_len = test_srv_itoa(&raw mut b_buf[0], 24u, end)
         resp_head.append_with_len(&raw mut b_buf[0], b_len)
         resp_head.append('/')
-        unsafe var c_buf : [24]char
+        var c_buf : [24]char
         var c_len = test_srv_itoa(&raw mut c_buf[0], 24u, size as i64)
         resp_head.append_with_len(&raw mut c_buf[0], c_len)
         resp_head.append_string(&string::make_no_len("\r\nContent-Length: "))
-        unsafe var d_buf : [24]char
+        var d_buf : [24]char
         var d_len = test_srv_itoa(&raw mut d_buf[0], 24u, range_len)
         resp_head.append_with_len(&raw mut d_buf[0], d_len)
         resp_head.append_string(&string::make_no_len("\r\nConnection: close\r\n\r\n"))
@@ -228,7 +228,7 @@ func test_srv_handle(s : net::Socket, srv : *mut TestServer) {
 
         // stream body from offset
         fseek(f, start as long, SEEK_SET)
-        unsafe var ipayload : [8192u]u8
+        var ipayload : [8192u]u8
         var remain = range_len
         while(remain > 0) {
             var want : usize = 8192u
@@ -248,12 +248,12 @@ func test_srv_handle(s : net::Socket, srv : *mut TestServer) {
 
     // No range: 200 with the full file.
     resp.append_string(&string::make_no_len("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: "))
-    unsafe var e_buf : [24]char
+    var e_buf : [24]char
     var e_len = test_srv_itoa(&raw mut e_buf[0], 24u, size as i64)
     resp.append_with_len(&raw mut e_buf[0], e_len)
     resp.append_string(&string::make_no_len("\r\nConnection: close\r\n\r\n"))
     net::send_all(s, resp.data() as *char, resp.size() as int)
-    unsafe var payload : [8192u]u8
+    var payload : [8192u]u8
     while(true) {
         var r = fread(&raw mut payload[0], 1, 8192u, f)
         if(r == 0u) { break }
@@ -367,7 +367,7 @@ func test_write_pattern(path : *char, size : i64) : bool {
     if(f == null) {
         return false
     }
-    unsafe var buf : [4096u]u8
+    var buf : [4096u]u8
     var written : i64 = 0
     var idx : i64 = 0
     while(written < size) {
@@ -396,7 +396,7 @@ func test_file_matches_pattern(path : *char, size : i64) : bool {
     var fsz = ftell(f)
     if(fsz != size) { fclose(f); return false }
     fseek(f, 0, SEEK_SET)
-    unsafe var buf : [65536u]u8
+    var buf : [65536u]u8
     var offset : i64 = 0
     var ok = true
     while(ok) {
@@ -418,8 +418,8 @@ func test_files_equal(a : *char, b : *char) : bool {
     if(fa == null) { return false }
     var fb = fopen(b, "r")
     if(fb == null) { fclose(fa); return false }
-    unsafe var ba : [8192u]u8
-    unsafe var bb : [8192u]u8
+    var ba : [8192u]u8
+    var bb : [8192u]u8
     var ok = true
     while(true) {
         var na = fread(&raw mut ba[0], 1, 8192u, fa)

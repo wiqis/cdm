@@ -149,7 +149,7 @@ using std::Option;
     func read_batch_urls(path : string_view, out : &mut vector<string>) : bool {
         var f = fopen(path.data(), "rb")
         if(f == null) { return false }
-        unsafe var chunk : [4096u]u8
+        var chunk : [4096u]u8
         var content = string()
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 4096u, f)
@@ -322,7 +322,8 @@ using std::Option;
         var all_done = false
         while(!all_done) {
             std::concurrent.sleep_ms(250)
-            var snap = snapshot(&mut dm)
+            var snap = vector<DownloadItem>()
+            snapshot_into(&mut dm, &mut snap)
             all_done = true
             for(var i = 0u; i < snap.size(); i++) {
                 var it = snap.get_ptr(i)
@@ -339,7 +340,8 @@ using std::Option;
         // Final summary (from the live snapshot so states are authoritative).
         var fail_count = 0
         var done_count = 0
-        var final_snap = snapshot(&mut dm)
+        var final_snap = vector<DownloadItem>()
+        snapshot_into(&mut dm, &mut final_snap)
         for(var i = 0u; i < final_snap.size(); i++) {
             var it = final_snap.get_ptr(i)
             var lpath = it.local_path()

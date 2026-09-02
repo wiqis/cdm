@@ -375,7 +375,7 @@ using std::vector;
 
     public var g_tool_dl_progress : double = 0.0
     public var g_tool_dl_status : int = 0  // 0=idle, 1=downloading(yt-dlp), 2=downloading(ffmpeg), 10=done, 11=error
-    public unsafe var g_tool_dl_task_id = zeroed<[128]char>()
+    public var g_tool_dl_task_id = zeroed<[128]char>()
     public var g_tool_dl_task_id_len : int = 0
 
     public func tool_download_in_progress() : bool {
@@ -456,8 +456,8 @@ using std::vector;
         g_tool_dl_status = 1
         g_tool_dl_progress = 0.0
 
-        unsafe var url : string_view
-        unsafe var fname : string_view
+        var url : string_view
+        var fname : string_view
         var override_opt = std::get_env(string_view::make_no_len("CDM_TOOL_URL_OVERRIDE"))
         if(override_opt is Option.Some) {
             var Some(tu) = override_opt else unreachable
@@ -500,8 +500,8 @@ using std::vector;
         g_tool_dl_status = 2
         g_tool_dl_progress = 0.0
 
-        unsafe var url : string_view
-        unsafe var fname : string_view
+        var url : string_view
+        var fname : string_view
         if(def.windows) {
             url = string_view::make_no_len(FFMPEG_WIN_URL)
             fname = string_view::make_no_len("ffmpeg.exe")
@@ -824,7 +824,8 @@ using std::vector;
             var tid = get_task_id()
             fprintf(stderr, "[CDM-POLL] looking for task in snapshot\n")
             if(tid.size() > 0u) {
-                var snap = snapshot(dm)
+                var snap = vector<DownloadItem>()
+                snapshot_into(dm, &mut snap)
                 fprintf(stderr, "[CDM-POLL] snapshot has items\n")
                 for(var i = 0u; i < snap.size(); i++) {
                     var it = snap.get_ptr(i)

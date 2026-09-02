@@ -96,47 +96,39 @@ public func CDM_queue_retry_done_fails(env : &mut TestEnv) {
 }
 
 @test
-public func CDM_queue_cancel(env : &mut TestEnv) {
-    var dm = cdm::DownloadManager()
-    dm.max_concurrent = 10
-    var id = cdm::add_task(&mut dm, string_view::make_no_len("https://example.com/a.bin"))
-    // Clear runtime to test the non-running cancel path.
-    var idx = cdm::find_item_index(&dm, &id)
-    var it = dm.items.get_ptr(idx)
-    var rtpp = dm.runtimes.get_ptr(&it.id)
-    if(rtpp != null && *rtpp != null) {
-        var rt = *rtpp
-        cdm::request_cancel(rt)
-        if(rt.running) { cdm::join_task(rt) }
-        delete rt
-        dm.runtimes.erase(&it.id)
-    }
-    cdm::cancel_task(&mut dm, &id)
-    idx = cdm::find_item_index(&dm, &id)
-    it = dm.items.get_ptr(idx)
-    if(it.state != cdm::STATE_CANCELLED) { env.error("expected CANCELLED"); return }
-}
+ public func CDM_queue_cancel(env : &mut TestEnv) {
+     var dm = cdm::DownloadManager()
+     dm.max_concurrent = 10
+     var id = cdm::add_task(&mut dm, string_view::make_no_len("https://example.com/a.bin"))
+     // Clear runtime (under the scheduler lock) to test the non-running cancel path.
+     var rt = cdm::detach_runtime(&mut dm, &id)
+     if(rt != null) {
+         cdm::request_cancel(rt)
+         if(rt.running) { cdm::join_task(rt) }
+         delete rt
+     }
+     cdm::cancel_task(&mut dm, &id)
+     var idx = cdm::find_item_index(&dm, &id)
+     var it = dm.items.get_ptr(idx)
+     if(it.state != cdm::STATE_CANCELLED) { env.error("expected CANCELLED"); return }
+ }
 
 @test
-public func CDM_queue_remove(env : &mut TestEnv) {
-    var dm = cdm::DownloadManager()
-    dm.max_concurrent = 10
-    var id = cdm::add_task(&mut dm, string_view::make_no_len("https://example.com/a.bin"))
-    // Clear runtime.
-    var idx = cdm::find_item_index(&dm, &id)
-    var it = dm.items.get_ptr(idx)
-    var rtpp = dm.runtimes.get_ptr(&it.id)
-    if(rtpp != null && *rtpp != null) {
-        var rt = *rtpp
-        cdm::request_cancel(rt)
-        if(rt.running) { cdm::join_task(rt) }
-        delete rt
-        dm.runtimes.erase(&it.id)
-    }
-    cdm::remove_task(&mut dm, &id)
-    idx = cdm::find_item_index(&dm, &id)
-    if(idx != dm.items.size()) { env.error("item should be removed"); return }
-}
+ public func CDM_queue_remove(env : &mut TestEnv) {
+     var dm = cdm::DownloadManager()
+     dm.max_concurrent = 10
+     var id = cdm::add_task(&mut dm, string_view::make_no_len("https://example.com/a.bin"))
+     // Clear runtime (under the scheduler lock) to exercise the non-running path.
+     var rt = cdm::detach_runtime(&mut dm, &id)
+     if(rt != null) {
+         cdm::request_cancel(rt)
+         if(rt.running) { cdm::join_task(rt) }
+         delete rt
+     }
+     cdm::remove_task(&mut dm, &id)
+     var idx = cdm::find_item_index(&dm, &id)
+     if(idx != dm.items.size()) { env.error("item should be removed"); return }
+ }
 
 @test
 public func CDM_queue_change_url(env : &mut TestEnv) {
@@ -154,8 +146,8 @@ public func CDM_queue_change_url(env : &mut TestEnv) {
 }
 
 @test
-public func CDM_queue_resume_failed(env : &mut TestEnv) {
-    var dm = cdm::DownloadManager()
+ public func CDM_queue_resume_failed(env : &mut TestEnv) {
+     var dm = cdm::DownloadManager()
     dm.max_concurrent = 0
     var id = cdm::add_task(&mut dm, string_view::make_no_len("https://example.com/a.bin"))
     var idx = cdm::find_item_index(&dm, &id)
@@ -183,16 +175,14 @@ public func CDM_queue_clear_finished(env : &mut TestEnv) {
     var id2 = cdm::add_task(&mut dm, string_view::make_no_len("https://example.com/b.bin"))
     var id3 = cdm::add_task(&mut dm, string_view::make_no_len("https://example.com/c.bin"))
 
-    // Clear runtimes and set states.
+    // Clear runtimes (under the scheduler lock) and set states.
     for(var i = 0u; i < dm.items.size(); i++) {
         var it = dm.items.get_ptr(i)
-        var rtpp = dm.runtimes.get_ptr(&it.id)
-        if(rtpp != null && *rtpp != null) {
-            var rt = *rtpp
+        var rt = cdm::detach_runtime(&mut dm, &it.id)
+        if(rt != null) {
             cdm::request_cancel(rt)
             if(rt.running) { cdm::join_task(rt) }
             delete rt
-            dm.runtimes.erase(&it.id)
         }
     }
     dm.items.get_ptr(0).state = cdm::STATE_DONE
@@ -276,7 +266,7 @@ public func CDM_queue_restore_roundtrip(env : &mut TestEnv) {
                                   string_view::make_no_len("/tmp/dl2"), string_view(), 3,
                                   cdm::Category.Video as int)
     if(dm.items.size() != 2u) { env.error("expected 2 items"); return }
-    if(!cdm::save_queue(&dm)) { env.error("save_queue failed"); return }
+    if(!cdm::save_queue(&mut dm)) { env.error("save_queue failed"); return }
 
     // Restore into a brand-new manager — ids, dirs and categories must survive.
     var dm2 = cdm::DownloadManager()

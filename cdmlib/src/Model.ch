@@ -31,6 +31,8 @@ using std::string_view;
         var category : int            // opaque category tag (0 = none)
         var segments_json : string    // pre-serialized JSON array of segment states
         var was_interrupted : bool    // true if download was active when app closed
+        var card_type : int           // ITEM_TYPE_* — what kind of card the UI renders
+        var parent_id : string        // id of the playlist/YT_SINGLE container this item belongs to (empty for top-level)
 
         @constructor func constructor(id_ : string, url_ : string, dir_ : string, filename_ : string) {
             return DownloadItem {
@@ -55,7 +57,9 @@ using std::string_view;
                 duplicate_suffix = 0,
                 category = 0,
                 segments_json = string(),
-                was_interrupted = false
+                was_interrupted = false,
+                card_type = ITEM_TYPE_NORMAL,
+                parent_id = string()
             }
         }
 
@@ -95,6 +99,8 @@ using std::string_view;
             c.category = self.category
             c.segments_json = self.segments_json.copy()
             c.was_interrupted = self.was_interrupted
+            c.card_type = self.card_type
+            c.parent_id = self.parent_id.copy()
             return c
         }
     }

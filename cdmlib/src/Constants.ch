@@ -17,6 +17,13 @@ using std::Option;
     public const STATE_FAILED : int = 4
     public const STATE_CANCELLED : int = 5
 
+    // Card types. A download item is one of these; the UI renders a distinct
+    // card component per type instead of hiding playlist/YT children via a filter.
+    public const ITEM_TYPE_NORMAL : int = 0      // a regular download
+    public const ITEM_TYPE_PLAYLIST : int = 1    // a YouTube playlist container (children nested)
+    public const ITEM_TYPE_YT_SINGLE : int = 2   // a single YouTube video container (video+audio nested)
+    public const ITEM_TYPE_YT_CHILD : int = 3    // a video/audio stream that belongs to a playlist/YT_SINGLE parent
+
     // Retry policy — encapsulates retry behaviour so it can be shared between
     // the manager (defaults) and per-task runtimes (overrides).
     public struct RetryPolicy {
@@ -69,9 +76,9 @@ using std::Option;
         var opt = std::get_env(string_view::make_no_len("HOME"))
         if(opt is Option.Some) {
             var Some(h) = opt else unreachable
-            home = h.copy()
+            home.append_view(&string_view::make_view(&h))
         } else {
-            home = string::make_no_len(".")
+            home.append('.')
         }
         home.append_view(&path.subview(1, path.size()))
         return home

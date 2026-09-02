@@ -273,7 +273,7 @@ func settings_dir() : string {
         if(f == null) { return false }
 
         var content = string()
-        unsafe var chunk : [4096u]u8
+        var chunk : [4096u]u8
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 4096u, f)
             if(n == 0u) { break }
@@ -483,7 +483,7 @@ func settings_dir() : string {
         var f = fopen(path.data(), "rb")
         if(f == null) { return 0 }
         var content = string()
-        unsafe var chunk : [8192u]u8
+        var chunk : [8192u]u8
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 8192u, f)
             if(n == 0u) { break }
@@ -501,7 +501,7 @@ func settings_dir() : string {
                 continue
             }
             if(line.empty()) { continue }
-            // Fields are tab-separated: url \t id \t dir \t [category]
+            // Fields are tab-separated: url \t id \t dir \t [category] \t [downloaded] \t [total] \t [interrupted]
             var tab1 = line.find(std::string_view::make_no_len("\t"))
             if(tab1 == std::NPOS) { continue }
             var url = line.substring(0u, tab1)
@@ -511,6 +511,9 @@ func settings_dir() : string {
             var id = string()
             var dir = string()
             var category = 0
+            var downloaded : i64 = 0
+            var total : i64 = 0
+            var was_interrupted = false
             var tab2 = rest.find(std::string_view::make_no_len("\t"))
             if(tab2 == std::NPOS) {
                 // Legacy 2-field row: url \t id  (dir defaults to manager root).
@@ -523,30 +526,107 @@ func settings_dir() : string {
                     dir = rest2
                 } else {
                     dir = rest2.substring(0u, tab3)
-                    var cat_s = rest2.substring(tab3 + 1u, rest2.size())
-                    var cat_n = parse_int_opt(cat_s.data())
-                    if(cat_n >= 0) { category = cat_n }
+                    var rest3 = rest2.substring(tab3 + 1u, rest2.size())
+                    var tab4 = rest3.find(std::string_view::make_no_len("\t"))
+                    if(tab4 == std::NPOS) {
+                        // v1 row: url \t id \t dir \t category
+                        var cat_n = parse_int_opt(rest3.data())
+                        if(cat_n >= 0) { category = cat_n }
+                    } else {
+                        // v2 row: ... \t downloaded \t total \t interrupted
+                        var cat_n = parse_int_opt(rest3.substring(0u, tab4).data())
+                        if(cat_n >= 0) { category = cat_n }
+                        var rest4 = rest3.substring(tab4 + 1u, rest3.size())
+                        var tab5 = rest4.find(std::string_view::make_no_len("\t"))
+                        if(tab5 != std::NPOS) {
+                            var dl_str = rest4.substring(0u, tab5)
+                            downloaded = parse_i64(string_view::make_view(&dl_str))
+                            var rest5 = rest4.substring(tab5 + 1u, rest4.size())
+                            var tab6 = rest5.find(std::string_view::make_no_len("\t"))
+                            if(tab6 != std::NPOS) {
+                                var tot_str = rest5.substring(0u, tab6)
+                                total = parse_i64(string_view::make_view(&tot_str))
+                                var int_s = rest5.substring(tab6 + 1u, rest5.size())
+                                was_interrupted = int_s.equals_view("1")
+                            } else {
+                                total = parse_i64(string_view::make_view(&rest5))
+                            }
+                        } else {
+                            downloaded = parse_i64(string_view::make_view(&rest4))
+                        }
+                    }
                 }
             }
             var id_view = string_view::make_view(&id)
             var dir_view = string_view::make_view(&dir)
             var rid = add_task_ex_id(dm, id_view, string_view::make_view(&url),
                                     dir_view, string_view(), 0, category)
-            if(rid.size() > 0u) { restored = restored + 1 }
+            if(rid.size() > 0u) {
+                restored = restored + 1
+                // Restore progress and interrupt state so the engine can resume
+                // from the last written position on disk instead of starting over.
+                if(downloaded > 0 || total > 0 || was_interrupted) {
+                    dm.items_mutex.lock()
+                    var idx = find_item_index(dm, &rid)
+                    if(idx != dm.items.size()) {
+                        var it = dm.items.get_ptr(idx)
+                        it.downloaded_bytes = downloaded
+                        it.total_bytes = total
+                        it.was_interrupted = was_interrupted
+                        // Mark as failed/interrupted so poll_auto_resume can re-queue it.
+                        if(was_interrupted) {
+                            it.state = STATE_FAILED
+                            it.error = string::make_no_len("interrupted by shutdown")
+                        }
+                    }
+                    dm.items_mutex.unlock()
+                }
+            }
         }
         return restored
     }
 
+    // Parse an i64 from a string view. Returns 0 on failure.
+    func parse_i64(s : string_view) : i64 {
+        var val : i64 = 0
+        var neg = false
+        var started = false
+        for(var i = 0u; i < s.size(); i++) {
+            var c = s.get(i)
+            if(c == '-') { neg = true }
+            else if(c >= '0' && c <= '9') {
+                val = val * 10 + (c as i64 - '0' as i64)
+                started = true
+            }
+        }
+        if(!started) { return 0 }
+        if(neg) { val = -val }
+        return val
+    }
+
     // Save the queue to disk. Does not block the engine.
-    public func save_queue(dm : &DownloadManager) : bool {
+    // Format (tab-separated, one row per item):
+    //   url \t id \t dir \t category \t downloaded \t total \t was_interrupted
+    // Rows for DONE/CANCELLED items are skipped (nothing to resume).
+    public func save_queue(dm : &mut DownloadManager) : bool {
         var dir = settings_dir()
         var mk = fs::create_dir_all(dir.data())
         var path = queue_file()
 
+        // Read through snapshot() so we never touch dm.items concurrently with
+        // the download/playlist threads (which mutate it under items_mutex).
+        var items = vector<DownloadItem>()
+        snapshot_into(dm, &mut items)
         var out = string::make_no_len(QUEUE_HEADER)
         out.append('\n')
-        for(var i = 0u; i < dm.items.size(); i++) {
-            var it = dm.items.get_ptr(i)
+        for(var i = 0u; i < items.size(); i++) {
+            var it = items.get_ptr(i)
+            // Only persist real downloads. Playlist containers and their nested
+            // video/audio children are driven by yt-dlp and are not resumable as
+            // standalone DM tasks across restarts.
+            if(it.card_type != ITEM_TYPE_NORMAL) { continue }
+            // Skip items that are already finished — nothing to resume.
+            if(it.state == STATE_DONE) { continue }
             out.append_string(&it.url)
             out.append(QUEUE_SEP)
             out.append_string(&it.id)
@@ -554,6 +634,12 @@ func settings_dir() : string {
             out.append_string(&it.dir)
             out.append(QUEUE_SEP)
             out.append_integer(it.category as bigint)
+            out.append(QUEUE_SEP)
+            out.append_integer(it.downloaded_bytes as bigint)
+            out.append(QUEUE_SEP)
+            out.append_integer(it.total_bytes as bigint)
+            out.append(QUEUE_SEP)
+            if(it.was_interrupted) { out.append('1') } else { out.append('0') }
             out.append('\n')
         }
 

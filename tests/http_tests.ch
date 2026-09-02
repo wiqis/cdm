@@ -30,7 +30,7 @@ func http_dl_dir() : string {
 func http_write_payload(path : *char, size : size_t) : bool {
     var f = fopen(path, "wb\0" as *char)
     if(f == null) { return false }
-    unsafe var buf : [4096]u8
+    var buf : [4096]u8
     var written : size_t = 0
     while(written < size) {
         var n : size_t = 0

@@ -13,7 +13,7 @@ public func CDM_cli_parse(env : &mut TestEnv) {
     var arg2 = string::make_no_len("--dir")
     var arg3 = string::make_no_len("/tmp/out")
 
-    unsafe var argv : [4]*char
+    var argv : [4]*char
     argv[0] = arg0.data()
     argv[1] = arg1.data()
     argv[2] = arg2.data()
@@ -40,7 +40,7 @@ public func CDM_cli_priority(env : &mut TestEnv) {
     var arg2 = string::make_no_len("2")
     var arg3 = string::make_no_len("https://a.com/f.bin")
 
-    unsafe var argv : [4]*char
+    var argv : [4]*char
     argv[0] = arg0.data()
     argv[1] = arg1.data()
     argv[2] = arg2.data()
@@ -60,7 +60,7 @@ public func CDM_cli_category_flag(env : &mut TestEnv) {
     var arg2 = string::make_no_len("Video")
     var arg3 = string::make_no_len("https://a.com/m.mp4")
 
-    unsafe var argv : [4]*char
+    var argv : [4]*char
     argv[0] = arg0.data()
     argv[1] = arg1.data()
     argv[2] = arg2.data()
@@ -79,7 +79,7 @@ public func CDM_cli_categories_flag(env : &mut TestEnv) {
     var arg1 = string::make_no_len("--categories")
     var arg2 = string::make_no_len("https://a.com/m.mp4")
 
-    unsafe var argv : [3]*char
+    var argv : [3]*char
     argv[0] = arg0.data()
     argv[1] = arg1.data()
     argv[2] = arg2.data()
@@ -98,7 +98,7 @@ public func CDM_cli_no_category_flag(env : &mut TestEnv) {
     var arg1 = string::make_no_len("--no-category")
     var arg2 = string::make_no_len("https://a.com/m.mp4")
 
-    unsafe var argv : [3]*char
+    var argv : [3]*char
     argv[0] = arg0.data()
     argv[1] = arg1.data()
     argv[2] = arg2.data()

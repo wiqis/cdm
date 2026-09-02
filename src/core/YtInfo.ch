@@ -11,7 +11,7 @@ using std::string_view;
 using std::vector;
 using std::Result;
 using std::Option;
-using std::unordered_map;
+using std::ordered_map;
 
     // ---- Format info (one entry from yt-dlp's formats array) ----
 
@@ -601,7 +601,7 @@ using std::unordered_map;
     }
 
     // Parse playlist entry from a pointer to the Object map (avoids move).
-    func parse_playlist_entry_copy(m : &unordered_map<string, JsonValue>) : YtPlaylistEntry {
+    func parse_playlist_entry_copy(m : &ordered_map<string, JsonValue>) : YtPlaylistEntry {
         var entry = YtPlaylistEntry()
         entry.id = json_get_string_field(m, "id")
         entry.title = json_get_string_field(m, "title")
@@ -645,7 +645,7 @@ using std::unordered_map;
     // Use map.get() (returns value copy) instead of get_ptr() to avoid
     // dereferencing pointers to destructible structs.
 
-    func json_get_string_field(m : &unordered_map<string, JsonValue>, key : *char) : string {
+    func json_get_string_field(m : &ordered_map<string, JsonValue>, key : *char) : string {
         var k = string(key)
         var vp = m.get_ptr(&k)
         if(vp != null && vp is JsonValue.String) {
@@ -655,7 +655,7 @@ using std::unordered_map;
         return string()
     }
 
-    func json_get_int_field(m : &unordered_map<string, JsonValue>, key : *char) : i64 {
+    func json_get_int_field(m : &ordered_map<string, JsonValue>, key : *char) : i64 {
         var k = string(key)
         var vp = m.get_ptr(&k)
         if(vp != null && vp is JsonValue.Number) {
@@ -665,11 +665,11 @@ using std::unordered_map;
         return 0
     }
 
-    func json_get_i64_field(m : &unordered_map<string, JsonValue>, key : *char) : i64 {
+    func json_get_i64_field(m : &ordered_map<string, JsonValue>, key : *char) : i64 {
         return json_get_int_field(m, key)
     }
 
-    func json_get_double_field(m : &unordered_map<string, JsonValue>, key : *char) : double {
+    func json_get_double_field(m : &ordered_map<string, JsonValue>, key : *char) : double {
         var k = string(key)
         var vp = m.get_ptr(&k)
         if(vp != null && vp is JsonValue.Number) {

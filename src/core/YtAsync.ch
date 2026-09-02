@@ -34,7 +34,7 @@ using std::mutex;
         }
     }
 
-    @never_destructed public unsafe var g_async_info = zeroed<AsyncInfoState>()
+    @never_destructed public var g_async_info = zeroed<AsyncInfoState>()
 
     // ---- Async download state ----
 
@@ -65,6 +65,7 @@ using std::mutex;
         var output_dir : string
         var dm : *mut DownloadManager
         var mu : mutex
+        var container_id : string     // id of the YT_SINGLE DM item that owns this download
 
         @constructor func constructor() {
             return AsyncDlState {
@@ -81,12 +82,13 @@ using std::mutex;
                 retry_count = 0, max_retries = 0,
                 output_dir = string(),
                 dm = null,
-                mu = mutex()
+                mu = mutex(),
+                container_id = string()
             }
         }
     }
 
-    @never_destructed public unsafe var g_async_dl = zeroed<AsyncDlState>()
+    @never_destructed public var g_async_dl = zeroed<AsyncDlState>()
 
     // ---- Per-playlist-item state ----
     // Each playlist entry gets its own AsyncDlState so video+audio+merge run
@@ -130,6 +132,8 @@ using std::mutex;
     }
 
     public var g_yt_links : *mut vector<YtLinkRecord> = null
+    public var g_repro_disable_merge : bool = false
+    public func set_repro_disable_merge(v : bool) { g_repro_disable_merge = v }
 
     public const YT_DEFAULT_MAX_RETRIES : int = 3
 
@@ -155,6 +159,7 @@ using std::mutex;
         var items : *mut vector<*mut YtPlItem>   // stable heap vector of item pointers
         var dm : *mut DownloadManager
         var mu : mutex
+        var container_id : string     // id of the PLAYLIST DM item that owns this playlist
 
         @constructor func constructor() {
             return AsyncPlState {
@@ -166,12 +171,13 @@ using std::mutex;
                 url = string(), format = string(), output_dir = string(),
                 min_quality = 0, max_quality = 0, max_retries = YT_DEFAULT_MAX_RETRIES,
                 items = null, dm = null,
-                mu = mutex()
+                mu = mutex(),
+                container_id = string()
             }
         }
     }
 
-    @never_destructed public unsafe var g_async_pl = zeroed<AsyncPlState>()
+    @never_destructed public var g_async_pl = zeroed<AsyncPlState>()
 
     // ---- Quality/format helpers ----
 
@@ -507,6 +513,12 @@ using std::mutex;
         g_async_dl.min_quality = min_q; g_async_dl.max_quality = max_q
         g_async_dl.output_dir = string(dir.data(), dir.size())
         g_async_dl.dm = dm
+        g_async_dl.container_id = string()
+        // Create the YT_SINGLE container card up front so it shows in the queue.
+        if(dm != null) {
+            g_async_dl.container_id = create_container_item(&mut *dm, ITEM_TYPE_YT_SINGLE,
+                url, dir, url)
+        }
         g_async_dl.mu.unlock()
         std::concurrent.spawn(download_thread_entry, null)
         return string()
@@ -667,6 +679,9 @@ using std::mutex;
                 dl.mu.lock()
                 dl.dm_task_id = id.copy()
                 dl.mu.unlock()
+                // Tag as a nested child of its container card.
+                set_item_card_type(&mut *dm, string_view::make_view(&id), ITEM_TYPE_YT_CHILD,
+                    string_view::make_view(&dl.container_id))
             }
 
             if(urls.size() >= 2u) {
@@ -683,6 +698,10 @@ using std::mutex;
                 dl.needs_merge = true
                 dl.merge_status = string::make_no_len("waiting")
                 dl.mu.unlock()
+                if(audio_id.size() > 0u) {
+                    set_item_card_type(&mut *dm, string_view::make_view(&audio_id), ITEM_TYPE_YT_CHILD,
+                        string_view::make_view(&dl.container_id))
+                }
             }
             record_yt_link(dl)
         }
@@ -796,7 +815,7 @@ using std::mutex;
         } else {
             g_yt_links.clear()
         }
-        unsafe var chunk : [8192u]u8
+        var chunk : [8192u]u8
         var content = string()
         while(true) {
             var n = fread(&raw mut chunk[0], 1, 8192u, f)
@@ -848,7 +867,8 @@ using std::mutex;
     public func refresh_stale_yt_links(dm : *mut DownloadManager) {
         load_yt_links()
         if(g_yt_links == null || g_yt_links.size() == 0u) { return }
-        var snap = snapshot(&mut *dm)
+        var snap = vector<DownloadItem>()
+        snapshot_into(&mut *dm, &mut snap)
         for(var i = 0u; i < g_yt_links.size(); i++) {
             var r = g_yt_links.get_ptr(i)
             var found = false
@@ -921,7 +941,8 @@ using std::mutex;
                     fprintf(stderr, "[CDM-MERGE] timeout vid=%s aud=%s\n", vid_id.data(), aud_id.data())
                     return null
                 }
-                var snap = snapshot(&mut *dm)
+                var snap = vector<DownloadItem>()
+                snapshot_into(&mut *dm, &mut snap)
                 vid_done = false; aud_done = false; vid_failed = false; aud_failed = false
                 for(var i = 0u; i < snap.size(); i++) {
                     var it = snap.get_ptr(i)
@@ -1015,7 +1036,9 @@ using std::mutex;
         var auto_int = 0; if(auto) { auto_int = 1 }
         fprintf(stderr, "[CDM-MERGE] maybe_start: needs=%d auto=%d\n", needs_int, auto_int)
         if(needs && auto) {
-            std::concurrent.spawn(merge_monitor_entry, dl as *void)
+            if(!g_repro_disable_merge) {
+                std::concurrent::spawn(merge_monitor_entry, dl as *void)
+            }
         }
     }
 
@@ -1060,7 +1083,22 @@ using std::mutex;
         out.append_string(&json_string(string_view::make_view(&merge_err)))
         out.append_string(&string::make_no_len(",\"needs_merge\":"))
         if(needs_merge) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"container_id\":"))
+        out.append_string(&json_string(string_view::make_view(&g_async_dl.container_id)))
         out.append('}')
+
+        // Drive the YT_SINGLE container card's lifecycle + progress.
+        var cstate = STATE_DOWNLOADING
+        if(done && merge_st.equals_view(string_view::make_no_len("merged"))) { cstate = STATE_DONE }
+        else if(done && merge_st.equals_view(string_view::make_no_len("failed"))) { cstate = STATE_FAILED }
+        else if(error.size() > 0u) { cstate = STATE_FAILED }
+        else if(done) { cstate = STATE_DONE }
+        if(g_async_dl.container_id.size() > 0u && g_async_dl.dm != null) {
+            var total = 100i64
+            var down = (progress as i64)
+            if(down < 0) { down = 0 } if(down > 100) { down = 100 }
+            set_item_state_progress(&mut *g_async_dl.dm, string_view::make_view(&g_async_dl.container_id), cstate, down, total)
+        }
         return out
     }
 
@@ -1069,6 +1107,22 @@ using std::mutex;
         g_async_dl.running = false; g_async_dl.done = true
         g_async_dl.error = string::make_no_len("cancelled")
         g_async_dl.mu.unlock()
+    }
+
+    // TEMP DEBUG REPRO accessors.
+    public func async_download_done() : bool { return g_async_dl.done }
+    public func async_playlist_done() : bool { return g_async_pl.done }
+    public func async_dl_for_test(url : string_view, dir : string_view, dm : *mut DownloadManager) : *mut AsyncDlState {
+        g_async_dl.mu.lock()
+        g_async_dl.running = true; g_async_dl.done = false; g_async_dl.error = string()
+        g_async_dl.url = string(url.data(), url.size())
+        g_async_dl.format = string::make_no_len("best")
+        g_async_dl.mode = string::make_no_len("video_and_audio")
+        g_async_dl.output_dir = string(dir.data(), dir.size())
+        g_async_dl.dm = dm
+        g_async_dl.container_id = create_container_item(&mut *dm, ITEM_TYPE_YT_SINGLE, url, dir, url)
+        g_async_dl.mu.unlock()
+        return &raw mut g_async_dl
     }
 
     // ---- Playlist download ----
@@ -1143,8 +1197,8 @@ using std::mutex;
             var entry_v = string_view(entry_d, entry_s)
             var sep = string_view::make_no_len("|||")
             var sep_idx = entry_v.find(&sep)
-            unsafe var entry_url : string_view
-            unsafe var entry_title : string_view
+            var entry_url : string_view
+            var entry_title : string_view
             if(sep_idx != std::NPOS) {
                 entry_url = entry_v.subview(0, sep_idx)
                 var rest = entry_v.subview(sep_idx + 3u, entry_s)
@@ -1182,6 +1236,7 @@ using std::mutex;
             item.dl.needs_merge = false
             item.dl.retry_count = 0
             item.dl.max_retries = g_async_pl.max_retries
+            item.dl.container_id = g_async_pl.container_id.copy()
             pl_push_item(item)
 
             // Start this item's download + merge monitor. Blocks only on the
@@ -1248,6 +1303,12 @@ using std::mutex;
         if(max_retries <= 0) { g_async_pl.max_retries = YT_DEFAULT_MAX_RETRIES } else { g_async_pl.max_retries = max_retries }
         g_async_pl.items = null
         g_async_pl.dm = dm
+        g_async_pl.container_id = string()
+        // Create the PLAYLIST container card up front so it shows in the queue.
+        if(dm != null) {
+            g_async_pl.container_id = create_container_item(&mut *dm, ITEM_TYPE_PLAYLIST,
+                url, dir, url)
+        }
         g_async_pl.mu.unlock()
         std::concurrent.spawn(playlist_thread_entry, null)
         return string()
@@ -1333,7 +1394,7 @@ using std::mutex;
         g_async_pl.mu.unlock()
 
         var snap = vector<DownloadItem>()
-        if(dm != null) { snap = snapshot(&mut *dm) }
+        if(dm != null) { snapshot_into(&mut *dm, &mut snap) }
 
         var out = string::make_no_len("{\"running\":")
         if(running) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
@@ -1427,6 +1488,18 @@ using std::mutex;
             }
         }
         out.append(']')
+        out.append_string(&string::make_no_len(",\"container_id\":"))
+        out.append_string(&json_string(string_view::make_view(&g_async_pl.container_id)))
+
+        // Drive the PLAYLIST container card's lifecycle + progress.
+        var cstate = STATE_DOWNLOADING
+        if(done) { cstate = STATE_DONE }
+        else if(error.size() > 0u) { cstate = STATE_FAILED }
+        if(g_async_pl.container_id.size() > 0u && dm != null) {
+            var total = items_total as i64
+            var down = items_done as i64
+            set_item_state_progress(&mut *dm, string_view::make_view(&g_async_pl.container_id), cstate, down, total)
+        }
         out.append('}'); return out
     }
 
