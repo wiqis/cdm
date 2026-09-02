@@ -247,10 +247,20 @@ func run_gui() : int {
     // Ensure the root download directory exists before any task is added.
     fs::create_dir_all(dm.download_dir.data())
 
+    // Set up periodic progress persistence for crash recovery.
+    dm.queue_file_path = cdm::queue_file()
+
     // Restore previously queued downloads so a restart resumes them.
     var restored = cdm::restore_queue(&mut dm)
     if(restored > 0) {
         printf("ChemicalDM: restored %d pending downloads\n", restored)
+    }
+
+    // Overlay the latest progress from progress.txt (crash recovery).
+    var progress_path = cdm::progress_file()
+    var progress_restored = cdm::restore_progress(&mut dm, string_view::make_view(&progress_path))
+    if(progress_restored > 0) {
+        printf("ChemicalDM: restored progress for %d items\n", progress_restored)
     }
 
     // Refresh any stored YouTube media URLs that may have expired while the app

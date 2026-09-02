@@ -28,6 +28,8 @@ using std::mutex;
         var duplicate_action : int
         var auto_resume_failed : bool
         var retry_policy : RetryPolicy
+        // Path for periodic progress persistence (set by the app).
+        var queue_file_path : string
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -44,11 +46,12 @@ using std::mutex;
                 proxy_port = 0,
                 enable_resume = true,
                 allow_segments = true,
-                save_interval_millis = 2000,
+                save_interval_millis = PROGRESS_SAVE_INTERVAL_MS,
                 last_save_millis = 0,
                 duplicate_action = 0,
                 auto_resume_failed = false,
-                retry_policy = RetryPolicy()
+                retry_policy = RetryPolicy(),
+                queue_file_path = string()
             }
         }
 
@@ -133,6 +136,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
     // Start queued items up to max_concurrent, honoring priority (lower value
     // first) and the original queue order as a tie-breaker.
     public func start_pending(dm : &mut DownloadManager) {
+        // Periodic progress save for crash recovery.
+        periodic_save_progress(dm)
         while(true) {
             dm.items_mutex.lock()
             var active = count_active_locked(dm)
@@ -754,6 +759,160 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             out.push_back(copy)
         }
         dm.items_mutex.unlock()
+    }
+
+    // ---- Periodic progress persistence (crash recovery) ----
+    // Saves a compact progress.txt file every PROGRESS_SAVE_INTERVAL_MS so
+    // that a crash/kill/SIGKILL leaves resumable state on disk. The file
+    // is separate from queue.txt (the queue is only saved on clean shutdown).
+    // Format: one tab-separated row per item: id\tdownloaded\ttotal\tinterrupted
+    // Atomic: write to .tmp, fsync, rename over the old file.
+
+    func periodic_save_progress(dm : &mut DownloadManager) {
+        dm.items_mutex.lock()
+        var now = now_millis()
+        var elapsed = now - dm.last_save_millis
+        var has_active = false
+        for(var i = 0u; i < dm.items.size(); i++) {
+            var it = dm.items.get_ptr(i)
+            if(it.state == STATE_DOWNLOADING || it.state == STATE_QUEUED || it.state == STATE_PAUSED) {
+                has_active = true
+                break
+            }
+        }
+        if(!has_active || elapsed < dm.save_interval_millis || dm.queue_file_path.empty()) {
+            dm.items_mutex.unlock()
+            return
+        }
+        dm.last_save_millis = now
+        // Snapshot under the lock.
+        var snap = vector<DownloadItem>()
+        for(var i = 0u; i < dm.items.size(); i++) {
+            var it = dm.items.get_ptr(i)
+            var c = DownloadItem(it.id.copy(), it.url.copy(), it.dir.copy(), it.filename.copy())
+            c.downloaded_bytes = it.downloaded_bytes
+            c.total_bytes = it.total_bytes
+            c.state = it.state
+            c.was_interrupted = it.was_interrupted
+            c.card_type = it.card_type
+            // Merge live progress from runtime.
+            var rtpp = dm.runtimes.get_ptr(&it.id)
+            if(rtpp != null && *rtpp != null) {
+                var p = TaskProgress()
+                snapshot_progress_into(*rtpp, &mut p)
+                c.downloaded_bytes = p.downloaded_bytes
+                if(p.total_bytes > 0) { c.total_bytes = p.total_bytes }
+                c.state = p.state
+            }
+            snap.push_back(c)
+        }
+        dm.items_mutex.unlock()
+
+        // Build the progress file content.
+        var out = string::make_no_len("#cdm-progress-v1\n")
+        for(var i = 0u; i < snap.size(); i++) {
+            var it = snap.get_ptr(i)
+            if(it.card_type != ITEM_TYPE_NORMAL) { continue }
+            if(it.state == STATE_DONE) { continue }
+            out.append_string(&it.id)
+            out.append('\t')
+            out.append_integer(it.downloaded_bytes as bigint)
+            out.append('\t')
+            out.append_integer(it.total_bytes as bigint)
+            out.append('\t')
+            if(it.was_interrupted || it.state == STATE_DOWNLOADING || it.state == STATE_PAUSED) {
+                out.append('1')
+            } else {
+                out.append('0')
+            }
+            out.append('\n')
+        }
+
+        // Atomic write: .tmp + fsync + rename.
+        var tmp_path = dm.queue_file_path.copy()
+        tmp_path.append_view(".tmp")
+        var f = fopen(tmp_path.data(), "wb")
+        if(f == null) { return }
+        fwrite(out.data() as *mut u8, 1, out.size(), f)
+        fflush(f)
+        fclose(f)
+        // rename is atomic on POSIX.
+        rename(tmp_path.data(), dm.queue_file_path.data())
+        fprintf(stderr, "[CDM] periodic progress saved (%d items)\n", snap.size())
+    }
+
+    // Restore progress from a progress.txt file. Called by the app after
+    // restore_queue to overlay the latest progress onto restored items.
+    public func restore_progress(dm : &mut DownloadManager, path : string_view) : int {
+        var f = fopen(path.data(), "rb")
+        if(f == null) { return 0 }
+        var content = string()
+        var chunk : [8192u]u8
+        while(true) {
+            var n = fread(&raw mut chunk[0], 1, 8192u, f)
+            if(n == 0u) { break }
+            content.append_with_len(&raw mut chunk[0] as *char, n)
+        }
+        fclose(f)
+
+        var restored = 0
+        var pos : usize = 0
+        var header_ok = false
+        while(pos < content.size()) {
+            var start = pos
+            while(pos < content.size() && content.get(pos) != '\n') {
+                pos = pos + 1u
+            }
+            var end = pos
+            if(pos < content.size()) { pos = pos + 1u }
+            if(end <= start) { continue }
+            var line = content.substring(start, end)
+            if(!header_ok) {
+                if(line.equals_view("#cdm-progress-v1")) { header_ok = true }
+                continue
+            }
+            if(line.empty()) { continue }
+            // Parse: id\tdownloaded\ttotal\tinterrupted
+            var tab1 = line.find("\t")
+            if(tab1 == std::NPOS) { continue }
+            var id = line.substring(0u, tab1)
+            var rest = line.substring(tab1 + 1u, line.size())
+            var tab2 = rest.find("\t")
+            if(tab2 == std::NPOS) { continue }
+            var dl_str = rest.substring(0u, tab2)
+            var rest2 = rest.substring(tab2 + 1u, rest.size())
+            var tab3 = rest2.find("\t")
+            var tot_str : string
+            var int_str : string
+            if(tab3 == std::NPOS) {
+                tot_str = rest2
+                int_str = string()
+            } else {
+                tot_str = rest2.substring(0u, tab3)
+                int_str = rest2.substring(tab3 + 1u, rest2.size())
+            }
+            var downloaded = parse_i64_from_view(string_view::make_view(&dl_str))
+            var total = parse_i64_from_view(string_view::make_view(&tot_str))
+            var interrupted = int_str.equals_view("1")
+            // Apply to the matching item.
+            dm.items_mutex.lock()
+            var idx = find_item_index(dm, &id)
+            if(idx != dm.items.size()) {
+                var it = dm.items.get_ptr(idx)
+                if(downloaded > it.downloaded_bytes) { it.downloaded_bytes = downloaded }
+                if(total > it.total_bytes) { it.total_bytes = total }
+                if(interrupted && it.state != STATE_DONE) {
+                    it.was_interrupted = true
+                    it.state = STATE_FAILED
+                    if(it.error.empty()) {
+                        it.error = string::make_no_len("interrupted by shutdown")
+                    }
+                }
+                restored = restored + 1
+            }
+            dm.items_mutex.unlock()
+        }
+        return restored
     }
 
     // Join and release every worker thread (called on shutdown). Mark any

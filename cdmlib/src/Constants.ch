@@ -54,6 +54,8 @@ using std::Option;
     public const DEFAULT_RETRY_DELAY_MS : i64 = 1000
     public const SOCKET_TIMEOUT_SECS : int = 30
     public const PROGRESS_UPDATE_INTERVAL_MILLIS : i64 = 200
+    // How often (ms) to persist download progress to disk for crash recovery.
+    public const PROGRESS_SAVE_INTERVAL_MS : i64 = 30000
 
     // Default settings. The "~" prefix is expanded at runtime to $HOME.
     public const DEFAULT_DOWNLOAD_DIR : *char = "~/Downloads/cdm"
@@ -82,6 +84,24 @@ using std::Option;
         }
         home.append_view(&path.subview(1, path.size()))
         return home
+    }
+
+    // Parse an i64 from a string view. Returns 0 on failure.
+    public func parse_i64_from_view(s : string_view) : i64 {
+        var val : i64 = 0
+        var neg = false
+        var started = false
+        for(var i = 0u; i < s.size(); i++) {
+            var c = s.get(i)
+            if(c == '-') { neg = true }
+            else if(c >= '0' && c <= '9') {
+                val = val * 10 + (c as i64 - '0' as i64)
+                started = true
+            }
+        }
+        if(!started) { return 0 }
+        if(neg) { val = -val }
+        return val
     }
 
 } // end namespace cdm

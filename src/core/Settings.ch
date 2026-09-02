@@ -466,10 +466,19 @@ func settings_dir() : string {
     const QUEUE_HEADER : *char = "#cdm-queue-v1"
     const QUEUE_SEP : char = '\t'
 
-    func queue_file() : string {
+    public func queue_file() : string {
         var path = settings_dir()
         path.append('/')
         var fn = string::make_no_len("queue.txt")
+        path.append_string(&fn)
+        return path
+    }
+
+    // Path for periodic progress persistence (crash recovery).
+    public func progress_file() : string {
+        var path = settings_dir()
+        path.append('/')
+        var fn = string::make_no_len("progress.txt")
         path.append_string(&fn)
         return path
     }
@@ -647,6 +656,34 @@ func settings_dir() : string {
         if(f == null) { return false }
         var wrote = fwrite(out.data() as *mut u8, 1, out.size(), f)
         fclose(f)
+
+        // Also write progress.txt on clean shutdown so crash recovery has
+        // a fresh baseline. Atomic write.
+        var ppath = progress_file()
+        var pout = string::make_no_len("#cdm-progress-v1\n")
+        for(var i = 0u; i < items.size(); i++) {
+            var it = items.get_ptr(i)
+            if(it.card_type != ITEM_TYPE_NORMAL) { continue }
+            if(it.state == STATE_DONE) { continue }
+            pout.append_string(&it.id)
+            pout.append('\t')
+            pout.append_integer(it.downloaded_bytes as bigint)
+            pout.append('\t')
+            pout.append_integer(it.total_bytes as bigint)
+            pout.append('\t')
+            if(it.was_interrupted) { pout.append('1') } else { pout.append('0') }
+            pout.append('\n')
+        }
+        var ptmp = ppath.copy()
+        ptmp.append_view(".tmp")
+        var pf = fopen(ptmp.data(), "wb")
+        if(pf != null) {
+            fwrite(pout.data() as *mut u8, 1, pout.size(), pf)
+            fflush(pf)
+            fclose(pf)
+            rename(ptmp.data(), ppath.data())
+        }
+
         return wrote == out.size()
     }
 
