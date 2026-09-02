@@ -205,9 +205,15 @@ Before opening the window: load settings → apply to manager → restore queue.
   `maxSegments:`, `speedLimit:`, `enableResume:`, `allowSegments:`, `duplicateAction:`,
   `autoResumeFailed:`, `maxRetries:`, `retryDelayMs:`, `category*:` overrides, …).
   Parsed/written manually in Settings.ch; keys matched via fnv1 hash switch.
-- `queue.txt` — header `#cdm-queue-v1`, one `url\tid\tdir\tcategory` per line (legacy
-  `url\tid` rows are still accepted). `restore_queue` replays the saved id + dir +
-  category via `add_task_ex_id` so a relaunch reproduces the exact queue.
+- `queue.txt` — header `#cdm-queue-v2`, tab-separated rows:
+  `url\tid\tdir\tcategory\tdownloaded\ttotal\tinterrupted\tstate`.
+  Legacy `#cdm-queue-v1` rows (without progress fields) are still accepted.
+  `restore_queue` inserts items directly (bypassing `add_task_ex_id`) to preserve the
+  saved state and avoid triggering `start_pending` per item.
+  Written atomically (tmp + rename) on clean shutdown only.
+- `progress.txt` — header `#cdm-progress-v1`, tab-separated: `id\tdownloaded\ttotal\tinterrupted`.
+  Written periodically (every 30s) by the download engine for crash recovery.
+  Atomic write (tmp + rename). On restart, overlays latest progress onto restored items.
 - Env overrides: `CDM_CONFIG_DIR` (settings root — used by tests), `CDM_TOOLS_DIR`
   (yt-dlp/ffmpeg install root), `HOME`.
 - `~` prefix expanded via `expand_home`.
@@ -291,8 +297,8 @@ Suites:
 - `cdmlib/tests/integration_tests.ch` (14) — spins a local threaded HTTP server with
   Range support (port 3009) in-process; exercises real downloads, segmentation, resume,
   throttling. Downloads go to temp dirs.
- - `tests/*.ch` (app-level) — bridge(22), cli(5), format(6), json(6), proc(1), queue(15),
-   segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing),
+ - `tests/*.ch` (app-level) — bridge(22), cli(5), format(6), json(6), persist(12), proc(1),
+   queue(15), segment(11), settings(8), yt(45; mostly offline logic around yt-dlp args/parsing),
    http(3; real downloads against a python Range server — see below),
     tools(11; yt-dlp/ffmpeg availability + status-JSON reporting, PATH scanning, stale-duplicate
     cleanup — see below).
@@ -325,6 +331,21 @@ Suites:
  The live "downloading"/"error" progress-reporting path is covered separately by
  `CDM_BR_tool_download_progress` in `bridge_tests.ch` (drives a real redirected install).
 
+
+Persistence tests (`tests/persist_tests.ch`, 12): these verify that queue state,
+progress, and the queue/progress file interaction survive save/restore roundtrips:
+- `CDM_persist_state_queued_survives` / `paused_survives` / `interrupted_survives` —
+  each state (QUEUED, PAUSED, FAILED+interrupted) roundtrips through save_queue→restore_queue.
+- `CDM_persist_progress_file_roundtrip` — DOWNLOADING item progress preserved via save_queue.
+- `CDM_persist_progress_overlay` — progress.txt with higher progress overrides stale queue.txt data.
+- `CDM_persist_done_items_skipped` — DONE items are not saved to queue.txt.
+- `CDM_persist_mixed_states` — multiple items with different states all survive roundtrip.
+- `CDM_persist_v1_backward_compat` — v1-format queue.txt (no progress fields) still parses.
+- `CDM_persist_progress_does_not_corrupt_queue` — writing progress.txt does not alter queue.txt.
+- `CDM_persist_retry_preserves_progress` — retry_task preserves downloaded/total bytes.
+- `CDM_persist_save_queue_atomic` — no leftover .tmp file after atomic save.
+- `CDM_persist_retry_save_roundtrip` — retry→save→restore preserves progress.
+- `CDM_parse_i64_leading_minus_only` — parse_i64 stops at non-digit chars.
 
 Settings tests isolate themselves with `CDM_CONFIG_DIR`.
 
@@ -359,7 +380,7 @@ Build & verify:
 ```
 
 Also note these intentional-but-dead leftovers (candidates for cleanup, don't "fix"
-blindly): `pick_next_queued` (stub), `save_interval_millis/last_save_millis` (unused),
+blindly): `pick_next_queued` (stub),
 `Storage.ch` `save_state/load_state` (superseded by Settings.ch queue persistence).
 
 ---
@@ -456,6 +477,75 @@ downloads + ffmpeg merges. Decisions that are easy to break:
   launches the merged file with `process::execute("xdg-open", path, ...)`. There is NO
   `open_file` symbol in this module — use `process::execute` (fork-safe; see the yt-dlp rule).
 
+### Persistence & crash recovery (critical for reliability)
+
+The persistence layer has two files — `queue.txt` (the queue) and `progress.txt` (crash
+recovery) — both written atomically (tmp + rename) to survive crashes mid-write.
+
+**`queue.txt`** (app-side, `Settings.ch`):
+- Header `#cdm-queue-v2` (v1 still accepted for backward compat).
+- Tab-separated: `url \t id \t dir \t category \t downloaded \t total \t interrupted \t state`.
+- Only saved on **clean shutdown** (`save_queue` in `Main.ch` run_gui cleanup).
+- DONE items are skipped (nothing to resume).
+- `save_queue` uses atomic write: `queue.txt.tmp` → `rename()` → `queue.txt`.
+- `restore_queue` inserts items directly (bypasses `add_task_ex_id`) to avoid triggering
+  `start_pending` per item. **Caller must call `start_pending` once after both
+  `restore_queue` and `restore_progress` complete** so workers don't start before progress
+  is applied.
+- Restored items preserve their saved state (QUEUED, PAUSED, FAILED).
+  Interrupted items become FAILED + `was_interrupted = true`.
+
+**`progress.txt`** (cdmlib-side, `DownloadManager.ch`):
+- Header `#cdm-progress-v1`.
+- Tab-separated: `id \t downloaded \t total \t interrupted`.
+- Written **periodically** (every 30s) by `periodic_save_progress()` from `start_pending()`
+  via atomic write (tmp + rename).
+- Also written on clean shutdown by `save_queue` for a fresh baseline.
+- `restore_progress` overlays onto restored items: takes higher `downloaded_bytes`, sets
+  `was_interrupted = true` + `STATE_FAILED` for interrupted items.
+- **`dm.progress_file_path`** must be set before `start_pending` is called (set in Main.ch).
+
+**Startup sequence** (Main.ch):
+```
+dm.progress_file_path = cdm::progress_file()   // must be before start_pending
+restore_queue(&mut dm)                          // load items from queue.txt
+restore_progress(&mut dm, progress_file())      // overlay crash recovery data
+start_pending(&mut dm)                          // kick off QUEUED items
+```
+
+**Key design rule:** `restore_queue` does NOT call `start_pending` per item. This is
+intentional — workers must not start until all progress is applied, otherwise a download
+might start from byte 0 while its saved progress says 50%.
+
+### Retry vs restart (distinct operations)
+
+- **`retry_task(id)`**: re-queues a FAILED/CANCELLED item, **preserving downloaded/total
+  bytes** so the worker resumes from disk. Increments `retry_count`. Clears `was_interrupted`.
+  Use this for "try again" after a transient error.
+- **`restart_task(id)`**: deletes the output file and all `.part` files, resets progress to 0,
+  re-queues. Use this for "start completely from scratch".
+- **`resume_task(id)`**: for PAUSED/QUEUED items, sets state to QUEUED. For FAILED/CANCELLED
+  items, re-queues with preserved progress (same as retry_task but without incrementing
+  retry_count).
+- **`poll_auto_resume(dm)`**: called at startup, re-queues items with `was_interrupted = true`
+  (preserves progress) and optionally FAILED items if `auto_resume_failed` is set.
+
+### Concurrency model (two mutexes, strict ordering)
+
+- **`dm.items_mutex`** (in `DownloadManager`): protects `items` vector and `runtimes` map.
+  Never held while calling `join_task()` (would deadlock on worker re-entering
+  `start_pending`).
+- **`rt.info_mutex`** (in `TaskRuntime`): protects `progress`, pause/cancel flags, segments.
+  Worker threads and UI snapshot readers both acquire it.
+- **Lock ordering**: `items_mutex` → `info_mutex` (never reverse).
+- **`detach_runtime(dm, id)`** acquires+releases `items_mutex` internally. Call it OUTSIDE
+  any `items_mutex` hold to avoid nested-lock deadlock. This is why `cancel_task`,
+  `retry_task`, and `shutdown` all call `detach_runtime` before taking `items_mutex`.
+- **`start_pending` acquires `items_mutex`** while scanning for QUEUED items and creating
+  runtimes, then releases it before calling `start_task` (which spawns the thread).
+  It is called from `download_entry` (worker thread), `add_task_ex_id`, `resume_task`,
+  `cancel_task`, `retry_task`, and `poll_auto_resume`.
+
 ### Lessons learned (Chemical / cdm gotchas)
 
 These bit us and cost real debugging time — honor them:
@@ -488,6 +578,24 @@ These bit us and cost real debugging time — honor them:
    expressions valid in both; if unavoidable, wrap in `unsafe { }`.
 7. **`if` requires `else`; no bare `if`; no `defer`; every `switch` on a variant needs all cases
    or `default`.** Ternary `? :` is NOT supported — use `if/else`.
+8. **`parse_i64_from_view` / `parse_i64`: only a leading `-` is a negative sign.**
+   A `-` in the middle of digits stops parsing (e.g. `"12-34"` → `12`, not `-1234`).
+   The parser breaks on the first non-digit character after digits start. Always use
+   `parse_i64_from_view(string_view::make_view(&local_string))` with the substring stored
+   in a named variable (not a temporary) so the view stays valid during the call.
+9. **Bridge `edit` must not hardcode defaults that overwrite existing values.**
+   The `edit_item` call in `bridge_call` receives the current category from the item
+   (read under lock) and only overrides it when the JS args explicitly include the field.
+   Hardcoding `0` for category silently reset it on every edit. Pattern: read the current
+   value first, then merge with incoming args (`cat >= 0 ? cat : current_cat`).
+10. **`save_queue` and `progress_file` writes MUST be atomic.** Use `fopen(tmp, "wb")` →
+    `fwrite` → `fflush` → `fclose` → `rename(tmp, final)`. A crash during a non-atomic
+    write corrupts the file, and on next restart `restore_queue` silently parses garbage,
+    losing all items. The `.tmp` file must not exist after `rename()` succeeds.
+11. **Worker thread `download_entry` must NOT dereference `job.rt` after
+    `run_download_task` returns.** The manager may detach+delete the runtime the moment
+    the download finishes. Capture `job.rt.manager` before the call and use only that
+    pointer afterward.
 
 ### Where to change what (cheat sheet)
 
