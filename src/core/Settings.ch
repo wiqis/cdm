@@ -668,10 +668,16 @@ func settings_dir() : string {
             out.append('\n')
         }
 
-        var f = fopen(path.data(), "wb")
+        // Atomic write: write to .tmp then rename so a crash during write
+        // never corrupts the queue file.
+        var tmp_path = path.copy()
+        tmp_path.append_view(".tmp")
+        var f = fopen(tmp_path.data(), "wb")
         if(f == null) { return false }
         var wrote = fwrite(out.data() as *mut u8, 1, out.size(), f)
+        fflush(f)
         fclose(f)
+        rename(tmp_path.data(), path.data())
 
         // Also write progress.txt on clean shutdown so crash recovery has
         // a fresh baseline. Atomic write.

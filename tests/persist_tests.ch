@@ -425,3 +425,165 @@ public func CDM_persist_progress_does_not_corrupt_queue(env : &mut TestEnv) {
 
     fs::remove_dir_all_recursive(cfg_dir.data())
 }
+
+// ---- Test: retry_task preserves progress for resume ----
+
+@test
+public func CDM_persist_retry_preserves_progress(env : &mut TestEnv) {
+    var cfg_dir = setup_test_cfg()
+
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("retry-prog"),
+                        string_view::make_no_len("https://example.com/rp.bin"),
+                        string_view(), string_view(), 0, 0)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("retry-prog"))
+    dm.items.get_ptr(idx).state = cdm::STATE_FAILED
+    dm.items.get_ptr(idx).downloaded_bytes = 15000
+    dm.items.get_ptr(idx).total_bytes = 50000
+    dm.items.get_ptr(idx).was_interrupted = true
+
+    // Retry should preserve downloaded/total bytes.
+    var ok = cdm::retry_task(&mut dm, &string::make_no_len("retry-prog"))
+    if(!ok) { env.error("retry_task returned false"); return }
+
+    var idx2 = cdm::find_item_index(&dm, &string::make_no_len("retry-prog"))
+    if(idx2 == dm.items.size()) { env.error("item not found after retry"); return }
+    var it = dm.items.get_ptr(idx2)
+    if(it.state != cdm::STATE_QUEUED) {
+        var msg = string::make_no_len("expected QUEUED after retry, got ")
+        msg.append_integer(it.state as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.downloaded_bytes != 15000) {
+        var msg = string::make_no_len("expected 15000 downloaded after retry, got ")
+        msg.append_integer(it.downloaded_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.total_bytes != 50000) {
+        var msg = string::make_no_len("expected 50000 total after retry, got ")
+        msg.append_integer(it.total_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.was_interrupted) { env.error("was_interrupted should be false after retry"); return }
+    if(it.retry_count != 1) {
+        var msg = string::make_no_len("expected retry_count=1, got ")
+        msg.append_integer(it.retry_count as bigint)
+        env.error(msg.data())
+        return
+    }
+
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}
+
+// ---- Test: save_queue creates atomic tmp files (no leftover .tmp) ----
+
+@test
+public func CDM_persist_save_queue_atomic(env : &mut TestEnv) {
+    var cfg_dir = setup_test_cfg()
+
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("atomic-item"),
+                        string_view::make_no_len("https://example.com/a.bin"),
+                        string_view(), string_view(), 0, 0)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("atomic-item"))
+    dm.items.get_ptr(idx).state = cdm::STATE_DOWNLOADING
+    dm.items.get_ptr(idx).downloaded_bytes = 500
+    dm.items.get_ptr(idx).total_bytes = 1000
+
+    if(!cdm::save_queue(&mut dm)) { env.error("save_queue failed"); return }
+
+    // After save, the .tmp file should NOT exist (rename completed).
+    var tmppath = cdm::queue_file()
+    tmppath.append_view(".tmp")
+    if(fs::exists(tmppath.data())) {
+        env.error("queue.txt.tmp should not exist after atomic save")
+        return
+    }
+
+    // The queue.txt should exist and contain the item.
+    var qpath = cdm::queue_file()
+    if(!fs::exists(qpath.data())) {
+        env.error("queue.txt should exist after save")
+        return
+    }
+
+    // Verify item survived the roundtrip.
+    var dm2 = cdm::DownloadManager()
+    dm2.max_concurrent = 0
+    var restored = cdm::restore_queue(&mut dm2)
+    if(restored != 1) {
+        var msg = string::make_no_len("expected 1 restored, got ")
+        msg.append_integer(restored as bigint)
+        env.error(msg.data())
+        return
+    }
+    var idx2 = cdm::find_item_index(&dm2, &string::make_no_len("atomic-item"))
+    var it = dm2.items.get_ptr(idx2)
+    if(it.downloaded_bytes != 500) {
+        var msg = string::make_no_len("expected 500 downloaded, got ")
+        msg.append_integer(it.downloaded_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.total_bytes != 1000) {
+        var msg = string::make_no_len("expected 1000 total, got ")
+        msg.append_integer(it.total_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}
+
+// ---- Test: retry then save roundtrip preserves progress ----
+
+@test
+public func CDM_persist_retry_save_roundtrip(env : &mut TestEnv) {
+    var cfg_dir = setup_test_cfg()
+
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("rr-item"),
+                        string_view::make_no_len("https://example.com/rr.bin"),
+                        string_view(), string_view(), 0, 0)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("rr-item"))
+    dm.items.get_ptr(idx).state = cdm::STATE_FAILED
+    dm.items.get_ptr(idx).downloaded_bytes = 25000
+    dm.items.get_ptr(idx).total_bytes = 100000
+
+    // Retry (preserves progress), then save queue.
+    cdm::retry_task(&mut dm, &string::make_no_len("rr-item"))
+    if(!cdm::save_queue(&mut dm)) { env.error("save_queue failed"); return }
+
+    // Restore into a fresh manager.
+    var dm2 = cdm::DownloadManager()
+    dm2.max_concurrent = 0
+    var restored = cdm::restore_queue(&mut dm2)
+    if(restored != 1) {
+        var msg = string::make_no_len("expected 1, got ")
+        msg.append_integer(restored as bigint)
+        env.error(msg.data())
+        return
+    }
+    var idx2 = cdm::find_item_index(&dm2, &string::make_no_len("rr-item"))
+    var it = dm2.items.get_ptr(idx2)
+    if(it.downloaded_bytes != 25000) {
+        var msg = string::make_no_len("expected 25000, got ")
+        msg.append_integer(it.downloaded_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.total_bytes != 100000) {
+        var msg = string::make_no_len("expected 100000, got ")
+        msg.append_integer(it.total_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}

@@ -443,7 +443,7 @@ using std::vector;
 
             var wrote = fwrite(&raw mut buf[0], 1, n as usize, ofile)
             if(wrote < (n as usize)) {
-                // disk full / write error
+                // disk full / write error — permanent, not retryable
                 fprintf(stderr, "[CDM] stream_body: disk write error (wrote=%zu wanted=%d)\n", wrote, n)
                 locked_set_error(rt, &string::make_no_len("disk write error — check free space"))
                 return 0

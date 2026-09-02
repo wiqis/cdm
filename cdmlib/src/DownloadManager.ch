@@ -447,8 +447,9 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             var it2 = dm.items.get_ptr(idx)
             it2.state = STATE_QUEUED
             it2.error = string()
-            it2.downloaded_bytes = 0
-            it2.total_bytes = 0
+            // Preserve downloaded_bytes/total_bytes so the worker can resume
+            // from the last written position on disk. Use restart_task to
+            // truly start from scratch (it deletes partial files).
             it2.retry_count = it2.retry_count + 1
             it2.was_interrupted = false
         }
