@@ -248,7 +248,7 @@ func run_gui() : int {
     fs::create_dir_all(dm.download_dir.data())
 
     // Set up periodic progress persistence for crash recovery.
-    dm.queue_file_path = cdm::queue_file()
+    dm.progress_file_path = cdm::progress_file()
 
     // Restore previously queued downloads so a restart resumes them.
     var restored = cdm::restore_queue(&mut dm)
@@ -262,6 +262,11 @@ func run_gui() : int {
     if(progress_restored > 0) {
         printf("ChemicalDM: restored progress for %d items\n", progress_restored)
     }
+
+    // Now that all items and progress are restored, start the scheduler once
+    // to kick off any QUEUED items. Items that were PAUSED or FAILED stay
+    // queued until the user manually resumes them.
+    cdm::start_pending(&mut dm)
 
     // Refresh any stored YouTube media URLs that may have expired while the app
     // was closed, so half-finished playlist/single downloads resume cleanly.

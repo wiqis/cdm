@@ -29,7 +29,7 @@ using std::mutex;
         var auto_resume_failed : bool
         var retry_policy : RetryPolicy
         // Path for periodic progress persistence (set by the app).
-        var queue_file_path : string
+        var progress_file_path : string
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -51,7 +51,7 @@ using std::mutex;
                 duplicate_action = 0,
                 auto_resume_failed = false,
                 retry_policy = RetryPolicy(),
-                queue_file_path = string()
+                progress_file_path = string()
             }
         }
 
@@ -780,7 +780,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
                 break
             }
         }
-        if(!has_active || elapsed < dm.save_interval_millis || dm.queue_file_path.empty()) {
+        if(!has_active || elapsed < dm.save_interval_millis || dm.progress_file_path.empty()) {
             dm.items_mutex.unlock()
             return
         }
@@ -829,7 +829,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         }
 
         // Atomic write: .tmp + fsync + rename.
-        var tmp_path = dm.queue_file_path.copy()
+        var tmp_path = dm.progress_file_path.copy()
         tmp_path.append_view(".tmp")
         var f = fopen(tmp_path.data(), "wb")
         if(f == null) { return }
@@ -837,7 +837,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         fflush(f)
         fclose(f)
         // rename is atomic on POSIX.
-        rename(tmp_path.data(), dm.queue_file_path.data())
+        rename(tmp_path.data(), dm.progress_file_path.data())
         fprintf(stderr, "[CDM] periodic progress saved (%d items)\n", snap.size())
     }
 

@@ -484,8 +484,10 @@ func settings_dir() : string {
     }
 
     // Load a previously saved queue and re-queue its incomplete items into the
-    // manager, preserving the original id, destination directory and category
-    // tag so resume bookkeeping (and any category routing) survives a restart.
+    // manager, preserving the original id, destination directory, category,
+    // progress, and state so resume works correctly across restarts.
+    // Does NOT call start_pending (the caller must do that once after all items
+    // are restored, so workers don't start before progress is applied).
     // Returns how many items were restored.
     public func restore_queue(dm : &mut DownloadManager) : int {
         var path = queue_file()
@@ -510,7 +512,7 @@ func settings_dir() : string {
                 continue
             }
             if(line.empty()) { continue }
-            // Fields are tab-separated: url \t id \t dir \t [category] \t [downloaded] \t [total] \t [interrupted]
+            // Fields are tab-separated: url \t id \t dir \t [category] \t [downloaded] \t [total] \t [interrupted] \t [state]
             var tab1 = line.find(std::string_view::make_no_len("\t"))
             if(tab1 == std::NPOS) { continue }
             var url = line.substring(0u, tab1)
@@ -523,6 +525,7 @@ func settings_dir() : string {
             var downloaded : i64 = 0
             var total : i64 = 0
             var was_interrupted = false
+            var saved_state : i64 = STATE_QUEUED as i64
             var tab2 = rest.find(std::string_view::make_no_len("\t"))
             if(tab2 == std::NPOS) {
                 // Legacy 2-field row: url \t id  (dir defaults to manager root).
@@ -542,7 +545,7 @@ func settings_dir() : string {
                         var cat_n = parse_int_opt(rest3.data())
                         if(cat_n >= 0) { category = cat_n }
                     } else {
-                        // v2 row: ... \t downloaded \t total \t interrupted
+                        // v2+ row: ... \t downloaded \t total \t interrupted \t [state]
                         var cat_n = parse_int_opt(rest3.substring(0u, tab4).data())
                         if(cat_n >= 0) { category = cat_n }
                         var rest4 = rest3.substring(tab4 + 1u, rest3.size())
@@ -555,8 +558,17 @@ func settings_dir() : string {
                             if(tab6 != std::NPOS) {
                                 var tot_str = rest5.substring(0u, tab6)
                                 total = parse_i64(string_view::make_view(&tot_str))
-                                var int_s = rest5.substring(tab6 + 1u, rest5.size())
-                                was_interrupted = int_s.equals_view("1")
+                                var rest6 = rest5.substring(tab6 + 1u, rest5.size())
+                                var tab7 = rest6.find(std::string_view::make_no_len("\t"))
+                                if(tab7 != std::NPOS) {
+                                    var int_s = rest6.substring(0u, tab7)
+                                    was_interrupted = int_s.equals_view("1")
+                                    var state_s = rest6.substring(tab7 + 1u, rest6.size())
+                                    saved_state = parse_i64(string_view::make_view(&state_s))
+                                } else {
+                                    var int_s = rest6
+                                    was_interrupted = int_s.equals_view("1")
+                                }
                             } else {
                                 total = parse_i64(string_view::make_view(&rest5))
                             }
@@ -566,31 +578,33 @@ func settings_dir() : string {
                     }
                 }
             }
-            var id_view = string_view::make_view(&id)
-            var dir_view = string_view::make_view(&dir)
-            var rid = add_task_ex_id(dm, id_view, string_view::make_view(&url),
-                                    dir_view, string_view(), 0, category)
-            if(rid.size() > 0u) {
-                restored = restored + 1
-                // Restore progress and interrupt state so the engine can resume
-                // from the last written position on disk instead of starting over.
-                if(downloaded > 0 || total > 0 || was_interrupted) {
-                    dm.items_mutex.lock()
-                    var idx = find_item_index(dm, &rid)
-                    if(idx != dm.items.size()) {
-                        var it = dm.items.get_ptr(idx)
-                        it.downloaded_bytes = downloaded
-                        it.total_bytes = total
-                        it.was_interrupted = was_interrupted
-                        // Mark as failed/interrupted so poll_auto_resume can re-queue it.
-                        if(was_interrupted) {
-                            it.state = STATE_FAILED
-                            it.error = string::make_no_len("interrupted by shutdown")
-                        }
-                    }
-                    dm.items_mutex.unlock()
-                }
+            // Insert the item directly (bypass add_task_ex_id to avoid
+            // triggering start_pending before all progress is applied).
+            var id_copy = id.copy()
+            if(id_copy.empty()) {
+                id_copy = uuid::v4().to_string()
             }
+            var resolved_dir = dm.download_dir.copy()
+            if(dir.size() > 0) {
+                resolved_dir = dir.copy()
+            }
+            var suggested = suggested_filename(string_view::make_view(&url))
+            var item = DownloadItem(id_copy.copy(), string(url.data(), url.size()),
+                                    resolved_dir.copy(), suggested.copy())
+            item.category = category as int
+            // Apply saved progress and state.
+            item.downloaded_bytes = downloaded
+            item.total_bytes = total
+            item.was_interrupted = was_interrupted
+            item.state = saved_state as int
+            if(was_interrupted && item.state != STATE_DONE && item.state != STATE_FAILED) {
+                item.state = STATE_FAILED
+                item.error = string::make_no_len("interrupted by shutdown")
+            }
+            dm.items_mutex.lock()
+            dm.items.push_back(item)
+            dm.items_mutex.unlock()
+            restored = restored + 1
         }
         return restored
     }
@@ -615,7 +629,7 @@ func settings_dir() : string {
 
     // Save the queue to disk. Does not block the engine.
     // Format (tab-separated, one row per item):
-    //   url \t id \t dir \t category \t downloaded \t total \t was_interrupted
+    //   url \t id \t dir \t category \t downloaded \t total \t was_interrupted \t state
     // Rows for DONE/CANCELLED items are skipped (nothing to resume).
     public func save_queue(dm : &mut DownloadManager) : bool {
         var dir = settings_dir()
@@ -649,6 +663,8 @@ func settings_dir() : string {
             out.append_integer(it.total_bytes as bigint)
             out.append(QUEUE_SEP)
             if(it.was_interrupted) { out.append('1') } else { out.append('0') }
+            out.append(QUEUE_SEP)
+            out.append_integer(it.state as bigint)
             out.append('\n')
         }
 
