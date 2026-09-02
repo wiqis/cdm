@@ -87,16 +87,20 @@ using std::Option;
     }
 
     // Parse an i64 from a string view. Returns 0 on failure.
+    // Only a leading '-' is treated as a negative sign; parsing stops at
+    // the first non-digit character (after any leading minus).
     public func parse_i64_from_view(s : string_view) : i64 {
         var val : i64 = 0
         var neg = false
         var started = false
         for(var i = 0u; i < s.size(); i++) {
             var c = s.get(i)
-            if(c == '-') { neg = true }
+            if(c == '-' && !started) { neg = true }
             else if(c >= '0' && c <= '9') {
                 val = val * 10 + (c as i64 - '0' as i64)
                 started = true
+            } else if(started) {
+                break
             }
         }
         if(!started) { return 0 }

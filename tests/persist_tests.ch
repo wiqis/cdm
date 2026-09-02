@@ -540,6 +540,52 @@ public func CDM_persist_save_queue_atomic(env : &mut TestEnv) {
     fs::remove_dir_all_recursive(cfg_dir.data())
 }
 
+// ---- Test: parse_i64_from_view only treats leading '-' as negative ----
+
+@test
+public func CDM_parse_i64_leading_minus_only(env : &mut TestEnv) {
+    // Leading minus should work.
+    var v1 = cdm::parse_i64_from_view(std::string_view::make_no_len("-42"))
+    if(v1 != -42) {
+        var msg = string::make_no_len("expected -42, got ")
+        msg.append_integer(v1 as bigint)
+        env.error(msg.data())
+        return
+    }
+    // Mid-string minus should NOT flip the sign.
+    var v2 = cdm::parse_i64_from_view(std::string_view::make_no_len("12-34"))
+    if(v2 != 12) {
+        var msg = string::make_no_len("expected 12 for '12-34', got ")
+        msg.append_integer(v2 as bigint)
+        env.error(msg.data())
+        return
+    }
+    // Plain positive.
+    var v3 = cdm::parse_i64_from_view(std::string_view::make_no_len("999"))
+    if(v3 != 999) {
+        var msg = string::make_no_len("expected 999, got ")
+        msg.append_integer(v3 as bigint)
+        env.error(msg.data())
+        return
+    }
+    // Empty string.
+    var v4 = cdm::parse_i64_from_view(std::string_view::make_no_len(""))
+    if(v4 != 0) {
+        var msg = string::make_no_len("expected 0 for empty, got ")
+        msg.append_integer(v4 as bigint)
+        env.error(msg.data())
+        return
+    }
+    // Just minus.
+    var v5 = cdm::parse_i64_from_view(std::string_view::make_no_len("-"))
+    if(v5 != 0) {
+        var msg = string::make_no_len("expected 0 for '-', got ")
+        msg.append_integer(v5 as bigint)
+        env.error(msg.data())
+        return
+    }
+}
+
 // ---- Test: retry then save roundtrip preserves progress ----
 
 @test

@@ -338,9 +338,16 @@ using std::Result;
             var prio = json_int_field(args, string_view::make_no_len("priority"), 0)
             var segs = json_int_field(args, string_view::make_no_len("max_segments"), 0)
             var sl = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), 0)
+            var cat = json_int_field(args, string_view::make_no_len("category"), -1)
             var dirv = string_view::make_view(&dir)
             var fnamev = string_view::make_view(&fname)
-            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, sl as i64, 0)
+            // Read current category from the item so edit doesn't reset it.
+            var current_cat = 0
+            dm.items_mutex.lock()
+            var eidx = find_item_index(&*dm, &id)
+            if(eidx < dm.items.size()) { current_cat = dm.items.get_ptr(eidx).category }
+            dm.items_mutex.unlock()
+            var ok = edit_item(&mut *dm, &id, dirv, fnamev, prio, segs, sl as i64, if(cat >= 0) cat else current_cat)
             if(!ok) {
                 var msg = string::make_no_len("cannot edit running item")
                 return err_json(&msg)

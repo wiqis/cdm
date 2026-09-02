@@ -616,10 +616,12 @@ func settings_dir() : string {
         var started = false
         for(var i = 0u; i < s.size(); i++) {
             var c = s.get(i)
-            if(c == '-') { neg = true }
+            if(c == '-' && !started) { neg = true }
             else if(c >= '0' && c <= '9') {
                 val = val * 10 + (c as i64 - '0' as i64)
                 started = true
+            } else if(started) {
+                break
             }
         }
         if(!started) { return 0 }
