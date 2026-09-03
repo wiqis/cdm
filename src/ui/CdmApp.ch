@@ -1148,7 +1148,7 @@
                             </label>
                         </div>
 
-                        <div className="cdm-section-header">Limits</div>
+                        <div class="cdm-section-header">Limits</div>
 
                         <label>Max download size (bytes, 0 = unlimited)
                             <input type="number" min="0" value={settings.max_download_size || 0}
@@ -1174,7 +1174,7 @@
                                 onChange={(e) => { settings.checksum = e.target.value }} />
                         </label>
 
-                        <div className="cdm-section-header">YouTube</div>
+                        <div class="cdm-section-header">YouTube</div>
 
                         <label>Quality (best, 1080, 720, 480)
                             <input type="text" value={settings.yt_quality || ""}
@@ -1198,7 +1198,7 @@
                                 onChange={(e) => { settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} />
                         </label>
 
-                        <div className="cdm-section-header">Appearance</div>
+                        <div class="cdm-section-header">Appearance</div>
 
                         <label>Theme
                             <select value={settings.theme || "auto"}
@@ -1225,14 +1225,14 @@
                                 onChange={(e) => { settings.max_history = parseInt(e.target.value) || 0 }} />
                         </label>
 
-                        <div className="cdm-section-header">Backup</div>
+                        <div class="cdm-section-header">Backup</div>
 
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                            <button className="cdm-btn" onClick={() => {
+                        <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                            <button class="cdm-btn" onClick={() => {
                                 var path = prompt("Export settings to file:", "/tmp/cdm-settings.json")
                                 if(path) { call("settings_export", {path: path}); alert = "Settings exported to " + path }
                             }}>Export Settings</button>
-                            <button className="cdm-btn" onClick={() => {
+                            <button class="cdm-btn" onClick={() => {
                                 var path = prompt("Import settings from file:")
                                 if(path) { call("settings_import", {path: path}, () => { refreshSettings() }); alert = "Settings imported" }
                             }}>Import Settings</button>
