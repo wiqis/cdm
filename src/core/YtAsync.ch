@@ -773,7 +773,7 @@ using std::mutex;
         save_yt_links()
     }
 
-    func yt_links_file() : string {
+    public func yt_links_file() : string {
         var dir = settings_dir()
         var path = dir.copy()
         path.append('/')
@@ -781,7 +781,7 @@ using std::mutex;
         return path
     }
 
-    func save_yt_links() {
+    public func save_yt_links() {
         if(g_yt_links == null) { return }
         var path = yt_links_file()
         // Atomic write: tmp → rename so a crash never corrupts the file.
@@ -810,7 +810,7 @@ using std::mutex;
         rename(tmp_path.data(), path.data())
     }
 
-    func load_yt_links() {
+    public func load_yt_links() {
         var path = yt_links_file()
         var f = fopen(path.data(), "rb")
         if(f == null) { return }

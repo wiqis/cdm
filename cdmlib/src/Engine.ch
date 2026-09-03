@@ -337,7 +337,7 @@ using std::vector;
     }
 
     // Create parent directory of a file path if it doesn't exist.
-    func ensure_parent_dir(path : *char) {
+    public func ensure_parent_dir(path : *char) {
         // Find the last '/' in the path.
         var p = string(path)
         var last_slash : usize = 0

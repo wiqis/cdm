@@ -868,3 +868,201 @@ public func CDM_resume_preserves_category(env : &mut TestEnv) {
     if(it.downloaded_bytes != 1000) { env.error("downloaded progress lost"); return }
     if(it.total_bytes != 5000) { env.error("total progress lost"); return }
 }
+
+// ---- Test: save_yt_links creates atomic tmp files (no leftover .tmp) ----
+
+// ---- Test: save_yt_links creates atomic tmp files (no leftover .tmp) ----
+
+@test
+public func CDM_persist_yt_links_atomic(env : &mut TestEnv) {
+    var cfg_dir = setup_test_cfg()
+
+    // All g_yt_links access needs unsafe (global pointer).
+    var link_count : usize = 0
+    var loaded_video_id = string()
+    var loaded_url = string()
+    var loaded_min_q : int = 0
+    var loaded_max_q : int = 0
+    var loaded_outdir = string()
+
+    unsafe {
+        if(cdm::g_yt_links == null) {
+            var ptr = &raw mut cdm::g_yt_links
+            *ptr = new std::vector<cdm::YtLinkRecord>()
+        }
+        cdm::g_yt_links.clear()
+
+        // Add a test record.
+        var rec = cdm::YtLinkRecord()
+        rec.video_id = string::make_no_len("test-video-id")
+        rec.audio_id = string::make_no_len("test-audio-id")
+        rec.youtube_url = string::make_no_len("https://youtube.com/watch?v=test")
+        rec.format = string::make_no_len("mp4")
+        rec.mode = string::make_no_len("video")
+        rec.audio_format = string::make_no_len("opus")
+        rec.min_q = 720
+        rec.max_q = 1080
+        rec.output_dir = string::make_no_len("/tmp/yt_test")
+        cdm::g_yt_links.push_back(rec)
+    }
+
+    // Ensure the settings directory exists (save_yt_links doesn't create it).
+    var ypath = cdm::yt_links_file()
+    var last_slash : usize = 0
+    for(var i = 0u; i < ypath.size(); i++) {
+        if(ypath.get(i) == '/') { last_slash = i }
+    }
+    if(last_slash > 0u) { fs::create_dir_all(ypath.substring(0u, last_slash).data()) }
+
+    // Save — should be atomic (tmp + rename).
+    cdm::save_yt_links()
+
+    // The .tmp file should NOT exist after save.
+    var tmppath = ypath.copy()
+    tmppath.append_view(string_view::make_no_len(".tmp"))
+    if(fs::exists(tmppath.data())) {
+        env.error("yt_links.txt.tmp should not exist after atomic save")
+        return
+    }
+
+    // The yt_links.txt should exist.
+    if(!fs::exists(ypath.data())) {
+        env.error("yt_links.txt should exist after save")
+        return
+    }
+
+    // Verify content survives a load roundtrip.
+    unsafe {
+        cdm::g_yt_links.clear()
+    }
+    cdm::load_yt_links()
+    unsafe {
+        link_count = cdm::g_yt_links.size()
+        if(link_count == 1u) {
+            var loaded = cdm::g_yt_links.get_ptr(0)
+            loaded_video_id = loaded.video_id.copy()
+            loaded_url = loaded.youtube_url.copy()
+            loaded_min_q = loaded.min_q
+            loaded_max_q = loaded.max_q
+            loaded_outdir = loaded.output_dir.copy()
+        }
+    }
+    if(link_count != 1u) {
+        var msg = string::make_no_len("expected 1 record after load, got ")
+        msg.append_integer(link_count as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(!loaded_video_id.equals_view("test-video-id")) { env.error("video_id mismatch"); return }
+    if(!loaded_url.equals_view("https://youtube.com/watch?v=test")) { env.error("youtube_url mismatch"); return }
+    if(loaded_min_q != 720) { env.error("min_q mismatch"); return }
+    if(loaded_max_q != 1080) { env.error("max_q mismatch"); return }
+    if(!loaded_outdir.equals_view("/tmp/yt_test")) { env.error("output_dir mismatch"); return }
+
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}
+
+// ---- Test: save_yt_links overwrites previous content ----
+
+@test
+public func CDM_persist_yt_links_overwrite(env : &mut TestEnv) {
+    var cfg_dir = setup_test_cfg()
+
+    var link_count2 : usize = 0
+    var loaded_vid = string()
+
+    unsafe {
+        if(cdm::g_yt_links == null) {
+            var ptr2 = &raw mut cdm::g_yt_links
+            *ptr2 = new std::vector<cdm::YtLinkRecord>()
+        }
+        cdm::g_yt_links.clear()
+
+        // Write 2 records.
+        var rec1 = cdm::YtLinkRecord()
+        rec1.video_id = string::make_no_len("vid-1")
+        rec1.youtube_url = string::make_no_len("https://youtube.com/1")
+        cdm::g_yt_links.push_back(rec1)
+        var rec2 = cdm::YtLinkRecord()
+        rec2.video_id = string::make_no_len("vid-2")
+        rec2.youtube_url = string::make_no_len("https://youtube.com/2")
+        cdm::g_yt_links.push_back(rec2)
+    }
+    // Ensure the settings directory exists.
+    var ypath2 = cdm::yt_links_file()
+    var ls2 : usize = 0
+    for(var i2 = 0u; i2 < ypath2.size(); i2++) {
+        if(ypath2.get(i2) == '/') { ls2 = i2 }
+    }
+    if(ls2 > 0u) { fs::create_dir_all(ypath2.substring(0u, ls2).data()) }
+    cdm::save_yt_links()
+
+    // Overwrite with 1 record.
+    unsafe {
+        cdm::g_yt_links.clear()
+        var rec3 = cdm::YtLinkRecord()
+        rec3.video_id = string::make_no_len("vid-3")
+        rec3.youtube_url = string::make_no_len("https://youtube.com/3")
+        cdm::g_yt_links.push_back(rec3)
+    }
+    cdm::save_yt_links()
+
+    // Load — should have only 1 record.
+    unsafe { cdm::g_yt_links.clear() }
+    cdm::load_yt_links()
+    unsafe {
+        link_count2 = cdm::g_yt_links.size()
+        if(link_count2 == 1u) {
+            loaded_vid = cdm::g_yt_links.get_ptr(0).video_id.copy()
+        }
+    }
+    if(link_count2 != 1u) {
+        var msg = string::make_no_len("expected 1 record after overwrite, got ")
+        msg.append_integer(link_count2 as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(!loaded_vid.equals_view("vid-3")) { env.error("should be vid-3"); return }
+
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}
+
+// ---- Test: ensure_parent_dir creates nested directories ----
+
+@test
+public func CDM_engine_ensure_parent_dir(env : &mut TestEnv) {
+    // Create a deeply nested path.
+    var uuid_part = uuid::v4().to_string()
+    var base = string::make_no_len("/tmp/cdm_ensure_dir_test_")
+    base.append_string(&uuid_part)
+    base.append_view(string_view::make_no_len("/a/b/c/d/file.bin"))
+
+    // The directory doesn't exist yet.
+    // ensure_parent_dir should create /a/b/c/d/.
+    cdm::ensure_parent_dir(base.data())
+
+    // Verify the parent directory was created.
+    // Extract the parent: everything before the last '/'.
+    var last_slash : usize = 0
+    for(var i = 0u; i < base.size(); i++) {
+        if(base.get(i) == '/') { last_slash = i }
+    }
+    var parent = base.substring(0u, last_slash)
+    if(!fs::exists(parent.data())) {
+        var msg = string::make_no_len("parent dir should exist: ")
+        msg.append_string(&parent)
+        env.error(msg.data())
+        return
+    }
+
+    // The file itself should NOT exist yet (only the parent was created).
+    if(fs::exists(base.data())) {
+        env.error("file should not exist yet")
+        return
+    }
+
+    // Clean up: remove /tmp/cdm_ensure_dir_test_<uuid>.
+    var test_dir = string::make_no_len("/tmp/cdm_ensure_dir_test_")
+    test_dir.append_string(&uuid_part)
+    fs::remove_dir_all_recursive(test_dir.data())
+}
