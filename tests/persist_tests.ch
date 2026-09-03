@@ -633,3 +633,238 @@ public func CDM_persist_retry_save_roundtrip(env : &mut TestEnv) {
 
     fs::remove_dir_all_recursive(cfg_dir.data())
 }
+
+// ---- Test: change_url preserves progress for resume ----
+
+@test
+public func CDM_queue_change_url_preserves_progress(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("cu-prog"),
+                        string_view::make_no_len("https://example.com/old.bin"),
+                        string_view(), string_view(), 0, 0)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("cu-prog"))
+    dm.items.get_ptr(idx).downloaded_bytes = 50000
+    dm.items.get_ptr(idx).total_bytes = 100000
+    dm.items.get_ptr(idx).state = cdm::STATE_FAILED
+
+    // Change URL — should preserve progress so worker resumes from disk.
+    var ok = cdm::change_url(&mut dm, &string::make_no_len("cu-prog"),
+                            string_view::make_no_len("https://example.com/new.bin"))
+    if(!ok) { env.error("change_url should succeed"); return }
+
+    var idx2 = cdm::find_item_index(&dm, &string::make_no_len("cu-prog"))
+    var it = dm.items.get_ptr(idx2)
+    if(!it.url.equals_view("https://example.com/new.bin")) { env.error("URL not updated"); return }
+    if(it.state != cdm::STATE_QUEUED) { env.error("should be QUEUED"); return }
+    if(it.downloaded_bytes != 50000) {
+        var msg = string::make_no_len("expected 50000 downloaded after change_url, got ")
+        msg.append_integer(it.downloaded_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.total_bytes != 100000) {
+        var msg = string::make_no_len("expected 100000 total after change_url, got ")
+        msg.append_integer(it.total_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.was_interrupted) { env.error("was_interrupted should be false after change_url"); return }
+    if(it.retry_count != 0) { env.error("retry_count should reset to 0"); return }
+}
+
+// ---- Test: change_url then save/restore roundtrip preserves progress ----
+
+@test
+public func CDM_queue_change_url_save_roundtrip(env : &mut TestEnv) {
+    var cfg_dir = setup_test_cfg()
+
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("cu-rt"),
+                        string_view::make_no_len("https://example.com/old2.bin"),
+                        string_view(), string_view(), 0, 0)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("cu-rt"))
+    dm.items.get_ptr(idx).downloaded_bytes = 30000
+    dm.items.get_ptr(idx).total_bytes = 80000
+    dm.items.get_ptr(idx).state = cdm::STATE_FAILED
+
+    // Change URL, save, restore.
+    cdm::change_url(&mut dm, &string::make_no_len("cu-rt"),
+                    string_view::make_no_len("https://example.com/refreshed.bin"))
+    if(!cdm::save_queue(&mut dm)) { env.error("save_queue failed"); return }
+
+    var dm2 = cdm::DownloadManager()
+    dm2.max_concurrent = 0
+    var restored = cdm::restore_queue(&mut dm2)
+    if(restored != 1) {
+        var msg = string::make_no_len("expected 1, got ")
+        msg.append_integer(restored as bigint)
+        env.error(msg.data())
+        return
+    }
+    var idx2 = cdm::find_item_index(&dm2, &string::make_no_len("cu-rt"))
+    var it = dm2.items.get_ptr(idx2)
+    if(!it.url.equals_view("https://example.com/refreshed.bin")) { env.error("URL lost after roundtrip"); return }
+    if(it.downloaded_bytes != 30000) {
+        var msg = string::make_no_len("expected 30000, got ")
+        msg.append_integer(it.downloaded_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+    if(it.total_bytes != 80000) {
+        var msg = string::make_no_len("expected 80000, got ")
+        msg.append_integer(it.total_bytes as bigint)
+        env.error(msg.data())
+        return
+    }
+
+    fs::remove_dir_all_recursive(cfg_dir.data())
+}
+
+// ---- Test: edit_item preserves category when current_cat is resolved ----
+// This tests the Bridge pattern: resolve category from the item before calling
+// edit_item (category=-1 means "no override").
+
+@test
+public func CDM_edit_item_preserves_category(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("edit-cat"),
+                        string_view::make_no_len("https://example.com/edit.bin"),
+                        string_view(), string_view(), 0, cdm::Category.Video as int)
+
+    // Verify category was set.
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("edit-cat"))
+    if(dm.items.get_ptr(idx).category != cdm::Category.Video as int) {
+        env.error("initial category should be Video"); return
+    }
+
+    // Simulate the Bridge pattern: read current category, then call edit_item
+    // with the resolved value (category >= 0 means override, < 0 means no change).
+    var current_cat = 0
+    dm.items_mutex.lock()
+    var eidx = cdm::find_item_index(&dm, &string::make_no_len("edit-cat"))
+    if(eidx < dm.items.size()) { current_cat = dm.items.get_ptr(eidx).category }
+    dm.items_mutex.unlock()
+    // cat_from_args = -1 (user did not send category in the edit request)
+    var cat_from_args = -1
+    var resolved_cat = if(cat_from_args >= 0) cat_from_args else current_cat
+
+    var ok = cdm::edit_item(&mut dm, &string::make_no_len("edit-cat"),
+                           string_view::make_no_len("/tmp/newdir"),
+                           string_view(), 0, 0, 0, resolved_cat)
+    if(!ok) { env.error("edit_item should succeed"); return }
+
+    var idx2 = cdm::find_item_index(&dm, &string::make_no_len("edit-cat"))
+    var it = dm.items.get_ptr(idx2)
+    // Category should be preserved (not reset to 0).
+    if(it.category != cdm::Category.Video as int) {
+        var msg = string::make_no_len("category should be Video after edit, got ")
+        msg.append_integer(it.category as bigint)
+        env.error(msg.data())
+        return
+    }
+    // Dir should be updated.
+    if(!it.dir.equals_view("/tmp/newdir")) { env.error("dir should be updated"); return }
+}
+
+// ---- Test: edit_item overrides category when explicitly set ----
+
+@test
+public func CDM_edit_item_overrides_category(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("edit-ovr"),
+                        string_view::make_no_len("https://example.com/edit2.bin"),
+                        string_view(), string_view(), 0, cdm::Category.Video as int)
+
+    // Override category to Music.
+    var ok = cdm::edit_item(&mut dm, &string::make_no_len("edit-ovr"),
+                           string_view(), string_view(), 0, 0, 0,
+                           cdm::Category.Music as int)
+    if(!ok) { env.error("edit_item should succeed"); return }
+
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("edit-ovr"))
+    var it = dm.items.get_ptr(idx)
+    if(it.category != cdm::Category.Music as int) {
+        var msg = string::make_no_len("category should be Music, got ")
+        msg.append_integer(it.category as bigint)
+        env.error(msg.data())
+        return
+    }
+}
+
+// ---- Test: cancel_task cancels a queued item (no runtime) ----
+
+@test
+public func CDM_cancel_queued_item(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("cancel-q"),
+                        string_view::make_no_len("https://example.com/cancel.bin"),
+                        string_view(), string_view(), 0, 0)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("cancel-q"))
+    dm.items.get_ptr(idx).state = cdm::STATE_QUEUED
+
+    cdm::cancel_task(&mut dm, &string::make_no_len("cancel-q"))
+    var idx2 = cdm::find_item_index(&dm, &string::make_no_len("cancel-q"))
+    var it = dm.items.get_ptr(idx2)
+    if(it.state != cdm::STATE_CANCELLED) {
+        var msg = string::make_no_len("expected CANCELLED, got ")
+        msg.append_integer(it.state as bigint)
+        env.error(msg.data())
+        return
+    }
+}
+
+// ---- Test: retry preserves category ----
+
+@test
+public func CDM_retry_preserves_category(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("retry-cat"),
+                        string_view::make_no_len("https://example.com/retry.bin"),
+                        string_view(), string_view(), 0, cdm::Category.Music as int)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("retry-cat"))
+    dm.items.get_ptr(idx).state = cdm::STATE_FAILED
+
+    cdm::retry_task(&mut dm, &string::make_no_len("retry-cat"))
+    var idx2 = cdm::find_item_index(&dm, &string::make_no_len("retry-cat"))
+    var it = dm.items.get_ptr(idx2)
+    if(it.category != cdm::Category.Music as int) {
+        var msg = string::make_no_len("category should be Music after retry, got ")
+        msg.append_integer(it.category as bigint)
+        env.error(msg.data())
+        return
+    }
+}
+
+// ---- Test: resume preserves category ----
+
+@test
+public func CDM_resume_preserves_category(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    dm.max_concurrent = 0
+    cdm::add_task_ex_id(&mut dm, string_view::make_no_len("resume-cat"),
+                        string_view::make_no_len("https://example.com/res.bin"),
+                        string_view(), string_view(), 0, cdm::Category.Documents as int)
+    var idx = cdm::find_item_index(&dm, &string::make_no_len("resume-cat"))
+    dm.items.get_ptr(idx).state = cdm::STATE_FAILED
+    dm.items.get_ptr(idx).downloaded_bytes = 1000
+    dm.items.get_ptr(idx).total_bytes = 5000
+
+    cdm::resume_task(&mut dm, &string::make_no_len("resume-cat"))
+    var idx2 = cdm::find_item_index(&dm, &string::make_no_len("resume-cat"))
+    var it = dm.items.get_ptr(idx2)
+    if(it.category != cdm::Category.Documents as int) {
+        var msg = string::make_no_len("category should be Documents after resume, got ")
+        msg.append_integer(it.category as bigint)
+        env.error(msg.data())
+        return
+    }
+    // Progress should be preserved.
+    if(it.downloaded_bytes != 1000) { env.error("downloaded progress lost"); return }
+    if(it.total_bytes != 5000) { env.error("total progress lost"); return }
+}

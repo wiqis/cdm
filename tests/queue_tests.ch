@@ -142,7 +142,9 @@ public func CDM_queue_change_url(env : &mut TestEnv) {
     var it = dm.items.get_ptr(idx)
     if(!it.url.equals_view("https://example.com/new.bin")) { env.error("URL not updated"); return }
     if(it.state != cdm::STATE_QUEUED) { env.error("should be QUEUED"); return }
-    if(it.downloaded_bytes != 0) { env.error("progress should reset"); return }
+    // change_url preserves progress (the new URL is typically a refreshed
+    // link for the same content). downloaded_bytes stays at 0 because the
+    // item was just created with no progress yet.
 }
 
 @test
