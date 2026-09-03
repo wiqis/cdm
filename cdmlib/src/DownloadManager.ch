@@ -51,6 +51,53 @@ using std::mutex;
         var language : string
         var max_history : int
         var theme : string
+        // --- yt-dlp advanced ---
+        var yt_output_template : string
+        var yt_audio_format : string
+        var yt_audio_quality : int
+        var yt_recode_video : string
+        var yt_merge_output_format : string
+        var yt_write_subs : bool
+        var yt_write_auto_subs : bool
+        var yt_sub_langs : string
+        var yt_embed_subs : bool
+        var yt_convert_subs : string
+        var yt_embed_metadata : bool
+        var yt_embed_thumbnail : bool
+        var yt_write_description : bool
+        var yt_write_info_json : bool
+        var yt_write_comments : bool
+        var yt_restrict_filenames : bool
+        var yt_trim_filenames : int
+        var yt_no_overwrites : bool
+        var yt_playlist_start : int
+        var yt_playlist_end : int
+        var yt_playlist_items : string
+        var yt_proxy : string
+        var yt_geo_bypass : bool
+        var yt_geo_bypass_country : string
+        var yt_extractor_retries : int
+        var yt_socket_timeout : int
+        var yt_username : string
+        var yt_password : string
+        var yt_netrc : bool
+        var yt_exec_cmd : string
+        var yt_ffmpeg_location : string
+        var yt_remove_sponsorblock : bool
+        var yt_sponsorblock_mark : string
+        var yt_source_address : string
+        var yt_legacy_server_connect : bool
+        var yt_no_check_certificates : bool
+        var ffmpeg_video_codec : string
+        var ffmpeg_audio_codec : string
+        var ffmpeg_audio_bitrate : string
+        var bandwidth_limit_per : i64
+        var auto_rename_duplicates : bool
+        var move_completed_to : string
+        var download_scheduler_enabled : bool
+        var download_scheduler_start : string
+        var download_scheduler_end : string
+        var clipboard_monitor : bool
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -93,7 +140,53 @@ using std::mutex;
                 notifications_enabled = true,
                 language = string(),
                 max_history = 1000,
-                theme = string::make_no_len("auto")
+                theme = string::make_no_len("auto"),
+                yt_output_template = string(),
+                yt_audio_format = string(),
+                yt_audio_quality = 0,
+                yt_recode_video = string(),
+                yt_merge_output_format = string::make_no_len("mp4"),
+                yt_write_subs = false,
+                yt_write_auto_subs = false,
+                yt_sub_langs = string::make_no_len("en"),
+                yt_embed_subs = false,
+                yt_convert_subs = string(),
+                yt_embed_metadata = true,
+                yt_embed_thumbnail = false,
+                yt_write_description = false,
+                yt_write_info_json = false,
+                yt_write_comments = false,
+                yt_restrict_filenames = false,
+                yt_trim_filenames = 0,
+                yt_no_overwrites = true,
+                yt_playlist_start = 0,
+                yt_playlist_end = 0,
+                yt_playlist_items = string(),
+                yt_proxy = string(),
+                yt_geo_bypass = false,
+                yt_geo_bypass_country = string(),
+                yt_extractor_retries = 3,
+                yt_socket_timeout = 30,
+                yt_username = string(),
+                yt_password = string(),
+                yt_netrc = false,
+                yt_exec_cmd = string(),
+                yt_ffmpeg_location = string(),
+                yt_remove_sponsorblock = false,
+                yt_sponsorblock_mark = string(),
+                yt_source_address = string(),
+                yt_legacy_server_connect = false,
+                yt_no_check_certificates = false,
+                ffmpeg_video_codec = string(),
+                ffmpeg_audio_codec = string(),
+                ffmpeg_audio_bitrate = string(),
+                bandwidth_limit_per = 0,
+                auto_rename_duplicates = false,
+                move_completed_to = string(),
+                download_scheduler_enabled = false,
+                download_scheduler_start = string(),
+                download_scheduler_end = string(),
+                clipboard_monitor = false
             }
         }
 

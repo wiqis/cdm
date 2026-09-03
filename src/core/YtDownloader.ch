@@ -431,17 +431,22 @@ using std::mutex;
     // ---- yt-dlp download execution ----
 
     // Build the yt-dlp command line for a download.
-    func build_ytdlp_args(dl : &YtDownload, output_dir : string_view, merge_with_ffmpeg : bool) : vector<string> {
+    func build_ytdlp_args(dl : &YtDownload, output_dir : string_view, merge_with_ffmpeg : bool, dm : *mut DownloadManager) : vector<string> {
         var args = vector<string>()
         args.push_back(ytdlp_resolved_path())
         args.push_back(string::make_no_len("--no-warnings"))
-        args.push_back(string::make_no_len("--newline"))          // progress on separate lines
-        args.push_back(string::make_no_len("--no-playlist"))     // single video by default
-        args.push_back(string::make_no_len("--progress"))        // force progress output
+        args.push_back(string::make_no_len("--newline"))
+        args.push_back(string::make_no_len("--no-playlist"))
+        args.push_back(string::make_no_len("--progress"))
 
         // Output template.
         var out_template = string(output_dir.data(), output_dir.size())
-        out_template.append_view(string_view::make_no_len("/%(title)s.%(ext)s"))
+        if(dm.yt_output_template.size() > 0) {
+            out_template.append_view(string_view::make_no_len("/"))
+            out_template.append_string(&dm.yt_output_template)
+        } else {
+            out_template.append_view(string_view::make_no_len("/%(title)s.%(ext)s"))
+        }
         args.push_back(string::make_no_len("-o"))
         args.push_back(out_template.copy())
 
@@ -450,7 +455,6 @@ using std::mutex;
             args.push_back(string::make_no_len("-f"))
             args.push_back(dl.selected_format.copy())
         } else {
-            // Default: best quality with both video+audio, fallback to separate streams.
             args.push_back(string::make_no_len("-f"))
             args.push_back(string::make_no_len("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"))
         }
@@ -458,7 +462,139 @@ using std::mutex;
         // Merge output format.
         if(merge_with_ffmpeg) {
             args.push_back(string::make_no_len("--merge-output-format"))
-            args.push_back(string::make_no_len("mp4"))
+            if(dm.yt_merge_output_format.size() > 0) {
+                args.push_back(dm.yt_merge_output_format.copy())
+            } else {
+                args.push_back(string::make_no_len("mp4"))
+            }
+        }
+
+        // Audio extraction.
+        if(dm.yt_audio_format.size() > 0) {
+            args.push_back(string::make_no_len("-x"))
+            args.push_back(string::make_no_len("--audio-format"))
+            args.push_back(dm.yt_audio_format.copy())
+        }
+        if(dm.yt_audio_quality > 0) {
+            args.push_back(string::make_no_len("--audio-quality"))
+            var aq = string(); aq.append_integer(dm.yt_audio_quality as bigint)
+            args.push_back(aq.copy())
+        }
+        // Recode video.
+        if(dm.yt_recode_video.size() > 0) {
+            args.push_back(string::make_no_len("--recode-video"))
+            args.push_back(dm.yt_recode_video.copy())
+        }
+        // Subtitles.
+        if(dm.yt_write_subs) {
+            args.push_back(string::make_no_len("--write-subs"))
+        }
+        if(dm.yt_write_auto_subs) {
+            args.push_back(string::make_no_len("--write-auto-subs"))
+        }
+        if(dm.yt_sub_langs.size() > 0 && (dm.yt_write_subs || dm.yt_write_auto_subs)) {
+            args.push_back(string::make_no_len("--sub-langs"))
+            args.push_back(dm.yt_sub_langs.copy())
+        }
+        if(dm.yt_embed_subs) {
+            args.push_back(string::make_no_len("--embed-subs"))
+        }
+        if(dm.yt_convert_subs.size() > 0) {
+            args.push_back(string::make_no_len("--convert-subs"))
+            args.push_back(dm.yt_convert_subs.copy())
+        }
+        // Metadata & thumbnail.
+        if(dm.yt_embed_metadata) {
+            args.push_back(string::make_no_len("--embed-metadata"))
+        }
+        if(dm.yt_embed_thumbnail) {
+            args.push_back(string::make_no_len("--embed-thumbnail"))
+        }
+        // Info files.
+        if(dm.yt_write_description) {
+            args.push_back(string::make_no_len("--write-description"))
+        }
+        if(dm.yt_write_info_json) {
+            args.push_back(string::make_no_len("--write-info-json"))
+        }
+        if(dm.yt_write_comments) {
+            args.push_back(string::make_no_len("--write-comments"))
+        }
+        // Filename options.
+        if(dm.yt_restrict_filenames) {
+            args.push_back(string::make_no_len("--restrict-filenames"))
+        }
+        if(dm.yt_trim_filenames > 0) {
+            args.push_back(string::make_no_len("--trim-filenames"))
+            var tf = string(); tf.append_integer(dm.yt_trim_filenames as bigint)
+            args.push_back(tf.copy())
+        }
+        if(dm.yt_no_overwrites) {
+            args.push_back(string::make_no_len("--no-overwrites"))
+        }
+        // Network options.
+        if(dm.yt_proxy.size() > 0) {
+            args.push_back(string::make_no_len("--proxy"))
+            args.push_back(dm.yt_proxy.copy())
+        }
+        if(dm.yt_geo_bypass) {
+            args.push_back(string::make_no_len("--geo-bypass"))
+        }
+        if(dm.yt_geo_bypass_country.size() > 0) {
+            args.push_back(string::make_no_len("--geo-bypass-country"))
+            args.push_back(dm.yt_geo_bypass_country.copy())
+        }
+        if(dm.yt_source_address.size() > 0) {
+            args.push_back(string::make_no_len("--source-address"))
+            args.push_back(dm.yt_source_address.copy())
+        }
+        if(dm.force_ipv4) {
+            args.push_back(string::make_no_len("--force-ipv4"))
+        }
+        if(dm.force_ipv6) {
+            args.push_back(string::make_no_len("--force-ipv6"))
+        }
+        if(dm.yt_no_check_certificates) {
+            args.push_back(string::make_no_len("--no-check-certificates"))
+        }
+        if(dm.yt_legacy_server_connect) {
+            args.push_back(string::make_no_len("--legacy-server-connect"))
+        }
+        var er = string(); er.append_integer(dm.yt_extractor_retries as bigint)
+        args.push_back(string::make_no_len("--extractor-retries"))
+        args.push_back(er.copy())
+        var st = string(); st.append_integer(dm.yt_socket_timeout as bigint)
+        args.push_back(string::make_no_len("--socket-timeout"))
+        args.push_back(st.copy())
+        // Authentication.
+        if(dm.yt_username.size() > 0) {
+            args.push_back(string::make_no_len("--username"))
+            args.push_back(dm.yt_username.copy())
+        }
+        if(dm.yt_password.size() > 0) {
+            args.push_back(string::make_no_len("--password"))
+            args.push_back(dm.yt_password.copy())
+        }
+        if(dm.yt_netrc) {
+            args.push_back(string::make_no_len("--netrc"))
+        }
+        // Sponsorblock.
+        if(dm.yt_remove_sponsorblock) {
+            args.push_back(string::make_no_len("--sponsorblock-remove"))
+            args.push_back(string::make_no_len("all"))
+        } else if(dm.yt_sponsorblock_mark.size() > 0) {
+            args.push_back(string::make_no_len("--sponsorblock-mark"))
+            args.push_back(dm.yt_sponsorblock_mark.copy())
+        }
+        // ffmpeg location.
+        if(dm.yt_ffmpeg_location.size() > 0) {
+            args.push_back(string::make_no_len("--ffmpeg-location"))
+            args.push_back(dm.yt_ffmpeg_location.copy())
+        }
+        // Exec after download.
+        if(dm.yt_exec_cmd.size() > 0) {
+            args.push_back(string::make_no_len("--exec"))
+            args.push_back(dm.yt_exec_cmd.copy())
         }
 
         args.push_back(dl.url.copy())

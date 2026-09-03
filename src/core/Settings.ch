@@ -56,6 +56,56 @@ using std::ordered_map;
         var language : string                // UI language code (empty = auto)
         var max_history : int                // max completed downloads to keep in history (0 = unlimited)
         var theme : string                   // "auto", "light", "dark"
+        // --- yt-dlp advanced ---
+        var yt_output_template : string      // output filename template for yt-dlp
+        var yt_audio_format : string         // audio extraction format: mp3, aac, flac, opus, vorbis
+        var yt_audio_quality : int           // audio quality: 0=best, 10=worst (VBR)
+        var yt_recode_video : string         // recode video to: avi, flv, mkv, mp4, webm
+        var yt_merge_output_format : string  // merge format: mp4, mkv, webm, avi
+        var yt_write_subs : bool             // download subtitles
+        var yt_write_auto_subs : bool        // download auto-generated subtitles
+        var yt_sub_langs : string            // subtitle languages: en,ja,es,etc
+        var yt_embed_subs : bool             // embed subtitles in video
+        var yt_convert_subs : string         // convert subs to: srt, vtt, ass, etc
+        var yt_embed_metadata : bool         // embed metadata in video file
+        var yt_embed_thumbnail : bool        // embed thumbnail as cover art
+        var yt_write_description : bool      // write .description file
+        var yt_write_info_json : bool        // write .info.json file
+        var yt_write_comments : bool         // download video comments
+        var yt_restrict_filenames : bool     // restrict to ASCII filenames
+        var yt_trim_filenames : int          // max filename length (0 = unlimited)
+        var yt_no_overwrites : bool          // don't overwrite existing files
+        var yt_playlist_start : int          // playlist start index (1-based)
+        var yt_playlist_end : int            // playlist end index (0 = all)
+        var yt_playlist_items : string       // specific items: "1,2,5-10"
+        var yt_proxy : string               // proxy: socks5://host:port
+        var yt_geo_bypass : bool             // geo-restriction bypass
+        var yt_geo_bypass_country : string   // country code for bypass
+        var yt_extractor_retries : int       // extractor retry count
+        var yt_socket_timeout : int          // socket timeout in seconds
+        var yt_username : string             // YouTube username
+        var yt_password : string             // YouTube password
+        var yt_netrc : bool                  // use .netrc for authentication
+        var yt_exec_cmd : string             // execute command after download
+        var yt_ffmpeg_location : string      // custom ffmpeg path
+        var yt_remove_sponsorblock : bool    // remove sponsor segments
+        var yt_sponsorblock_mark : string    // mark sponsor segments (colors)
+        // --- network advanced ---
+        var yt_source_address : string       // source IP for yt-dlp
+        var yt_legacy_server_connect : bool  // legacy SSL connections
+        var yt_no_check_certificates : bool  // skip SSL verification for yt-dlp
+        // --- ffmpeg post-processing ---
+        var ffmpeg_video_codec : string      // h264, h265, vp9, av1
+        var ffmpeg_audio_codec : string      // aac, mp3, opus
+        var ffmpeg_audio_bitrate : string    // e.g. "192K", "320K"
+        // --- download management ---
+        var bandwidth_limit_per : i64        // per-download speed limit KB/s (0=unlimited)
+        var auto_rename_duplicates : bool    // auto-rename when duplicate exists
+        var move_completed_to : string       // move completed files to this folder
+        var download_scheduler_enabled : bool // schedule downloads
+        var download_scheduler_start : string // start time HH:MM
+        var download_scheduler_end : string  // end time HH:MM
+        var clipboard_monitor : bool         // auto-detect URLs from clipboard
 
         @constructor func constructor() {
             return CdmSettings {
@@ -99,7 +149,53 @@ using std::ordered_map;
                 notifications_enabled = true,
                 language = string(),
                 max_history = 1000,
-                theme = string::make_no_len("auto")
+                theme = string::make_no_len("auto"),
+                yt_output_template = string(),
+                yt_audio_format = string(),
+                yt_audio_quality = 0,
+                yt_recode_video = string(),
+                yt_merge_output_format = string::make_no_len("mp4"),
+                yt_write_subs = false,
+                yt_write_auto_subs = false,
+                yt_sub_langs = string::make_no_len("en"),
+                yt_embed_subs = false,
+                yt_convert_subs = string(),
+                yt_embed_metadata = true,
+                yt_embed_thumbnail = false,
+                yt_write_description = false,
+                yt_write_info_json = false,
+                yt_write_comments = false,
+                yt_restrict_filenames = false,
+                yt_trim_filenames = 0,
+                yt_no_overwrites = true,
+                yt_playlist_start = 0,
+                yt_playlist_end = 0,
+                yt_playlist_items = string(),
+                yt_proxy = string(),
+                yt_geo_bypass = false,
+                yt_geo_bypass_country = string(),
+                yt_extractor_retries = 3,
+                yt_socket_timeout = 30,
+                yt_username = string(),
+                yt_password = string(),
+                yt_netrc = false,
+                yt_exec_cmd = string(),
+                yt_ffmpeg_location = string(),
+                yt_remove_sponsorblock = false,
+                yt_sponsorblock_mark = string(),
+                yt_source_address = string(),
+                yt_legacy_server_connect = false,
+                yt_no_check_certificates = false,
+                ffmpeg_video_codec = string(),
+                ffmpeg_audio_codec = string(),
+                ffmpeg_audio_bitrate = string(),
+                bandwidth_limit_per = 0,
+                auto_rename_duplicates = false,
+                move_completed_to = string(),
+                download_scheduler_enabled = false,
+                download_scheduler_start = string(),
+                download_scheduler_end = string(),
+                clipboard_monitor = false
             }
         }
 
@@ -462,6 +558,52 @@ func settings_dir() : string {
         dm.language = s.language.copy()
         dm.max_history = s.max_history
         dm.theme = s.theme.copy()
+        dm.yt_output_template = s.yt_output_template.copy()
+        dm.yt_audio_format = s.yt_audio_format.copy()
+        dm.yt_audio_quality = s.yt_audio_quality
+        dm.yt_recode_video = s.yt_recode_video.copy()
+        dm.yt_merge_output_format = s.yt_merge_output_format.copy()
+        dm.yt_write_subs = s.yt_write_subs
+        dm.yt_write_auto_subs = s.yt_write_auto_subs
+        dm.yt_sub_langs = s.yt_sub_langs.copy()
+        dm.yt_embed_subs = s.yt_embed_subs
+        dm.yt_convert_subs = s.yt_convert_subs.copy()
+        dm.yt_embed_metadata = s.yt_embed_metadata
+        dm.yt_embed_thumbnail = s.yt_embed_thumbnail
+        dm.yt_write_description = s.yt_write_description
+        dm.yt_write_info_json = s.yt_write_info_json
+        dm.yt_write_comments = s.yt_write_comments
+        dm.yt_restrict_filenames = s.yt_restrict_filenames
+        dm.yt_trim_filenames = s.yt_trim_filenames
+        dm.yt_no_overwrites = s.yt_no_overwrites
+        dm.yt_playlist_start = s.yt_playlist_start
+        dm.yt_playlist_end = s.yt_playlist_end
+        dm.yt_playlist_items = s.yt_playlist_items.copy()
+        dm.yt_proxy = s.yt_proxy.copy()
+        dm.yt_geo_bypass = s.yt_geo_bypass
+        dm.yt_geo_bypass_country = s.yt_geo_bypass_country.copy()
+        dm.yt_extractor_retries = s.yt_extractor_retries
+        dm.yt_socket_timeout = s.yt_socket_timeout
+        dm.yt_username = s.yt_username.copy()
+        dm.yt_password = s.yt_password.copy()
+        dm.yt_netrc = s.yt_netrc
+        dm.yt_exec_cmd = s.yt_exec_cmd.copy()
+        dm.yt_ffmpeg_location = s.yt_ffmpeg_location.copy()
+        dm.yt_remove_sponsorblock = s.yt_remove_sponsorblock
+        dm.yt_sponsorblock_mark = s.yt_sponsorblock_mark.copy()
+        dm.yt_source_address = s.yt_source_address.copy()
+        dm.yt_legacy_server_connect = s.yt_legacy_server_connect
+        dm.yt_no_check_certificates = s.yt_no_check_certificates
+        dm.ffmpeg_video_codec = s.ffmpeg_video_codec.copy()
+        dm.ffmpeg_audio_codec = s.ffmpeg_audio_codec.copy()
+        dm.ffmpeg_audio_bitrate = s.ffmpeg_audio_bitrate.copy()
+        dm.bandwidth_limit_per = s.bandwidth_limit_per
+        dm.auto_rename_duplicates = s.auto_rename_duplicates
+        dm.move_completed_to = s.move_completed_to.copy()
+        dm.download_scheduler_enabled = s.download_scheduler_enabled
+        dm.download_scheduler_start = s.download_scheduler_start.copy()
+        dm.download_scheduler_end = s.download_scheduler_end.copy()
+        dm.clipboard_monitor = s.clipboard_monitor
         if(s.download_dir.size() > 0) {
             dm.download_dir = s.download_dir.copy()
         }
@@ -587,6 +729,50 @@ func settings_dir() : string {
             out.append_string(&s.theme)
             out.append_view("\n")
         }
+        // yt-dlp advanced settings
+        if(s.yt_output_template.size() > 0) { out.append_view("ytOutputTemplate:"); out.append_string(&s.yt_output_template); out.append_view("\n") }
+        if(s.yt_audio_format.size() > 0) { out.append_view("ytAudioFormat:"); out.append_string(&s.yt_audio_format); out.append_view("\n") }
+        if(s.yt_audio_quality > 0) { out.append_view("ytAudioQuality:"); out.append_integer(s.yt_audio_quality as bigint); out.append_view("\n") }
+        if(s.yt_recode_video.size() > 0) { out.append_view("ytRecodeVideo:"); out.append_string(&s.yt_recode_video); out.append_view("\n") }
+        if(s.yt_merge_output_format.size() > 0) { out.append_view("ytMergeOutputFormat:"); out.append_string(&s.yt_merge_output_format); out.append_view("\n") }
+        if(s.yt_write_subs) { out.append_view("ytWriteSubs:true\n") }
+        if(s.yt_write_auto_subs) { out.append_view("ytWriteAutoSubs:true\n") }
+        if(s.yt_sub_langs.size() > 0) { out.append_view("ytSubLangs:"); out.append_string(&s.yt_sub_langs); out.append_view("\n") }
+        if(s.yt_embed_subs) { out.append_view("ytEmbedSubs:true\n") }
+        if(s.yt_convert_subs.size() > 0) { out.append_view("ytConvertSubs:"); out.append_string(&s.yt_convert_subs); out.append_view("\n") }
+        if(s.yt_embed_metadata) { out.append_view("ytEmbedMetadata:true\n") }
+        if(s.yt_embed_thumbnail) { out.append_view("ytEmbedThumbnail:true\n") }
+        if(s.yt_write_description) { out.append_view("ytWriteDescription:true\n") }
+        if(s.yt_write_info_json) { out.append_view("ytWriteInfoJson:true\n") }
+        if(s.yt_write_comments) { out.append_view("ytWriteComments:true\n") }
+        if(s.yt_restrict_filenames) { out.append_view("ytRestrictFilenames:true\n") }
+        if(s.yt_trim_filenames > 0) { out.append_view("ytTrimFilenames:"); out.append_integer(s.yt_trim_filenames as bigint); out.append_view("\n") }
+        if(!s.yt_no_overwrites) { out.append_view("ytNoOverwrites:false\n") }
+        if(s.yt_playlist_start > 0) { out.append_view("ytPlaylistStart:"); out.append_integer(s.yt_playlist_start as bigint); out.append_view("\n") }
+        if(s.yt_playlist_end > 0) { out.append_view("ytPlaylistEnd:"); out.append_integer(s.yt_playlist_end as bigint); out.append_view("\n") }
+        if(s.yt_playlist_items.size() > 0) { out.append_view("ytPlaylistItems:"); out.append_string(&s.yt_playlist_items); out.append_view("\n") }
+        if(s.yt_proxy.size() > 0) { out.append_view("ytProxy:"); out.append_string(&s.yt_proxy); out.append_view("\n") }
+        if(s.yt_geo_bypass) { out.append_view("ytGeoBypass:true\n") }
+        if(s.yt_geo_bypass_country.size() > 0) { out.append_view("ytGeoBypassCountry:"); out.append_string(&s.yt_geo_bypass_country); out.append_view("\n") }
+        if(s.yt_extractor_retries != 3) { out.append_view("ytExtractorRetries:"); out.append_integer(s.yt_extractor_retries as bigint); out.append_view("\n") }
+        if(s.yt_socket_timeout != 30) { out.append_view("ytSocketTimeout:"); out.append_integer(s.yt_socket_timeout as bigint); out.append_view("\n") }
+        if(s.yt_username.size() > 0) { out.append_view("ytUsername:"); out.append_string(&s.yt_username); out.append_view("\n") }
+        if(s.yt_password.size() > 0) { out.append_view("ytPassword:"); out.append_string(&s.yt_password); out.append_view("\n") }
+        if(s.yt_netrc) { out.append_view("ytNetrc:true\n") }
+        if(s.yt_exec_cmd.size() > 0) { out.append_view("ytExecCmd:"); out.append_string(&s.yt_exec_cmd); out.append_view("\n") }
+        if(s.yt_ffmpeg_location.size() > 0) { out.append_view("ytFfmpegLocation:"); out.append_string(&s.yt_ffmpeg_location); out.append_view("\n") }
+        if(s.yt_remove_sponsorblock) { out.append_view("ytRemoveSponsorblock:true\n") }
+        if(s.yt_sponsorblock_mark.size() > 0) { out.append_view("ytSponsorblockMark:"); out.append_string(&s.yt_sponsorblock_mark); out.append_view("\n") }
+        if(s.yt_source_address.size() > 0) { out.append_view("ytSourceAddress:"); out.append_string(&s.yt_source_address); out.append_view("\n") }
+        if(s.yt_legacy_server_connect) { out.append_view("ytLegacyServerConnect:true\n") }
+        if(s.yt_no_check_certificates) { out.append_view("ytNoCheckCertificates:true\n") }
+        if(s.ffmpeg_video_codec.size() > 0) { out.append_view("ffmpegVideoCodec:"); out.append_string(&s.ffmpeg_video_codec); out.append_view("\n") }
+        if(s.ffmpeg_audio_codec.size() > 0) { out.append_view("ffmpegAudioCodec:"); out.append_string(&s.ffmpeg_audio_codec); out.append_view("\n") }
+        if(s.ffmpeg_audio_bitrate.size() > 0) { out.append_view("ffmpegAudioBitrate:"); out.append_string(&s.ffmpeg_audio_bitrate); out.append_view("\n") }
+        if(s.bandwidth_limit_per > 0) { out.append_view("bandwidthLimitPer:"); out.append_integer(s.bandwidth_limit_per); out.append_view("\n") }
+        if(s.auto_rename_duplicates) { out.append_view("autoRenameDuplicates:true\n") }
+        if(s.move_completed_to.size() > 0) { out.append_view("moveCompletedTo:"); out.append_string(&s.move_completed_to); out.append_view("\n") }
+        if(s.clipboard_monitor) { out.append_view("clipboardMonitor:true\n") }
         return out
     }
 
@@ -671,6 +857,50 @@ func settings_dir() : string {
                 if(n >= 0) { s.max_history = n }
             }
             else if(kh == comptime_fnv1_hash("theme")) { s.theme = val.copy() }
+            // yt-dlp advanced
+            else if(kh == comptime_fnv1_hash("ytOutputTemplate")) { s.yt_output_template = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytAudioFormat")) { s.yt_audio_format = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytAudioQuality")) { var n = parse_int_opt(val.data()); if(n >= 0) { s.yt_audio_quality = n } }
+            else if(kh == comptime_fnv1_hash("ytRecodeVideo")) { s.yt_recode_video = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytMergeOutputFormat")) { s.yt_merge_output_format = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytWriteSubs")) { s.yt_write_subs = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytWriteAutoSubs")) { s.yt_write_auto_subs = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytSubLangs")) { s.yt_sub_langs = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytEmbedSubs")) { s.yt_embed_subs = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytConvertSubs")) { s.yt_convert_subs = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytEmbedMetadata")) { s.yt_embed_metadata = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytEmbedThumbnail")) { s.yt_embed_thumbnail = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytWriteDescription")) { s.yt_write_description = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytWriteInfoJson")) { s.yt_write_info_json = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytWriteComments")) { s.yt_write_comments = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytRestrictFilenames")) { s.yt_restrict_filenames = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytTrimFilenames")) { var n = parse_int_opt(val.data()); if(n >= 0) { s.yt_trim_filenames = n } }
+            else if(kh == comptime_fnv1_hash("ytNoOverwrites")) { s.yt_no_overwrites = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytPlaylistStart")) { var n = parse_int_opt(val.data()); if(n >= 0) { s.yt_playlist_start = n } }
+            else if(kh == comptime_fnv1_hash("ytPlaylistEnd")) { var n = parse_int_opt(val.data()); if(n >= 0) { s.yt_playlist_end = n } }
+            else if(kh == comptime_fnv1_hash("ytPlaylistItems")) { s.yt_playlist_items = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytProxy")) { s.yt_proxy = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytGeoBypass")) { s.yt_geo_bypass = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytGeoBypassCountry")) { s.yt_geo_bypass_country = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytExtractorRetries")) { var n = parse_int_opt(val.data()); if(n >= 0) { s.yt_extractor_retries = n } }
+            else if(kh == comptime_fnv1_hash("ytSocketTimeout")) { var n = parse_int_opt(val.data()); if(n >= 0) { s.yt_socket_timeout = n } }
+            else if(kh == comptime_fnv1_hash("ytUsername")) { s.yt_username = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytPassword")) { s.yt_password = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytNetrc")) { s.yt_netrc = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytExecCmd")) { s.yt_exec_cmd = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytFfmpegLocation")) { s.yt_ffmpeg_location = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytRemoveSponsorblock")) { s.yt_remove_sponsorblock = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytSponsorblockMark")) { s.yt_sponsorblock_mark = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytSourceAddress")) { s.yt_source_address = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytLegacyServerConnect")) { s.yt_legacy_server_connect = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytNoCheckCertificates")) { s.yt_no_check_certificates = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ffmpegVideoCodec")) { s.ffmpeg_video_codec = val.copy() }
+            else if(kh == comptime_fnv1_hash("ffmpegAudioCodec")) { s.ffmpeg_audio_codec = val.copy() }
+            else if(kh == comptime_fnv1_hash("ffmpegAudioBitrate")) { s.ffmpeg_audio_bitrate = val.copy() }
+            else if(kh == comptime_fnv1_hash("bandwidthLimitPer")) { var n = parse_i64_from_view(string_view::make_view(&val)); if(n >= 0) { s.bandwidth_limit_per = n } }
+            else if(kh == comptime_fnv1_hash("autoRenameDuplicates")) { s.auto_rename_duplicates = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("moveCompletedTo")) { s.move_completed_to = val.copy() }
+            else if(kh == comptime_fnv1_hash("clipboardMonitor")) { s.clipboard_monitor = parse_bool(&val) }
         }
         return s
     }

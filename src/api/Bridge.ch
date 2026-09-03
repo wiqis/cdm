@@ -243,6 +243,44 @@ using std::Result;
         out.append_string(&string::make_no_len(",\"theme\": "))
         var th_s = json_string(string_view::make_view(&dm.theme))
         out.append_string(&th_s)
+        // yt-dlp advanced
+        out.append_string(&string::make_no_len(",\"yt_output_template\": \"")); var yt_out_s = json_string(string_view::make_view(&dm.yt_output_template)); out.append_string(&yt_out_s)
+        out.append_string(&string::make_no_len(",\"yt_audio_format\": \"")); var yt_af_s = json_string(string_view::make_view(&dm.yt_audio_format)); out.append_string(&yt_af_s)
+        out.append_string(&string::make_no_len(",\"yt_audio_quality\": \"")); out.append_integer(dm.yt_audio_quality as bigint)
+        out.append_string(&string::make_no_len(",\"yt_recode_video\": \"")); var yt_rv_s = json_string(string_view::make_view(&dm.yt_recode_video)); out.append_string(&yt_rv_s)
+        out.append_string(&string::make_no_len(",\"yt_merge_output_format\": \"")); var yt_mof_s = json_string(string_view::make_view(&dm.yt_merge_output_format)); out.append_string(&yt_mof_s)
+        out.append_string(&string::make_no_len(",\"yt_write_subs\": \"")); if(dm.yt_write_subs) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_write_auto_subs\": \"")); if(dm.yt_write_auto_subs) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_sub_langs\": \"")); var yt_sl_s = json_string(string_view::make_view(&dm.yt_sub_langs)); out.append_string(&yt_sl_s)
+        out.append_string(&string::make_no_len(",\"yt_embed_subs\": \"")); if(dm.yt_embed_subs) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_convert_subs\": \"")); var yt_cs_s = json_string(string_view::make_view(&dm.yt_convert_subs)); out.append_string(&yt_cs_s)
+        out.append_string(&string::make_no_len(",\"yt_embed_metadata\": \"")); if(dm.yt_embed_metadata) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_embed_thumbnail\": \"")); if(dm.yt_embed_thumbnail) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_write_description\": \"")); if(dm.yt_write_description) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_write_info_json\": \"")); if(dm.yt_write_info_json) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_restrict_filenames\": \"")); if(dm.yt_restrict_filenames) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_trim_filenames\": \"")); out.append_integer(dm.yt_trim_filenames as bigint)
+        out.append_string(&string::make_no_len(",\"yt_no_overwrites\": \"")); if(dm.yt_no_overwrites) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_playlist_start\": \"")); out.append_integer(dm.yt_playlist_start as bigint)
+        out.append_string(&string::make_no_len(",\"yt_playlist_end\": \"")); out.append_integer(dm.yt_playlist_end as bigint)
+        out.append_string(&string::make_no_len(",\"yt_proxy\": \"")); var yt_px_s = json_string(string_view::make_view(&dm.yt_proxy)); out.append_string(&yt_px_s)
+        out.append_string(&string::make_no_len(",\"yt_geo_bypass\": \"")); if(dm.yt_geo_bypass) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_geo_bypass_country\": \"")); var yt_gc_s = json_string(string_view::make_view(&dm.yt_geo_bypass_country)); out.append_string(&yt_gc_s)
+        out.append_string(&string::make_no_len(",\"yt_extractor_retries\": \"")); out.append_integer(dm.yt_extractor_retries as bigint)
+        out.append_string(&string::make_no_len(",\"yt_socket_timeout\": \"")); out.append_integer(dm.yt_socket_timeout as bigint)
+        out.append_string(&string::make_no_len(",\"yt_exec_cmd\": \"")); var yt_ec_s = json_string(string_view::make_view(&dm.yt_exec_cmd)); out.append_string(&yt_ec_s)
+        out.append_string(&string::make_no_len(",\"yt_ffmpeg_location\": \"")); var yt_fl_s = json_string(string_view::make_view(&dm.yt_ffmpeg_location)); out.append_string(&yt_fl_s)
+        out.append_string(&string::make_no_len(",\"yt_remove_sponsorblock\": \"")); if(dm.yt_remove_sponsorblock) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_source_address\": \"")); var yt_sa_s = json_string(string_view::make_view(&dm.yt_source_address)); out.append_string(&yt_sa_s)
+        out.append_string(&string::make_no_len(",\"yt_legacy_server_connect\": \"")); if(dm.yt_legacy_server_connect) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_no_check_certificates\": \"")); if(dm.yt_no_check_certificates) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"ffmpeg_video_codec\": \"")); var ff_vc_s = json_string(string_view::make_view(&dm.ffmpeg_video_codec)); out.append_string(&ff_vc_s)
+        out.append_string(&string::make_no_len(",\"ffmpeg_audio_codec\": \"")); var ff_ac_s = json_string(string_view::make_view(&dm.ffmpeg_audio_codec)); out.append_string(&ff_ac_s)
+        out.append_string(&string::make_no_len(",\"ffmpeg_audio_bitrate\": \"")); var ff_ab_s = json_string(string_view::make_view(&dm.ffmpeg_audio_bitrate)); out.append_string(&ff_ab_s)
+        out.append_string(&string::make_no_len(",\"bandwidth_limit_per\": \"")); out.append_integer(dm.bandwidth_limit_per)
+        out.append_string(&string::make_no_len(",\"auto_rename_duplicates\": \"")); if(dm.auto_rename_duplicates) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"move_completed_to\": \"")); var mct_s = json_string(string_view::make_view(&dm.move_completed_to)); out.append_string(&mct_s)
+        out.append_string(&string::make_no_len(",\"clipboard_monitor\": \"")); if(dm.clipboard_monitor) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append('}')
         return out
     }

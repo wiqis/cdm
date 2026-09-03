@@ -236,7 +236,44 @@
             notifications_enabled: settings.notifications_enabled !== false,
             language: settings.language || "",
             max_history: settings.max_history || 1000,
-            theme: settings.theme || "auto"
+            theme: settings.theme || "auto",
+            yt_output_template: settings.yt_output_template || "",
+            yt_audio_format: settings.yt_audio_format || "",
+            yt_audio_quality: settings.yt_audio_quality || 0,
+            yt_recode_video: settings.yt_recode_video || "",
+            yt_merge_output_format: settings.yt_merge_output_format || "mp4",
+            yt_write_subs: settings.yt_write_subs || false,
+            yt_write_auto_subs: settings.yt_write_auto_subs || false,
+            yt_sub_langs: settings.yt_sub_langs || "en",
+            yt_embed_subs: settings.yt_embed_subs || false,
+            yt_convert_subs: settings.yt_convert_subs || "",
+            yt_embed_metadata: settings.yt_embed_metadata !== false,
+            yt_embed_thumbnail: settings.yt_embed_thumbnail || false,
+            yt_write_description: settings.yt_write_description || false,
+            yt_write_info_json: settings.yt_write_info_json || false,
+            yt_write_comments: settings.yt_write_comments || false,
+            yt_restrict_filenames: settings.yt_restrict_filenames || false,
+            yt_trim_filenames: settings.yt_trim_filenames || 0,
+            yt_no_overwrites: settings.yt_no_overwrites !== false,
+            yt_proxy: settings.yt_proxy || "",
+            yt_geo_bypass: settings.yt_geo_bypass || false,
+            yt_geo_bypass_country: settings.yt_geo_bypass_country || "",
+            yt_extractor_retries: settings.yt_extractor_retries || 3,
+            yt_socket_timeout: settings.yt_socket_timeout || 30,
+            yt_exec_cmd: settings.yt_exec_cmd || "",
+            yt_ffmpeg_location: settings.yt_ffmpeg_location || "",
+            yt_remove_sponsorblock: settings.yt_remove_sponsorblock || false,
+            yt_sponsorblock_mark: settings.yt_sponsorblock_mark || "",
+            yt_source_address: settings.yt_source_address || "",
+            yt_legacy_server_connect: settings.yt_legacy_server_connect || false,
+            yt_no_check_certificates: settings.yt_no_check_certificates || false,
+            ffmpeg_video_codec: settings.ffmpeg_video_codec || "",
+            ffmpeg_audio_codec: settings.ffmpeg_audio_codec || "",
+            ffmpeg_audio_bitrate: settings.ffmpeg_audio_bitrate || "",
+            bandwidth_limit_per: settings.bandwidth_limit_per || 0,
+            auto_rename_duplicates: settings.auto_rename_duplicates || false,
+            move_completed_to: settings.move_completed_to || "",
+            clipboard_monitor: settings.clipboard_monitor || false
         }
         call("settings_set", body)
         alert = "Settings saved"
@@ -1197,6 +1234,261 @@
                             <input type="number" min="0" value={settings.yt_max_playlist_items || 0}
                                 onChange={(e) => { settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} />
                         </label>
+
+                        <div class="cdm-section-header">YouTube Advanced</div>
+
+                        <label>Output template (yt-dlp format)
+                            <input type="text" value={settings.yt_output_template || ""}
+                                placeholder="%(title)s.%(ext)s"
+                                onChange={(e) => { settings.yt_output_template = e.target.value }} />
+                        </label>
+                        <label>Merge output format
+                            <select value={settings.yt_merge_output_format || "mp4"}
+                                onChange={(e) => { settings.yt_merge_output_format = e.target.value }}>
+                                <option value="mp4">MP4</option>
+                                <option value="mkv">MKV</option>
+                                <option value="webm">WebM</option>
+                                <option value="avi">AVI</option>
+                            </select>
+                        </label>
+                        <label>Recode video to
+                            <select value={settings.yt_recode_video || ""}
+                                onChange={(e) => { settings.yt_recode_video = e.target.value }}>
+                                <option value="">Don't recode</option>
+                                <option value="mp4">MP4</option>
+                                <option value="mkv">MKV</option>
+                                <option value="webm">WebM</option>
+                            </select>
+                        </label>
+                        <label>Audio extraction format
+                            <select value={settings.yt_audio_format || ""}
+                                onChange={(e) => { settings.yt_audio_format = e.target.value }}>
+                                <option value="">None</option>
+                                <option value="mp3">MP3</option>
+                                <option value="aac">AAC</option>
+                                <option value="flac">FLAC</option>
+                                <option value="opus">Opus</option>
+                                <option value="vorbis">Vorbis</option>
+                            </select>
+                        </label>
+                        <label>Audio quality (0=best, 10=worst)
+                            <input type="number" min="0" max="10" value={settings.yt_audio_quality || 0}
+                                onChange={(e) => { settings.yt_audio_quality = parseInt(e.target.value) || 0 }} />
+                        </label>
+
+                        <div class="cdm-section-header">Subtitles & Metadata</div>
+
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_subs || false}
+                                    onChange={(e) => { settings.yt_write_subs = e.target.checked }} />
+                                Download subtitles
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_auto_subs || false}
+                                    onChange={(e) => { settings.yt_write_auto_subs = e.target.checked }} />
+                                Download auto-generated subtitles
+                            </label>
+                        </div>
+                        <label>Subtitle languages
+                            <input type="text" value={settings.yt_sub_langs || "en"}
+                                placeholder="en,ja,es"
+                                onChange={(e) => { settings.yt_sub_langs = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_embed_subs || false}
+                                    onChange={(e) => { settings.yt_embed_subs = e.target.checked }} />
+                                Embed subtitles in video
+                            </label>
+                        </div>
+                        <label>Convert subtitles to
+                            <select value={settings.yt_convert_subs || ""}
+                                onChange={(e) => { settings.yt_convert_subs = e.target.value }}>
+                                <option value="">No conversion</option>
+                                <option value="srt">SRT</option>
+                                <option value="vtt">VTT</option>
+                                <option value="ass">ASS</option>
+                            </select>
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_embed_metadata !== false}
+                                    onChange={(e) => { settings.yt_embed_metadata = e.target.checked }} />
+                                Embed metadata
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_embed_thumbnail || false}
+                                    onChange={(e) => { settings.yt_embed_thumbnail = e.target.checked }} />
+                                Embed thumbnail as cover art
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_description || false}
+                                    onChange={(e) => { settings.yt_write_description = e.target.checked }} />
+                                Write description file
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_info_json || false}
+                                    onChange={(e) => { settings.yt_write_info_json = e.target.checked }} />
+                                Write info.json file
+                            </label>
+                        </div>
+
+                        <div class="cdm-section-header">Playlist Control</div>
+
+                        <label>Playlist start index (1-based)
+                            <input type="number" min="1" value={settings.yt_playlist_start || 0}
+                                placeholder="0 = from start"
+                                onChange={(e) => { settings.yt_playlist_start = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Playlist end index (0 = all)
+                            <input type="number" min="0" value={settings.yt_playlist_end || 0}
+                                placeholder="0 = all"
+                                onChange={(e) => { settings.yt_playlist_end = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Playlist items (e.g. 1,2,5-10)
+                            <input type="text" value={settings.yt_playlist_items || ""}
+                                placeholder=""
+                                onChange={(e) => { settings.yt_playlist_items = e.target.value }} />
+                        </label>
+
+                        <div class="cdm-section-header">Network</div>
+
+                        <label>Proxy (socks5://host:port)
+                            <input type="text" value={settings.yt_proxy || ""}
+                                placeholder="socks5://127.0.0.1:1080"
+                                onChange={(e) => { settings.yt_proxy = e.target.value }} />
+                        </label>
+                        <label>Source IP address
+                            <input type="text" value={settings.yt_source_address || ""}
+                                placeholder="Auto"
+                                onChange={(e) => { settings.yt_source_address = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_geo_bypass || false}
+                                    onChange={(e) => { settings.yt_geo_bypass = e.target.checked }} />
+                                Geo-restriction bypass
+                            </label>
+                        </div>
+                        <label>Geo-bypass country code
+                            <input type="text" value={settings.yt_geo_bypass_country || ""}
+                                placeholder="US"
+                                onChange={(e) => { settings.yt_geo_bypass_country = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_no_check_certificates || false}
+                                    onChange={(e) => { settings.yt_no_check_certificates = e.target.checked }} />
+                                Skip SSL certificate verification
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_legacy_server_connect || false}
+                                    onChange={(e) => { settings.yt_legacy_server_connect = e.target.checked }} />
+                                Legacy SSL connections
+                            </label>
+                        </div>
+                        <label>Socket timeout (seconds)
+                            <input type="number" min="1" value={settings.yt_socket_timeout || 30}
+                                onChange={(e) => { settings.yt_socket_timeout = parseInt(e.target.value) || 30 }} />
+                        </label>
+                        <label>Extractor retries
+                            <input type="number" min="0" value={settings.yt_extractor_retries || 3}
+                                onChange={(e) => { settings.yt_extractor_retries = parseInt(e.target.value) || 3 }} />
+                        </label>
+
+                        <div class="cdm-section-header">Post-Processing</div>
+
+                        <label>Video codec
+                            <select value={settings.ffmpeg_video_codec || ""}
+                                onChange={(e) => { settings.ffmpeg_video_codec = e.target.value }}>
+                                <option value="">Default (copy)</option>
+                                <option value="h264">H.264</option>
+                                <option value="h265">H.265/HEVC</option>
+                                <option value="vp9">VP9</option>
+                                <option value="av1">AV1</option>
+                            </select>
+                        </label>
+                        <label>Audio codec
+                            <select value={settings.ffmpeg_audio_codec || ""}
+                                onChange={(e) => { settings.ffmpeg_audio_codec = e.target.value }}>
+                                <option value="">Default (copy)</option>
+                                <option value="aac">AAC</option>
+                                <option value="mp3">MP3</option>
+                                <option value="opus">Opus</option>
+                            </select>
+                        </label>
+                        <label>Audio bitrate
+                            <select value={settings.ffmpeg_audio_bitrate || ""}
+                                onChange={(e) => { settings.ffmpeg_audio_bitrate = e.target.value }}>
+                                <option value="">Default</option>
+                                <option value="128K">128K</option>
+                                <option value="192K">192K</option>
+                                <option value="256K">256K</option>
+                                <option value="320K">320K</option>
+                            </select>
+                        </label>
+                        <label>Custom ffmpeg path
+                            <input type="text" value={settings.yt_ffmpeg_location || ""}
+                                placeholder="/usr/bin/ffmpeg"
+                                onChange={(e) => { settings.yt_ffmpeg_location = e.target.value }} />
+                        </label>
+                        <label>Post-download command
+                            <input type="text" value={settings.yt_exec_cmd || ""}
+                                placeholder="mpv {}"
+                                onChange={(e) => { settings.yt_exec_cmd = e.target.value }} />
+                        </label>
+
+                        <div class="cdm-section-header">Sponsorblock</div>
+
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_remove_sponsorblock || false}
+                                    onChange={(e) => { settings.yt_remove_sponsorblock = e.target.checked }} />
+                                Remove sponsor segments
+                            </label>
+                        </div>
+                        <label>Mark sponsor segments (colors)
+                            <input type="text" value={settings.yt_sponsorblock_mark || ""}
+                                placeholder="sponsor,intro,outro"
+                                onChange={(e) => { settings.yt_sponsorblock_mark = e.target.value }} />
+                        </label>
+
+                        <div class="cdm-section-header">Download Management</div>
+
+                        <label>Per-download speed limit (KB/s, 0=unlimited)
+                            <input type="number" min="0" value={settings.bandwidth_limit_per || 0}
+                                onChange={(e) => { settings.bandwidth_limit_per = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Move completed files to
+                            <input type="text" value={settings.move_completed_to || ""}
+                                placeholder="Leave in download folder"
+                                onChange={(e) => { settings.move_completed_to = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.auto_rename_duplicates || false}
+                                    onChange={(e) => { settings.auto_rename_duplicates = e.target.checked }} />
+                                Auto-rename duplicates
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.clipboard_monitor || false}
+                                    onChange={(e) => { settings.clipboard_monitor = e.target.checked }} />
+                                Monitor clipboard for URLs
+                            </label>
+                        </div>
 
                         <div class="cdm-section-header">Appearance</div>
 
