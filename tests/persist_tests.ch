@@ -906,13 +906,18 @@ public func CDM_persist_yt_links_atomic(env : &mut TestEnv) {
         cdm::g_yt_links.push_back(rec)
     }
 
-    // Ensure the settings directory exists (save_yt_links doesn't create it).
+    // Ensure the settings directory exists.
     var ypath = cdm::yt_links_file()
     var last_slash : usize = 0
     for(var i = 0u; i < ypath.size(); i++) {
         if(ypath.get(i) == '/') { last_slash = i }
     }
-    if(last_slash > 0u) { fs::create_dir_all(ypath.substring(0u, last_slash).data()) }
+    if(last_slash > 0u) {
+        var dir_path = ypath.substring(0u, last_slash)
+        var mkdir_cmd = string::make_no_len("mkdir -p ")
+        mkdir_cmd.append_string(&dir_path)
+        system(mkdir_cmd.data())
+    }
 
     // Save — should be atomic (tmp + rename).
     cdm::save_yt_links()
@@ -994,7 +999,12 @@ public func CDM_persist_yt_links_overwrite(env : &mut TestEnv) {
     for(var i2 = 0u; i2 < ypath2.size(); i2++) {
         if(ypath2.get(i2) == '/') { ls2 = i2 }
     }
-    if(ls2 > 0u) { fs::create_dir_all(ypath2.substring(0u, ls2).data()) }
+    if(ls2 > 0u) {
+        var dir2 = ypath2.substring(0u, ls2)
+        var mk_cmd2 = string::make_no_len("mkdir -p ")
+        mk_cmd2.append_string(&dir2)
+        system(mk_cmd2.data())
+    }
     cdm::save_yt_links()
 
     // Overwrite with 1 record.

@@ -188,9 +188,35 @@ using std::Result;
         out.append_string(&string::make_no_len(",\"auto_resume_failed\":"))
         if(dm.auto_resume_failed) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"max_retries\":"))
-        out.append_integer(dm.retry_policy.max_retries as bigint)
-        out.append_string(&string::make_no_len(",\"retry_delay_ms\":"))
+        out.append_integer(dm.retry_policy.max_retries as bigint)        out.append_string(&string::make_no_len(",\"retry_delay_ms\": "))
         out.append_integer(dm.retry_policy.delay_ms as bigint)
+        out.append_string(&string::make_no_len(",\"user_agent\": "))
+        var ua_s = json_string(string_view::make_view(&dm.user_agent))
+        out.append_string(&ua_s)
+        out.append_string(&string::make_no_len(",\"cookie_file\": "))
+        var ck_s = json_string(string_view::make_view(&dm.cookie_file))
+        out.append_string(&ck_s)
+        out.append_string(&string::make_no_len(",\"verify_ssl\": "))
+        if(dm.verify_ssl) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"connect_timeout\": "))
+        out.append_integer(dm.connect_timeout as bigint)
+        out.append_string(&string::make_no_len(",\"max_download_size\": "))
+        out.append_integer(dm.max_download_size as bigint)
+        out.append_string(&string::make_no_len(",\"min_disk_space_mb\": "))
+        out.append_integer(dm.min_disk_space_mb as bigint)
+        out.append_string(&string::make_no_len(",\"post_download_cmd\": "))
+        var pdc_s = json_string(string_view::make_view(&dm.post_download_cmd))
+        out.append_string(&pdc_s)
+        out.append_string(&string::make_no_len(",\"yt_quality\": "))
+        var yq_s = json_string(string_view::make_view(&dm.yt_quality))
+        out.append_string(&yq_s)
+        out.append_string(&string::make_no_len(",\"yt_format\": "))
+        var yf_s = json_string(string_view::make_view(&dm.yt_format))
+        out.append_string(&yf_s)
+        out.append_string(&string::make_no_len(",\"yt_audio_only\": "))
+        if(dm.yt_audio_only) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_max_playlist_items\": "))
+        out.append_integer(dm.yt_max_playlist_items as bigint)
         out.append('}')
         return out
     }
@@ -410,6 +436,29 @@ using std::Result;
             dm.auto_resume_failed = auto_res
             dm.retry_policy.max_retries = retries
             if(delay >= 0) { dm.retry_policy.delay_ms = delay as i64 }
+            // New power-user settings.
+            var ua = json_field(args, string_view::make_no_len("user_agent"))
+            var ck = json_field(args, string_view::make_no_len("cookie_file"))
+            var vssl = json_bool_field(args, string_view::make_no_len("verify_ssl"), dm.verify_ssl)
+            var cto = json_int_field(args, string_view::make_no_len("connect_timeout"), dm.connect_timeout)
+            var maxdl = json_int_field(args, string_view::make_no_len("max_download_size"), dm.max_download_size as int)
+            var minds = json_int_field(args, string_view::make_no_len("min_disk_space_mb"), dm.min_disk_space_mb)
+            var postcmd = json_field(args, string_view::make_no_len("post_download_cmd"))
+            var yq = json_field(args, string_view::make_no_len("yt_quality"))
+            var yf = json_field(args, string_view::make_no_len("yt_format"))
+            var ya = json_bool_field(args, string_view::make_no_len("yt_audio_only"), dm.yt_audio_only)
+            var ypl = json_int_field(args, string_view::make_no_len("yt_max_playlist_items"), dm.yt_max_playlist_items)
+            if(ua.size() > 0) { dm.user_agent = ua.copy() }
+            if(ck.size() > 0) { dm.cookie_file = ck.copy() }
+            dm.verify_ssl = vssl
+            if(cto > 0) { dm.connect_timeout = cto }
+            if(maxdl >= 0) { dm.max_download_size = maxdl as i64 }
+            if(minds >= 0) { dm.min_disk_space_mb = minds }
+            if(postcmd.size() > 0) { dm.post_download_cmd = postcmd.copy() }
+            if(yq.size() > 0) { dm.yt_quality = yq.copy() }
+            if(yf.size() > 0) { dm.yt_format = yf.copy() }
+            dm.yt_audio_only = ya
+            if(ypl >= 0) { dm.yt_max_playlist_items = ypl }
             // Persist the settings for next launch.
             var settings = CdmSettings()
             settings.download_dir = dm.download_dir.copy()
@@ -422,6 +471,17 @@ using std::Result;
             settings.auto_resume_failed = dm.auto_resume_failed
             settings.max_retries = dm.retry_policy.max_retries
             settings.retry_delay_ms = dm.retry_policy.delay_ms
+            settings.user_agent = dm.user_agent.copy()
+            settings.cookie_file = dm.cookie_file.copy()
+            settings.verify_ssl = dm.verify_ssl
+            settings.connect_timeout = dm.connect_timeout
+            settings.max_download_size = dm.max_download_size
+            settings.min_disk_space_mb = dm.min_disk_space_mb
+            settings.post_download_cmd = dm.post_download_cmd.copy()
+            settings.yt_quality = dm.yt_quality.copy()
+            settings.yt_format = dm.yt_format.copy()
+            settings.yt_audio_only = dm.yt_audio_only
+            settings.yt_max_playlist_items = dm.yt_max_playlist_items
             save_settings(&settings)
             return ok_json()
         }

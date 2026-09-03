@@ -35,6 +35,23 @@ using std::ordered_map;
         var max_retries : int
         var retry_delay_ms : i64
         var temporary_folder : string
+        var user_agent : string
+        var cookie_file : string
+        var verify_ssl : bool
+        var connect_timeout : int
+        var max_download_size : i64          // 0 = unlimited
+        var min_disk_space_mb : int          // 0 = unchecked
+        var post_download_cmd : string
+        var yt_quality : string              // e.g. "best", "worst", "720", "1080"
+        var yt_format : string               // e.g. "video+audio", "bestvideo", "bestaudio"
+        var yt_audio_only : bool
+        var yt_max_playlist_items : int      // 0 = unlimited
+        var referer_header : string
+        var auth_header : string
+        var force_ipv4 : bool
+        var force_ipv6 : bool
+        var filename_template : string       // e.g. "{title}.{ext}"
+        var checksum : string                // e.g. "md5:abc123" or "sha256:..."
 
         @constructor func constructor() {
             return CdmSettings {
@@ -57,7 +74,24 @@ using std::ordered_map;
                 auto_resume_failed = false,
                 max_retries = DEFAULT_MAX_RETRIES,
                 retry_delay_ms = DEFAULT_RETRY_DELAY_MS,
-                temporary_folder = string()
+                temporary_folder = string(),
+                user_agent = string(),
+                cookie_file = string(),
+                verify_ssl = true,
+                connect_timeout = SOCKET_TIMEOUT_SECS,
+                max_download_size = 0,
+                min_disk_space_mb = 0,
+                post_download_cmd = string(),
+                yt_quality = string(),
+                yt_format = string(),
+                yt_audio_only = false,
+                yt_max_playlist_items = 0,
+                referer_header = string(),
+                auth_header = string(),
+                force_ipv4 = false,
+                force_ipv6 = false,
+                filename_template = string(),
+                checksum = string()
             }
         }
 
@@ -351,6 +385,35 @@ func settings_dir() : string {
             else if(kh == comptime_fnv1_hash("categoryCompressed")) {
                 out.category_dirs.insert(string::make_no_len("compressed"), val.copy())
             }
+            else if(kh == comptime_fnv1_hash("userAgent")) { out.user_agent = val.copy() }
+            else if(kh == comptime_fnv1_hash("cookieFile")) { out.cookie_file = val.copy() }
+            else if(kh == comptime_fnv1_hash("verifySsl")) { out.verify_ssl = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("connectTimeout")) {
+                var n = parse_int_opt(val.data())
+                if(n > 0) { out.connect_timeout = n }
+            }
+            else if(kh == comptime_fnv1_hash("maxDownloadSize")) {
+                var n = parse_i64_from_view(string_view::make_view(&val))
+                if(n >= 0) { out.max_download_size = n }
+            }
+            else if(kh == comptime_fnv1_hash("minDiskSpaceMb")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { out.min_disk_space_mb = n }
+            }
+            else if(kh == comptime_fnv1_hash("postDownloadCmd")) { out.post_download_cmd = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytQuality")) { out.yt_quality = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytFormat")) { out.yt_format = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytAudioOnly")) { out.yt_audio_only = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytMaxPlaylistItems")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { out.yt_max_playlist_items = n }
+            }
+            else if(kh == comptime_fnv1_hash("refererHeader")) { out.referer_header = val.copy() }
+            else if(kh == comptime_fnv1_hash("authHeader")) { out.auth_header = val.copy() }
+            else if(kh == comptime_fnv1_hash("forceIpv4")) { out.force_ipv4 = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("forceIpv6")) { out.force_ipv6 = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("filenameTemplate")) { out.filename_template = val.copy() }
+            else if(kh == comptime_fnv1_hash("checksum")) { out.checksum = val.copy() }
         }
         return true
     }
@@ -370,9 +433,27 @@ func settings_dir() : string {
         dm.auto_resume_failed = s.auto_resume_failed
         dm.retry_policy.max_retries = s.max_retries
         dm.retry_policy.delay_ms = s.retry_delay_ms
+        dm.user_agent = s.user_agent.copy()
+        dm.cookie_file = s.cookie_file.copy()
+        dm.verify_ssl = s.verify_ssl
+        dm.connect_timeout = s.connect_timeout
+        dm.max_download_size = s.max_download_size
+        dm.min_disk_space_mb = s.min_disk_space_mb
+        dm.post_download_cmd = s.post_download_cmd.copy()
+        dm.yt_quality = s.yt_quality.copy()
+        dm.yt_format = s.yt_format.copy()
+        dm.yt_audio_only = s.yt_audio_only
+        dm.yt_max_playlist_items = s.yt_max_playlist_items
+        dm.referer_header = s.referer_header.copy()
+        dm.auth_header = s.auth_header.copy()
+        dm.force_ipv4 = s.force_ipv4
+        dm.force_ipv6 = s.force_ipv6
+        dm.filename_template = s.filename_template.copy()
+        dm.checksum = s.checksum.copy()
         if(s.download_dir.size() > 0) {
             dm.download_dir = s.download_dir.copy()
         }
+        // HTTP options are now passed through TaskRuntime, not globals.
     }
 
     // In-memory serialization (no filesystem I/O). Used by tests to verify
@@ -408,6 +489,77 @@ func settings_dir() : string {
         out.append_view("retryDelayMs:")
         out.append_integer(s.retry_delay_ms as bigint)
         out.append_view("\n")
+        if(s.user_agent.size() > 0) {
+            out.append_view("userAgent:")
+            out.append_string(&s.user_agent)
+            out.append_view("\n")
+        }
+        if(s.cookie_file.size() > 0) {
+            out.append_view("cookieFile:")
+            out.append_string(&s.cookie_file)
+            out.append_view("\n")
+        }
+        out.append_view("verifySsl:")
+        if(s.verify_ssl) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("connectTimeout:")
+        out.append_integer(s.connect_timeout as bigint)
+        out.append_view("\n")
+        if(s.max_download_size > 0) {
+            out.append_view("maxDownloadSize:")
+            out.append_integer(s.max_download_size as bigint)
+            out.append_view("\n")
+        }
+        if(s.min_disk_space_mb > 0) {
+            out.append_view("minDiskSpaceMb:")
+            out.append_integer(s.min_disk_space_mb as bigint)
+            out.append_view("\n")
+        }
+        if(s.post_download_cmd.size() > 0) {
+            out.append_view("postDownloadCmd:")
+            out.append_string(&s.post_download_cmd)
+            out.append_view("\n")
+        }
+        if(s.yt_quality.size() > 0) {
+            out.append_view("ytQuality:")
+            out.append_string(&s.yt_quality)
+            out.append_view("\n")
+        }
+        if(s.yt_format.size() > 0) {
+            out.append_view("ytFormat:")
+            out.append_string(&s.yt_format)
+            out.append_view("\n")
+        }
+        out.append_view("ytAudioOnly:")
+        if(s.yt_audio_only) { out.append_view("true\n") } else { out.append_view("false\n") }
+        if(s.yt_max_playlist_items > 0) {
+            out.append_view("ytMaxPlaylistItems:")
+            out.append_integer(s.yt_max_playlist_items as bigint)
+            out.append_view("\n")
+        }
+        if(s.referer_header.size() > 0) {
+            out.append_view("refererHeader:")
+            out.append_string(&s.referer_header)
+            out.append_view("\n")
+        }
+        if(s.auth_header.size() > 0) {
+            out.append_view("authHeader:")
+            out.append_string(&s.auth_header)
+            out.append_view("\n")
+        }
+        out.append_view("forceIpv4:")
+        if(s.force_ipv4) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("forceIpv6:")
+        if(s.force_ipv6) { out.append_view("true\n") } else { out.append_view("false\n") }
+        if(s.filename_template.size() > 0) {
+            out.append_view("filenameTemplate:")
+            out.append_string(&s.filename_template)
+            out.append_view("\n")
+        }
+        if(s.checksum.size() > 0) {
+            out.append_view("checksum:")
+            out.append_string(&s.checksum)
+            out.append_view("\n")
+        }
         return out
     }
 
@@ -456,6 +608,35 @@ func settings_dir() : string {
                 var n = parse_int_opt(val.data())
                 if(n >= 0) { s.retry_delay_ms = n as i64 }
             }
+            else if(kh == comptime_fnv1_hash("userAgent")) { s.user_agent = val.copy() }
+            else if(kh == comptime_fnv1_hash("cookieFile")) { s.cookie_file = val.copy() }
+            else if(kh == comptime_fnv1_hash("verifySsl")) { s.verify_ssl = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("connectTimeout")) {
+                var n = parse_int_opt(val.data())
+                if(n > 0) { s.connect_timeout = n }
+            }
+            else if(kh == comptime_fnv1_hash("maxDownloadSize")) {
+                var n = parse_i64_from_view(string_view::make_view(&val))
+                if(n >= 0) { s.max_download_size = n }
+            }
+            else if(kh == comptime_fnv1_hash("minDiskSpaceMb")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { s.min_disk_space_mb = n }
+            }
+            else if(kh == comptime_fnv1_hash("postDownloadCmd")) { s.post_download_cmd = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytQuality")) { s.yt_quality = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytFormat")) { s.yt_format = val.copy() }
+            else if(kh == comptime_fnv1_hash("ytAudioOnly")) { s.yt_audio_only = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("ytMaxPlaylistItems")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { s.yt_max_playlist_items = n }
+            }
+            else if(kh == comptime_fnv1_hash("refererHeader")) { s.referer_header = val.copy() }
+            else if(kh == comptime_fnv1_hash("authHeader")) { s.auth_header = val.copy() }
+            else if(kh == comptime_fnv1_hash("forceIpv4")) { s.force_ipv4 = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("forceIpv6")) { s.force_ipv6 = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("filenameTemplate")) { s.filename_template = val.copy() }
+            else if(kh == comptime_fnv1_hash("checksum")) { s.checksum = val.copy() }
         }
         return s
     }

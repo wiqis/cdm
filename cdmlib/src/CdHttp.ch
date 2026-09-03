@@ -12,6 +12,36 @@ using std::Option;
 using std::Result;
 using std::vector;
 
+    // Configurable HTTP options for all request types.
+    // Use defaults() to get production defaults; callers override specific fields.
+    public struct HttpOptions {
+        var user_agent : string
+        var timeout_secs : int
+        var referer : string
+        var auth : string
+        var force_ipv4 : bool
+        var force_ipv6 : bool
+        var cookie_file : string
+        var verify_ssl : bool
+
+        @constructor func constructor() {
+            return HttpOptions {
+                user_agent = string(),
+                timeout_secs = 30,
+                referer = string(),
+                auth = string(),
+                force_ipv4 = false,
+                force_ipv6 = false,
+                cookie_file = string(),
+                verify_ssl = true
+            }
+        }
+
+        public func defaults() : HttpOptions {
+            return HttpOptions()
+        }
+    }
+
     // Metadata captured during a probe request.
     public struct CdProbe {
         var ok : bool
@@ -161,7 +191,7 @@ using std::vector;
     // range_start < 0 means no Range header. range_end < 0 means an open-ended
     // range from range_start to EOF (`bytes=N-`). When range_end >= 0 an exact
     // bounded range is requested (`bytes=N-M`) — used by the segmented engine.
-    public func request(method : string_view, url_str : string_view, range_start : i64, range_end : i64 = -1) : Result<http::Response, string> {
+    public func request(method : string_view, url_str : string_view, range_start : i64, range_end : i64, opts : HttpOptions) : Result<http::Response, string> {
         var cl = build_client()
         var current = string(url_str.data(), url_str.size())
         var redirects = 0
@@ -179,10 +209,14 @@ using std::vector;
             // Option<URL> and the RequestBuilder never alias the same heap
             // strings — both would otherwise free() them at scope exit.
             var rb = http::RequestBuilder(method.data(), std::replace(&mut u, http::URL()))
-            rb.timeout(SOCKET_TIMEOUT_SECS as long)
-            rb.header("User-Agent", "ChemicalDM/0.1")
+            rb.timeout(opts.timeout_secs as long)
+            var ua_val = string_view::make_no_len("ChemicalDM/0.1")
+            if(opts.user_agent.size() > 0) { ua_val = string_view::make_view(&opts.user_agent) }
+            rb.header("User-Agent", ua_val.data())
             rb.header("Accept", "*/*")
             rb.header("Accept-Encoding", "identity")
+            if(opts.referer.size() > 0) { rb.header("Referer", opts.referer.data()) }
+            if(opts.auth.size() > 0) { rb.header("Authorization", opts.auth.data()) }
             if(range_start >= 0) {
                 var rh = string::make_no_len("bytes=")
                 rh.append_integer(range_start as bigint)
@@ -239,7 +273,7 @@ using std::vector;
     // Probe a URL for downloadability without downloading the body:
     // issue GET with Range: bytes=0-0. 206 -> resume + total; 200 -> no
     // resume, total from Content-Length; 416 -> total from Content-Range.
-    public func probe(url_str : string_view, filename_hint : string_view) : CdProbe {
+    public func probe(url_str : string_view, filename_hint : string_view, opts : HttpOptions) : CdProbe {
         var probe = CdProbe()
         if(filename_hint.size() > 0) {
             probe.filename = sanitize_filename(filename_hint)
@@ -249,7 +283,7 @@ using std::vector;
         var last_err = string()
         var attempt = 0
         while(attempt < 3) {
-            var res = request("GET", url_str, 0, 0)
+            var res = request("GET", url_str, 0, 0, opts)
             if(res is Result.Ok) {
                 last_err = string()
                 var Ok(rep) = res else unreachable
@@ -332,15 +366,15 @@ using std::vector;
 
     // Open a resumable download stream starting at `resume_from` bytes
     // (0 = beginning). The caller pulls from response.body.read().
-    public func open_download(url_str : string_view, resume_from : i64) : Result<http::Response, string> {
-        return request("GET", url_str, resume_from)
+    public func open_download(url_str : string_view, resume_from : i64, opts : HttpOptions) : Result<http::Response, string> {
+        return request("GET", url_str, resume_from, -1, opts)
     }
 
     // Open a bounded download stream covering exactly [start, end] (inclusive).
     // Used by the segmented engine so each segment only pulls its own bytes and
     // a server that streams the whole file cannot wedge the connection.
-    public func open_download_range(url_str : string_view, start : i64, end : i64) : Result<http::Response, string> {
-        return request("GET", url_str, start, end)
+    public func open_download_range(url_str : string_view, start : i64, end : i64, opts : HttpOptions) : Result<http::Response, string> {
+        return request("GET", url_str, start, end, opts)
     }
 
 } // end namespace cdm

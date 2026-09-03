@@ -784,6 +784,12 @@ using std::mutex;
     public func save_yt_links() {
         if(g_yt_links == null) { return }
         var path = yt_links_file()
+        // Ensure parent directory exists before writing.
+        var last_sep : usize = 0
+        for(var i = 0u; i < path.size(); i++) {
+            if(path.get(i) == '/') { last_sep = i }
+        }
+        if(last_sep > 0u) { fs::create_dir_all(path.substring(0u, last_sep).data()) }
         // Atomic write: tmp → rename so a crash never corrupts the file.
         var tmp_path = path.copy()
         tmp_path.append_view(string_view::make_no_len(".tmp"))

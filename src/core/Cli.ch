@@ -30,6 +30,23 @@ using std::Option;
         var batch_file : string          // empty => none
         var gui_forced : bool            // --gui was passed
         var start_gui : bool             // no urls and no batch => GUI
+        var user_agent : string           // --user-agent
+        var cookie_file : string          // --cookies
+        var no_ssl_verify : bool          // --no-ssl-verify
+        var connect_timeout : int         // --connect-timeout
+        var max_download_size : i64       // --max-size
+        var min_disk_space_mb : int       // --min-disk
+        var post_download_cmd : string    // --post-cmd
+        var yt_quality : string           // --yt-quality
+        var yt_format : string            // --yt-format
+        var yt_audio_only : bool          // --yt-audio-only
+        var yt_max_playlist : int         // --yt-max-playlist
+        var referer : string              // --referer
+        var auth : string                 // --auth
+        var force_ipv4 : bool             // --ipv4
+        var force_ipv6 : bool             // --ipv6
+        var filename_template : string    // --template
+        var checksum : string             // --checksum
 
         @constructor func constructor() {
             return CliOptions {
@@ -48,7 +65,20 @@ using std::Option;
                 show_version = false,
                 batch_file = string(),
                 gui_forced = false,
-                start_gui = false
+                start_gui = false,
+                user_agent = string(),
+                cookie_file = string(),
+                no_ssl_verify = false,
+                connect_timeout = 0,
+                max_download_size = 0,
+                min_disk_space_mb = 0,
+                post_download_cmd = string(),
+                yt_quality = string(),
+                yt_format = string(),
+                yt_audio_only = false,
+                yt_max_playlist = 0,
+                force_ipv4 = false,
+                force_ipv6 = false
             }
         }
     }
@@ -134,6 +164,74 @@ using std::Option;
                 i = i + 1
                 if(i >= argc || argv[i] == null) { return "--file requires a path argument" }
                 out.batch_file = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--user-agent") || h == comptime_fnv1_hash("--ua")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--user-agent requires a string" }
+                out.user_agent = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--cookies")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--cookies requires a file path" }
+                out.cookie_file = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--no-ssl-verify")) {
+                out.no_ssl_verify = true
+            } else if(h == comptime_fnv1_hash("--connect-timeout") || h == comptime_fnv1_hash("--cto")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--connect-timeout requires seconds" }
+                var n = cli_parse_int(argv[i])
+                if(n <= 0) { return "invalid connect timeout" }
+                out.connect_timeout = n
+            } else if(h == comptime_fnv1_hash("--max-size")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--max-size requires bytes" }
+                var n = cli_parse_int(argv[i])
+                if(n < 0) { return "invalid max size" }
+                out.max_download_size = n as i64
+            } else if(h == comptime_fnv1_hash("--min-disk")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--min-disk requires MB" }
+                var n = cli_parse_int(argv[i])
+                if(n < 0) { return "invalid min disk space" }
+                out.min_disk_space_mb = n
+            } else if(h == comptime_fnv1_hash("--post-cmd")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--post-cmd requires a shell command" }
+                out.post_download_cmd = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--yt-quality")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--yt-quality requires a value (best/worst/720/1080)" }
+                out.yt_quality = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--yt-format")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--yt-format requires a value (video+audio/bestvideo/bestaudio)" }
+                out.yt_format = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--yt-audio-only")) {
+                out.yt_audio_only = true
+            } else if(h == comptime_fnv1_hash("--yt-max-playlist")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--yt-max-playlist requires a number" }
+                var n = cli_parse_int(argv[i])
+                if(n < 0) { return "invalid playlist limit" }
+                out.yt_max_playlist = n
+            } else if(h == comptime_fnv1_hash("--referer") || h == comptime_fnv1_hash("--ref")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--referer requires a URL" }
+                out.referer = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--auth")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--auth requires a header value (e.g. Bearer token)" }
+                out.auth = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--ipv4")) {
+                out.force_ipv4 = true
+            } else if(h == comptime_fnv1_hash("--ipv6")) {
+                out.force_ipv6 = true
+            } else if(h == comptime_fnv1_hash("--template") || h == comptime_fnv1_hash("--name")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--template requires a pattern (e.g. {title}.{ext})" }
+                out.filename_template = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--checksum")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--checksum requires algo:hex (e.g. md5:abc123)" }
+                out.checksum = string::make_no_len(argv[i])
             } else if(arg[0] == '-') {
                 return "unknown option"
             } else {
@@ -263,6 +361,40 @@ using std::Option;
         if(opts.speed_limit_kbps > 0) {
             dm.set_speed_limit_kbps(opts.speed_limit_kbps)
         }
+        if(opts.user_agent.size() > 0) {
+            dm.user_agent = opts.user_agent.copy()
+        }
+        if(opts.cookie_file.size() > 0) {
+            dm.cookie_file = opts.cookie_file.copy()
+        }
+        if(opts.no_ssl_verify) {
+            dm.verify_ssl = false
+        }
+        if(opts.connect_timeout > 0) {
+            dm.connect_timeout = opts.connect_timeout
+        }
+        if(opts.max_download_size > 0) {
+            dm.max_download_size = opts.max_download_size
+        }
+        if(opts.min_disk_space_mb > 0) {
+            dm.min_disk_space_mb = opts.min_disk_space_mb
+        }
+        if(opts.post_download_cmd.size() > 0) {
+            dm.post_download_cmd = opts.post_download_cmd.copy()
+        }
+        if(opts.yt_quality.size() > 0) {
+            dm.yt_quality = opts.yt_quality.copy()
+        }
+        if(opts.yt_format.size() > 0) {
+            dm.yt_format = opts.yt_format.copy()
+        }
+        if(opts.yt_audio_only) {
+            dm.yt_audio_only = true
+        }
+        if(opts.yt_max_playlist > 0) {
+            dm.yt_max_playlist_items = opts.yt_max_playlist
+        }
+        // HTTP options are now passed through TaskRuntime, not globals.
 
         // Make sure the destination directory exists.
         var mk = fs::create_dir_all(dm.download_dir.data())

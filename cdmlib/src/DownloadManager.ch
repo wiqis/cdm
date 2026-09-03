@@ -30,6 +30,23 @@ using std::mutex;
         var retry_policy : RetryPolicy
         // Path for periodic progress persistence (set by the app).
         var progress_file_path : string
+        var user_agent : string
+        var cookie_file : string
+        var verify_ssl : bool
+        var connect_timeout : int
+        var max_download_size : i64
+        var min_disk_space_mb : int
+        var post_download_cmd : string
+        var yt_quality : string
+        var yt_format : string
+        var yt_audio_only : bool
+        var yt_max_playlist_items : int
+        var referer_header : string
+        var auth_header : string
+        var force_ipv4 : bool
+        var force_ipv6 : bool
+        var filename_template : string
+        var checksum : string
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -51,7 +68,24 @@ using std::mutex;
                 duplicate_action = 0,
                 auto_resume_failed = false,
                 retry_policy = RetryPolicy(),
-                progress_file_path = string()
+                progress_file_path = string(),
+                user_agent = string(),
+                cookie_file = string(),
+                verify_ssl = true,
+                connect_timeout = SOCKET_TIMEOUT_SECS,
+                max_download_size = 0,
+                min_disk_space_mb = 0,
+                post_download_cmd = string(),
+                yt_quality = string(),
+                yt_format = string(),
+                yt_audio_only = false,
+                yt_max_playlist_items = 0,
+                referer_header = string(),
+                auth_header = string(),
+                force_ipv4 = false,
+                force_ipv6 = false,
+                filename_template = string(),
+                checksum = string()
             }
         }
 
@@ -173,6 +207,15 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             rt.enable_resume = dm.enable_resume
             rt.retry_policy.max_retries = dm.retry_policy.max_retries
             rt.retry_policy.delay_ms = dm.retry_policy.delay_ms
+            rt.post_download_cmd = dm.post_download_cmd.copy()
+            rt.user_agent = dm.user_agent.copy()
+            rt.connect_timeout = dm.connect_timeout
+            rt.referer_header = dm.referer_header.copy()
+            rt.auth_header = dm.auth_header.copy()
+            rt.force_ipv4 = dm.force_ipv4
+            rt.force_ipv6 = dm.force_ipv6
+            rt.filename_template = dm.filename_template.copy()
+            rt.checksum = dm.checksum.copy()
             rt.manager = &raw mut dm
 
             dm.runtimes.insert(it.id.copy(), rt)

@@ -66,6 +66,15 @@ using std::vector;
         var enable_resume : bool
         var retry_policy : RetryPolicy
         var manager : *mut DownloadManager
+        var post_download_cmd : string
+        var user_agent : string
+        var connect_timeout : int
+        var referer_header : string
+        var auth_header : string
+        var force_ipv4 : bool
+        var force_ipv6 : bool
+        var filename_template : string
+        var checksum : string
 
         @constructor func constructor(id_ : string) {
             return TaskRuntime {
@@ -86,7 +95,16 @@ using std::vector;
                 supports_resume = false,
                 enable_resume = true,
                 retry_policy = RetryPolicy(),
-                manager = null
+                manager = null,
+                post_download_cmd = string(),
+                user_agent = string(),
+                connect_timeout = 30,
+                referer_header = string(),
+                auth_header = string(),
+                force_ipv4 = false,
+                force_ipv6 = false,
+                filename_template = string(),
+                checksum = string()
             }
         }
     }
@@ -518,6 +536,18 @@ using std::vector;
         return copied
     }
 
+    // Build HttpOptions from TaskRuntime fields.
+    func build_http_opts(rt : *mut TaskRuntime) : HttpOptions {
+        var opts = HttpOptions()
+        opts.user_agent = rt.user_agent.copy()
+        opts.timeout_secs = rt.connect_timeout
+        opts.referer = rt.referer_header.copy()
+        opts.auth = rt.auth_header.copy()
+        opts.force_ipv4 = rt.force_ipv4
+        opts.force_ipv6 = rt.force_ipv6
+        return opts
+    }
+
     // Worker for one byte range. Opens a bounded range request covering exactly
     // [start, end] and streams the partial content into the segment's .part
     // file. Returns 1 on completion, 2 on pause, 0 on failure.
@@ -525,7 +555,7 @@ using std::vector;
     // segment's progress is visible in the UI during download.
     func raw_download_segment(rt : *mut TaskRuntime, url : string_view, part_path : *char, start : i64, end : i64, total : i64, copied_in : i64, seg_copied_out : *mut i64) : int {
         var resume_from = start + copied_in
-        var res = open_download_range(url, resume_from, end)
+        var res = open_download_range(url, resume_from, end, build_http_opts(rt))
         if(res is Result.Err) {
             var Err(e) = res else unreachable
             fprintf(stderr, "[CDM] segment %d: connection failed: %s\n", start as int, e.data())
@@ -699,7 +729,7 @@ using std::vector;
         fprintf(stderr, "[CDM] probe check: total0=%lld downloaded0=%lld\n", total0, downloaded0)
         if(total0 <= 0 && downloaded0 <= 0) {
             fprintf(stderr, "[CDM] calling probe()...\n")
-            var p = probe(url, filename)
+            var p = probe(url, filename, build_http_opts(rt))
             fprintf(stderr, "[CDM] probe returned: ok=%d status=%u total=%lld resume=%d\n", p.ok, p.status, p.total_bytes, p.supports_resume)
             if(p.ok) {
                 if(p.total_bytes > 0) { locked_set_total(rt, p.total_bytes) }
@@ -883,7 +913,7 @@ using std::vector;
 
             // ---- non-segmented path ----
             fprintf(stderr, "[CDM] non-segmented: calling open_download resume_from=%lld\n", resume_from)
-            var res = open_download(url, resume_from)
+            var res = open_download(url, resume_from, build_http_opts(rt))
             if(res is Result.Err) {
                 var Err(e) = res else unreachable
                 fprintf(stderr, "[CDM] open_download FAILED\n")
@@ -983,6 +1013,25 @@ using std::vector;
                     }
                     fprintf(stderr, "[CDM] download DONE\n")
                     locked_set_state(rt, STATE_DONE)
+                    // Run post-download command if configured.
+                    var post_cmd = rt.post_download_cmd.copy()
+                    if(post_cmd.size() > 0) {
+                        // Replace {} with the output file path.
+                        var final_cmd = string()
+                        var j : usize = 0
+                        while(j < post_cmd.size()) {
+                            var c = post_cmd.get(j)
+                            if(c == '{' && j + 1u < post_cmd.size() && post_cmd.get(j + 1u) == '}') {
+                                final_cmd.append_string(&path)
+                                j = j + 2u
+                            } else {
+                                final_cmd.append(c)
+                                j = j + 1u
+                            }
+                        }
+                        fprintf(stderr, "[CDM] running post-download command: %s\n", final_cmd.data())
+                        system(final_cmd.data())
+                    }
                     done = true
                     break
                 } else if(code == 2) {
