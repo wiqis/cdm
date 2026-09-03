@@ -215,7 +215,24 @@
             use_categories: settings.use_categories,
             auto_resume_failed: settings.auto_resume_failed,
             max_retries: settings.max_retries,
-            retry_delay_ms: settings.retry_delay_ms
+            retry_delay_ms: settings.retry_delay_ms,
+            user_agent: settings.user_agent || "",
+            cookie_file: settings.cookie_file || "",
+            verify_ssl: settings.verify_ssl !== false,
+            connect_timeout: settings.connect_timeout || 30,
+            max_download_size: settings.max_download_size || 0,
+            min_disk_space_mb: settings.min_disk_space_mb || 0,
+            post_download_cmd: settings.post_download_cmd || "",
+            yt_quality: settings.yt_quality || "",
+            yt_format: settings.yt_format || "",
+            yt_audio_only: settings.yt_audio_only || false,
+            yt_max_playlist_items: settings.yt_max_playlist_items || 0,
+            referer_header: settings.referer_header || "",
+            auth_header: settings.auth_header || "",
+            force_ipv4: settings.force_ipv4 || false,
+            force_ipv6: settings.force_ipv6 || false,
+            filename_template: settings.filename_template || "",
+            checksum: settings.checksum || ""
         }
         call("settings_set", body)
         alert = "Settings saved"
@@ -1077,6 +1094,104 @@
                         <label>Retry delay (ms)
                             <input type="number" min="0" value={settings.retry_delay_ms}
                                 onChange={(e) => { settings.retry_delay_ms = parseInt(e.target.value) || 0 }} />
+                        </label>
+
+                        <div class="cdm-section-header">HTTP</div>
+
+                        <label>User-Agent
+                            <input type="text" value={settings.user_agent || ""}
+                                placeholder="ChemicalDM/0.1"
+                                onChange={(e) => { settings.user_agent = e.target.value }} />
+                        </label>
+                        <label>Cookie file path
+                            <input type="text" value={settings.cookie_file || ""}
+                                placeholder="/path/to/cookies.txt"
+                                onChange={(e) => { settings.cookie_file = e.target.value }} />
+                        </label>
+                        <label>Referer header
+                            <input type="text" value={settings.referer_header || ""}
+                                placeholder="https://example.com"
+                                onChange={(e) => { settings.referer_header = e.target.value }} />
+                        </label>
+                        <label>Authorization header
+                            <input type="text" value={settings.auth_header || ""}
+                                placeholder="Bearer ..."
+                                onChange={(e) => { settings.auth_header = e.target.value }} />
+                        </label>
+                        <label>Connect timeout (seconds)
+                            <input type="number" min="1" value={settings.connect_timeout || 30}
+                                onChange={(e) => { settings.connect_timeout = parseInt(e.target.value) || 30 }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.verify_ssl !== false}
+                                    onChange={(e) => { settings.verify_ssl = e.target.checked }} />
+                                Verify SSL certificates
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.force_ipv4 || false}
+                                    onChange={(e) => { settings.force_ipv4 = e.target.checked }} />
+                                Force IPv4
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.force_ipv6 || false}
+                                    onChange={(e) => { settings.force_ipv6 = e.target.checked }} />
+                                Force IPv6
+                            </label>
+                        </div>
+
+                        <div className="cdm-section-header">Limits</div>
+
+                        <label>Max download size (bytes, 0 = unlimited)
+                            <input type="number" min="0" value={settings.max_download_size || 0}
+                                onChange={(e) => { settings.max_download_size = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Min free disk space (MB, 0 = check disabled)
+                            <input type="number" min="0" value={settings.min_disk_space_mb || 0}
+                                onChange={(e) => { settings.min_disk_space_mb = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Filename template ({name}, {ext}, {date} placeholders)
+                            <input type="text" value={settings.filename_template || ""}
+                                placeholder="{name}.{ext}"
+                                onChange={(e) => { settings.filename_template = e.target.value }} />
+                        </label>
+                        <label>Post-download command ({path} = output file)
+                            <input type="text" value={settings.post_download_cmd || ""}
+                                placeholder="mpv {}"
+                                onChange={(e) => { settings.post_download_cmd = e.target.value }} />
+                        </label>
+                        <label>Checksum verification (md5, sha256)
+                            <input type="text" value={settings.checksum || ""}
+                                placeholder="sha256"
+                                onChange={(e) => { settings.checksum = e.target.value }} />
+                        </label>
+
+                        <div className="cdm-section-header">YouTube</div>
+
+                        <label>Quality (best, 1080, 720, 480)
+                            <input type="text" value={settings.yt_quality || ""}
+                                placeholder="best"
+                                onChange={(e) => { settings.yt_quality = e.target.value }} />
+                        </label>
+                        <label>Format (mp4, mkv, webm)
+                            <input type="text" value={settings.yt_format || ""}
+                                placeholder="mp4"
+                                onChange={(e) => { settings.yt_format = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_audio_only || false}
+                                    onChange={(e) => { settings.yt_audio_only = e.target.checked }} />
+                                Audio only (YouTube)
+                            </label>
+                        </div>
+                        <label>Max playlist items (0 = all)
+                            <input type="number" min="0" value={settings.yt_max_playlist_items || 0}
+                                onChange={(e) => { settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} />
                         </label>
                     </div>
                     <div class="cdm-dialog-footer">

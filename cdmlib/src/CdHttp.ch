@@ -298,7 +298,6 @@ using std::vector;
                         var Some(cr) = cr_opt else unreachable
                         probe.total_bytes = parse_content_range_total(&cr)
                     }
-                    fprintf(stderr, "[CDM] probe: 206 resume supported, total=%lld\n", probe.total_bytes)
                 } else if(rep.status == 200u) {
                     probe.ok = true
                     probe.supports_resume = false
@@ -307,7 +306,6 @@ using std::vector;
                         var Some(cl) = cl_opt else unreachable
                         probe.total_bytes = parse_content_length(&cl)
                     }
-                    fprintf(stderr, "[CDM] probe: 200 no resume, total=%lld\n", probe.total_bytes)
                 } else if(rep.status == 416u) {
                     // Range not satisfiable — server usually gives total via Content-Range.
                     probe.ok = true
@@ -317,7 +315,6 @@ using std::vector;
                         var Some(cr) = cr_opt else unreachable
                         probe.total_bytes = parse_content_range_total(&cr)
                     }
-                    fprintf(stderr, "[CDM] probe: 416 Range not satisfiable, total=%lld\n", probe.total_bytes)
                 } else {
                     probe.error = string::make_no_len("server returned HTTP ")
                     probe.error.append_uinteger(rep.status as ubigint)
@@ -330,7 +327,6 @@ using std::vector;
                     } else if(rep.status >= 500u) {
                         probe.error.append_string(&string::make_no_len(" (server error)"))
                     }
-                    fprintf(stderr, "[CDM] probe: HTTP %u\n", rep.status)
                 }
 
                 // Filename from Content-Disposition, falling back to the URL path.
@@ -353,7 +349,6 @@ using std::vector;
             } else {
                 var Err(e) = res else unreachable
                 last_err = e.copy()
-                fprintf(stderr, "[CDM] probe attempt %d failed for %s: %s\n", attempt + 1, string(url_str.data(), url_str.size()).data(), e.data())
             }
             attempt = attempt + 1
             if(attempt < 3) {

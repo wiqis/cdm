@@ -217,6 +217,22 @@ using std::Result;
         if(dm.yt_audio_only) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"yt_max_playlist_items\": "))
         out.append_integer(dm.yt_max_playlist_items as bigint)
+        out.append_string(&string::make_no_len(",\"referer_header\": "))
+        var ref_s = json_string(string_view::make_view(&dm.referer_header))
+        out.append_string(&ref_s)
+        out.append_string(&string::make_no_len(",\"auth_header\": "))
+        var auth_s = json_string(string_view::make_view(&dm.auth_header))
+        out.append_string(&auth_s)
+        out.append_string(&string::make_no_len(",\"force_ipv4\": "))
+        if(dm.force_ipv4) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"force_ipv6\": "))
+        if(dm.force_ipv6) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"filename_template\": "))
+        var ft_s = json_string(string_view::make_view(&dm.filename_template))
+        out.append_string(&ft_s)
+        out.append_string(&string::make_no_len(",\"checksum\": "))
+        var cs_s = json_string(string_view::make_view(&dm.checksum))
+        out.append_string(&cs_s)
         out.append('}')
         return out
     }
@@ -459,6 +475,18 @@ using std::Result;
             if(yf.size() > 0) { dm.yt_format = yf.copy() }
             dm.yt_audio_only = ya
             if(ypl >= 0) { dm.yt_max_playlist_items = ypl }
+            var ref = json_field(args, string_view::make_no_len("referer_header"))
+            var auth = json_field(args, string_view::make_no_len("auth_header"))
+            var fipv4 = json_bool_field(args, string_view::make_no_len("force_ipv4"), dm.force_ipv4)
+            var fipv6 = json_bool_field(args, string_view::make_no_len("force_ipv6"), dm.force_ipv6)
+            var ftemp = json_field(args, string_view::make_no_len("filename_template"))
+            var csum = json_field(args, string_view::make_no_len("checksum"))
+            if(ref.size() > 0) { dm.referer_header = ref.copy() }
+            if(auth.size() > 0) { dm.auth_header = auth.copy() }
+            dm.force_ipv4 = fipv4
+            dm.force_ipv6 = fipv6
+            if(ftemp.size() > 0) { dm.filename_template = ftemp.copy() }
+            if(csum.size() > 0) { dm.checksum = csum.copy() }
             // Persist the settings for next launch.
             var settings = CdmSettings()
             settings.download_dir = dm.download_dir.copy()
@@ -482,6 +510,12 @@ using std::Result;
             settings.yt_format = dm.yt_format.copy()
             settings.yt_audio_only = dm.yt_audio_only
             settings.yt_max_playlist_items = dm.yt_max_playlist_items
+            settings.referer_header = dm.referer_header.copy()
+            settings.auth_header = dm.auth_header.copy()
+            settings.force_ipv4 = dm.force_ipv4
+            settings.force_ipv6 = dm.force_ipv6
+            settings.filename_template = dm.filename_template.copy()
+            settings.checksum = dm.checksum.copy()
             save_settings(&settings)
             return ok_json()
         }

@@ -326,7 +326,6 @@ using std::mutex;
     // ---- Info fetch ----
 
     func info_thread_entry(arg : *void) : *void {
-        fprintf(stderr, "[CDM-INFO] thread started, url=%s\n", g_async_info.url.data())
         std::concurrent.sleep_ms(10u)
     var args = vector<string>()
     args.push_back(ytdlp_resolved_path())
@@ -335,19 +334,16 @@ using std::mutex;
     if(g_async_info.is_playlist) { args.push_back(string::make_no_len("--flat-playlist")) }
     else { args.push_back(string::make_no_len("--no-playlist")) }
     args.push_back(g_async_info.url.copy())
-    fprintf(stderr, "[CDM-INFO] spawning yt-dlp via process::execute\n")
     var json_out = string()
     var err_out = string()
     var exit_code = 0
     var spawned = run_yt_command(args, true, &raw mut json_out, &raw mut err_out, &raw mut exit_code)
     if(!spawned) {
-        fprintf(stderr, "[CDM-INFO] process::execute failed to start\n")
         g_async_info.mu.lock()
         g_async_info.error = string::make_no_len("failed to start yt-dlp")
         g_async_info.done = true; g_async_info.running = false
         g_async_info.mu.unlock(); return null
     }
-    fprintf(stderr, "[CDM-INFO] done, exit=%d, size=%d\n", exit_code, json_out.size() as int)
     g_async_info.mu.lock()
     if(exit_code != 0 && json_out.size() == 0u) {
         g_async_info.error = string::make_no_len("yt-dlp failed (exit ")
@@ -396,8 +392,6 @@ using std::mutex;
         out.append_string(&string::make_no_len(",\"has_info\":"))
         if(done && error.size() == 0u) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append('}')
-        fprintf(stderr, "[CDM-INFO] poll_async_info -> running=%d done=%d has_info=%d json=%s\n",
-                running as int, done as int, (done && error.size() == 0u) as int, out.data())
         return out
     }
 
@@ -421,8 +415,6 @@ using std::mutex;
         var vparser = JsonParser(256, 1048576)
         var vph = ASTJsonHandler.make()
         var vres = vparser.parse(result.data(), result.size(), &mut vph)
-        fprintf(stderr, "[CDM-INFO] get_async_info: compact=%d bytes (from %d raw) JSON_VALID=%d msg=%s\n",
-                result.size() as int, raw.size() as int, vres.ok as int, vres.msg)
         return result
     }
 
@@ -431,7 +423,6 @@ using std::mutex;
         g_async_info.running = false; g_async_info.done = true
         g_async_info.error = string::make_no_len("cancelled")
         g_async_info.mu.unlock()
-        fprintf(stderr, "[CDM-INFO] cancelled\n")
     }
 
     // ---- URL extraction ----
@@ -556,7 +547,6 @@ using std::mutex;
         args.push_back(string::make_no_len("copy"))
         args.push_back(string::make_no_len("-y"))
         args.push_back(string(tmp_path.data(), tmp_path.size()))
-        fprintf(stderr, "[CDM-MERGE] ffmpeg -i %s -i %s -strict experimental -c copy -y %s\n", video_path.data(), audio_path.data(), tmp_path.data())
         var cfg = process::ProcessConfig.default()
         cfg.args = args
         cfg.capture_stdout = false
@@ -1042,9 +1032,6 @@ using std::mutex;
         var needs = dl.needs_merge
         var auto = dl.auto_merge
         dl.mu.unlock()
-        var needs_int = 0; if(needs) { needs_int = 1 }
-        var auto_int = 0; if(auto) { auto_int = 1 }
-        fprintf(stderr, "[CDM-MERGE] maybe_start: needs=%d auto=%d\n", needs_int, auto_int)
         if(needs && auto) {
             if(!g_repro_disable_merge) {
                 std::concurrent::spawn(merge_monitor_entry, dl as *void)

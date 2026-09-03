@@ -196,10 +196,6 @@ func run_yt_repro(argc : int, argv : **char) : int {
 
     if(probe) {
         cdm::create_container_item(&mut dm, cdm::ITEM_TYPE_YT_SINGLE, string_view::make_no_len("https://yt/"), string_view::make_no_len("/tmp/x"), string_view::make_no_len("cont"))
-        var s1 = vector<cdm::DownloadItem>(); cdm::snapshot_into(&mut dm, &mut s1)
-        fprintf(stderr, "[REPRO-PROBE] items=%d\n", s1.size())
-        var s2 = vector<cdm::DownloadItem>(); cdm::snapshot_into(&mut dm, &mut s2)
-        fprintf(stderr, "[REPRO-PROBE] items2=%d\n", s2.size())
         return 0
     }
 

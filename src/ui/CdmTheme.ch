@@ -508,6 +508,17 @@ public func CdmTheme(page : &mut HtmlPage) {
             accent-color: hsl(var(--primary));
             cursor: pointer;
         }
+        .cdm-section-header {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: hsl(var(--muted-foreground));
+            margin-top: 16px;
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid hsl(var(--border));
+        }
         /* ---- YouTube download styles ---- */
         .cdm-yt-btn {
             padding: 10px 18px;

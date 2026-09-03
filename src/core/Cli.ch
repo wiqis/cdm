@@ -394,7 +394,20 @@ using std::Option;
         if(opts.yt_max_playlist > 0) {
             dm.yt_max_playlist_items = opts.yt_max_playlist
         }
-        // HTTP options are now passed through TaskRuntime, not globals.
+        if(opts.referer.size() > 0) {
+            dm.referer_header = opts.referer.copy()
+        }
+        if(opts.auth.size() > 0) {
+            dm.auth_header = opts.auth.copy()
+        }
+        if(opts.force_ipv4) { dm.force_ipv4 = true }
+        if(opts.force_ipv6) { dm.force_ipv6 = true }
+        if(opts.filename_template.size() > 0) {
+            dm.filename_template = opts.filename_template.copy()
+        }
+        if(opts.checksum.size() > 0) {
+            dm.checksum = opts.checksum.copy()
+        }
 
         // Make sure the destination directory exists.
         var mk = fs::create_dir_all(dm.download_dir.data())

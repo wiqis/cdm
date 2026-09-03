@@ -715,7 +715,6 @@ using std::vector;
     // The download runner: probe, choose segmented vs single-stream, then
     // download all segments in parallel and assemble.
     public func run_download_task(rt : *mut TaskRuntime, url : string_view, dir : string_view, filename : string_view) {
-        fprintf(stderr, "[CDM] run_download_task start\n")
         locked_set_state(rt, STATE_DOWNLOADING)
         var empty_err = string()
         locked_set_error(rt, &empty_err)
@@ -726,11 +725,8 @@ using std::vector;
         // Probe for size/resume if we don't already have progress.
         var downloaded0 = locked_get_downloaded(rt)
         var total0 = locked_get_total(rt)
-        fprintf(stderr, "[CDM] probe check: total0=%lld downloaded0=%lld\n", total0, downloaded0)
         if(total0 <= 0 && downloaded0 <= 0) {
-            fprintf(stderr, "[CDM] calling probe()...\n")
             var p = probe(url, filename, build_http_opts(rt))
-            fprintf(stderr, "[CDM] probe returned: ok=%d status=%u total=%lld resume=%d\n", p.ok, p.status, p.total_bytes, p.supports_resume)
             if(p.ok) {
                 if(p.total_bytes > 0) { locked_set_total(rt, p.total_bytes) }
                 if(p.supports_resume) {
@@ -745,7 +741,6 @@ using std::vector;
                 locked_set_state(rt, STATE_FAILED)
                 return
             } else {
-                fprintf(stderr, "[CDM] probe FAILED with empty error (status=%u)\n", p.status)
                 var msg = string::make_no_len("probe failed with status ")
                 msg.append_uinteger(p.status as ubigint)
                 locked_set_error(rt, &msg)
@@ -754,7 +749,6 @@ using std::vector;
             }
         }
         total0 = locked_get_total(rt)
-        fprintf(stderr, "[CDM] after probe: total=%lld\n", total0)
 
         // Decide whether to use segments. Only when the server supports Range,
         // the configured max allows it, and the file is big enough.
@@ -912,11 +906,9 @@ using std::vector;
             }
 
             // ---- non-segmented path ----
-            fprintf(stderr, "[CDM] non-segmented: calling open_download resume_from=%lld\n", resume_from)
             var res = open_download(url, resume_from, build_http_opts(rt))
             if(res is Result.Err) {
                 var Err(e) = res else unreachable
-                fprintf(stderr, "[CDM] open_download FAILED\n")
                 locked_set_error(rt, &e)
                 retries = retries + 1
                 if(rt.retry_policy.should_retry(retries)) { rt.retry_policy.sleep_between_retries() }
@@ -931,7 +923,6 @@ using std::vector;
 
             var Ok(rep) = res else unreachable
             var st = rep.status
-            fprintf(stderr, "[CDM] open_download OK: status=%u\n", st)
 
             if(st == 200u && resume_from > 0) {
                 // Server ignored our Range and restarted at byte 0; truncate the
@@ -984,9 +975,7 @@ using std::vector;
                     continue
                 }
 
-                fprintf(stderr, "[CDM] calling stream_body...\n")
                 var code = stream_body(rt, &mut rep.body, ofile, -1, null)
-                fprintf(stderr, "[CDM] stream_body returned code=%d\n", code)
                 fclose(ofile)
                 if(code == 1) {
                     // Verify completeness: if the server reported a total and
@@ -994,8 +983,7 @@ using std::vector;
                     var dl_final = locked_get_downloaded(rt)
                     var tot_final = locked_get_total(rt)
                     if(tot_final > 0 && dl_final < tot_final) {
-                        fprintf(stderr, "[CDM] incomplete download: got %lld of %lld bytes\n", dl_final, tot_final)
-                        var msg = string::make_no_len("server closed connection early (")
+                            var msg = string::make_no_len("server closed connection early (")
                         var dl_s = string()
                         dl_s.append_integer(dl_final as bigint)
                         msg.append_string(&dl_s)
@@ -1011,7 +999,6 @@ using std::vector;
                         }
                         continue
                     }
-                    fprintf(stderr, "[CDM] download DONE\n")
                     locked_set_state(rt, STATE_DONE)
                     // Run post-download command if configured.
                     var post_cmd = rt.post_download_cmd.copy()
@@ -1137,14 +1124,12 @@ using std::vector;
 
     // Spawn the worker thread for a ready-to-run task.
     public func start_task(rt : *mut TaskRuntime, url : string_view, dir : string_view, filename : string_view) : bool {
-        fprintf(stderr, "[CDM] start_task: spawning worker thread\n")
         var job = new DownloadJob(rt, url, dir, filename)
-        if(job == null) { fprintf(stderr, "[CDM] start_task: job alloc FAILED\n"); return false }
+        if(job == null) { return false }
         rt.info_mutex.lock()
         if(rt.running) {
             rt.info_mutex.unlock()
             delete job
-            fprintf(stderr, "[CDM] start_task: already running\n")
             return false
         }
         rt.running = true
@@ -1155,7 +1140,6 @@ using std::vector;
         rt.info_mutex.unlock()
 
         rt.thread = std::concurrent::spawn(download_entry, job as *void)
-        fprintf(stderr, "[CDM] start_task: thread spawned\n")
         return true
     }
 

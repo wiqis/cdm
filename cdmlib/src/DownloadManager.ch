@@ -175,7 +175,6 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         while(true) {
             dm.items_mutex.lock()
             var active = count_active_locked(dm)
-            fprintf(stderr, "[CDM] start_pending: active=%d max=%d\n", active, dm.max_concurrent)
             if(active >= dm.max_concurrent) { dm.items_mutex.unlock(); return }
             var best_idx : usize = dm.items.size()
             var best_prio : int = 0x7FFFFFFF
@@ -191,7 +190,6 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             }
             if(best_idx == dm.items.size()) { dm.items_mutex.unlock(); return }
             var it = dm.items.get_ptr(best_idx)
-            fprintf(stderr, "[CDM] start_pending: picking task prio=%d\n", it.priority)
 
             var rt = new TaskRuntime(it.id.copy())
             if(rt == null) { dm.items_mutex.unlock(); return }
@@ -882,7 +880,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         fclose(f)
         // rename is atomic on POSIX.
         rename(tmp_path.data(), dm.progress_file_path.data())
-        fprintf(stderr, "[CDM] periodic progress saved (%d items)\n", snap.size())
+
     }
 
     // Restore progress from a progress.txt file. Called by the app after
