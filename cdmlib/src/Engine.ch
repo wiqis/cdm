@@ -75,6 +75,8 @@ using std::vector;
         var force_ipv6 : bool
         var filename_template : string
         var checksum : string
+        var proxy_host : string
+        var proxy_port : int
 
         @constructor func constructor(id_ : string) {
             return TaskRuntime {
@@ -104,7 +106,9 @@ using std::vector;
                 force_ipv4 = false,
                 force_ipv6 = false,
                 filename_template = string(),
-                checksum = string()
+                checksum = string(),
+                proxy_host = string(),
+                proxy_port = 0
             }
         }
     }
@@ -545,6 +549,8 @@ using std::vector;
         opts.auth = rt.auth_header.copy()
         opts.force_ipv4 = rt.force_ipv4
         opts.force_ipv6 = rt.force_ipv6
+        opts.proxy_host = rt.proxy_host.copy()
+        opts.proxy_port = rt.proxy_port
         return opts
     }
 

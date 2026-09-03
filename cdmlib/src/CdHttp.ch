@@ -23,6 +23,8 @@ using std::vector;
         var force_ipv6 : bool
         var cookie_file : string
         var verify_ssl : bool
+        var proxy_host : string
+        var proxy_port : int
 
         @constructor func constructor() {
             return HttpOptions {
@@ -33,7 +35,9 @@ using std::vector;
                 force_ipv4 = false,
                 force_ipv6 = false,
                 cookie_file = string(),
-                verify_ssl = true
+                verify_ssl = true,
+                proxy_host = string(),
+                proxy_port = 0
             }
         }
 
@@ -180,9 +184,13 @@ using std::vector;
         return Option.None<string>()
     }
 
-    func build_client() : http::Client {
+    func build_client(opts : &HttpOptions) : http::Client {
         var cl = http::Client()
         cl.max_body_len = 0u
+        if(!opts.verify_ssl) { cl.insecure_skip_verify(true) }
+        if(opts.proxy_host.size() > 0 && opts.proxy_port > 0) {
+            cl.set_proxy(string_view::make_view(&opts.proxy_host), opts.proxy_port as uint)
+        }
         return cl
     }
 
@@ -192,7 +200,7 @@ using std::vector;
     // range from range_start to EOF (`bytes=N-`). When range_end >= 0 an exact
     // bounded range is requested (`bytes=N-M`) — used by the segmented engine.
     public func request(method : string_view, url_str : string_view, range_start : i64, range_end : i64, opts : HttpOptions) : Result<http::Response, string> {
-        var cl = build_client()
+        var cl = build_client(&opts)
         var current = string(url_str.data(), url_str.size())
         var redirects = 0
         while(redirects <= MAX_REDIRECTS) {

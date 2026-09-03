@@ -281,6 +281,8 @@ using std::Result;
         out.append_string(&string::make_no_len(",\"auto_rename_duplicates\": \"")); if(dm.auto_rename_duplicates) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"move_completed_to\": \"")); var mct_s = json_string(string_view::make_view(&dm.move_completed_to)); out.append_string(&mct_s)
         out.append_string(&string::make_no_len(",\"clipboard_monitor\": \"")); if(dm.clipboard_monitor) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"proxy_host\": \"")); var prx_h_s = json_string(string_view::make_view(&dm.proxy_host)); out.append_string(&prx_h_s)
+        out.append_string(&string::make_no_len(",\"proxy_port\": \"")); out.append_integer(dm.proxy_port as bigint)
         out.append('}')
         return out
     }
@@ -543,6 +545,10 @@ using std::Result;
             if(mh >= 0) { dm.max_history = mh }
             var th = json_field(args, string_view::make_no_len("theme"))
             if(th.size() > 0) { dm.theme = th.copy() }
+            var prxh = json_field(args, string_view::make_no_len("proxy_host"))
+            var prxp = json_int_field(args, string_view::make_no_len("proxy_port"), dm.proxy_port)
+            if(prxh.size() > 0) { dm.proxy_host = prxh.copy() }
+            if(prxp >= 0) { dm.proxy_port = prxp }
             // Persist the settings for next launch.
             var settings = CdmSettings()
             settings.download_dir = dm.download_dir.copy()
@@ -576,6 +582,8 @@ using std::Result;
             settings.language = dm.language.copy()
             settings.max_history = dm.max_history
             settings.theme = dm.theme.copy()
+            settings.proxy_host = dm.proxy_host.copy()
+            settings.proxy_port = dm.proxy_port
             save_settings(&settings)
             return ok_json()
         }

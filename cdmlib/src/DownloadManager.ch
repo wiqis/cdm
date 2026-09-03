@@ -315,6 +315,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
             rt.force_ipv6 = dm.force_ipv6
             rt.filename_template = dm.filename_template.copy()
             rt.checksum = dm.checksum.copy()
+            rt.proxy_host = dm.proxy_host.copy()
+            rt.proxy_port = dm.proxy_port
             rt.manager = &raw mut dm
 
             dm.runtimes.insert(it.id.copy(), rt)

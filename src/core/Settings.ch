@@ -773,6 +773,8 @@ func settings_dir() : string {
         if(s.auto_rename_duplicates) { out.append_view("autoRenameDuplicates:true\n") }
         if(s.move_completed_to.size() > 0) { out.append_view("moveCompletedTo:"); out.append_string(&s.move_completed_to); out.append_view("\n") }
         if(s.clipboard_monitor) { out.append_view("clipboardMonitor:true\n") }
+        if(s.proxy_host.size() > 0) { out.append_view("proxyHost:"); out.append_string(&s.proxy_host); out.append_view("\n") }
+        if(s.proxy_port > 0) { out.append_view("proxyPort:"); out.append_integer(s.proxy_port as bigint); out.append_view("\n") }
         return out
     }
 

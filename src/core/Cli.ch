@@ -54,6 +54,8 @@ using std::Option;
         var force_ipv6 : bool             // --ipv6
         var filename_template : string    // --template
         var checksum : string             // --checksum
+        var proxy_host : string           // --proxy host:port
+        var proxy_port : int              // --proxy host:port
         var export_settings : string      // --export-settings <path>
         var import_settings : string      // --import-settings <path>
 
@@ -88,6 +90,8 @@ using std::Option;
                 yt_max_playlist = 0,
                 force_ipv4 = false,
                 force_ipv6 = false,
+                proxy_host = string(),
+                proxy_port = 0,
                 export_settings = string(),
                 import_settings = string()
             }
@@ -243,6 +247,19 @@ using std::Option;
                 i = i + 1
                 if(i >= argc || argv[i] == null) { return "--checksum requires algo:hex (e.g. md5:abc123)" }
                 out.checksum = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--proxy")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--proxy requires host:port" }
+                var proxy_str = string::make_no_len(argv[i])
+                var colon_pos = proxy_str.find(string_view::make_no_len(":"))
+                if(colon_pos == std::NPOS) { return "--proxy format is host:port" }
+                out.proxy_host = proxy_str.substring(0u, colon_pos)
+                var port_str = proxy_str.substring(colon_pos + 1u, proxy_str.size())
+                out.proxy_port = 0
+                for(var pi = 0u; pi < port_str.size(); pi++) {
+                    var pc = port_str.get(pi)
+                    if(pc >= '0' && pc <= '9') { out.proxy_port = out.proxy_port * 10 + (pc as int - '0' as int) }
+                }
             } else if(h == comptime_fnv1_hash("--export-settings")) {
                 i = i + 1
                 if(i >= argc || argv[i] == null) { return "--export-settings requires a file path" }
@@ -478,6 +495,10 @@ using std::Option;
         }
         if(opts.checksum.size() > 0) {
             dm.checksum = opts.checksum.copy()
+        }
+        if(opts.proxy_host.size() > 0) {
+            dm.proxy_host = opts.proxy_host.copy()
+            dm.proxy_port = opts.proxy_port
         }
 
         // Make sure the destination directory exists.

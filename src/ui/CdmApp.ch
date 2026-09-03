@@ -273,7 +273,9 @@
             bandwidth_limit_per: settings.bandwidth_limit_per || 0,
             auto_rename_duplicates: settings.auto_rename_duplicates || false,
             move_completed_to: settings.move_completed_to || "",
-            clipboard_monitor: settings.clipboard_monitor || false
+            clipboard_monitor: settings.clipboard_monitor || false,
+            proxy_host: settings.proxy_host || "",
+            proxy_port: settings.proxy_port || 0
         }
         call("settings_set", body)
         alert = "Settings saved"
@@ -1362,7 +1364,16 @@
 
                         <div class="cdm-section-header">Network</div>
 
-                        <label>Proxy (socks5://host:port)
+                        <label>HTTP proxy host
+                            <input type="text" value={settings.proxy_host || ""}
+                                placeholder="127.0.0.1"
+                                onChange={(e) => { settings.proxy_host = e.target.value }} />
+                        </label>
+                        <label>HTTP proxy port
+                            <input type="number" min="0" max="65535" value={settings.proxy_port || 0}
+                                onChange={(e) => { settings.proxy_port = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>yt-dlp proxy (socks5://host:port)
                             <input type="text" value={settings.yt_proxy || ""}
                                 placeholder="socks5://127.0.0.1:1080"
                                 onChange={(e) => { settings.yt_proxy = e.target.value }} />
