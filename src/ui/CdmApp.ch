@@ -232,7 +232,11 @@
             force_ipv4: settings.force_ipv4 || false,
             force_ipv6: settings.force_ipv6 || false,
             filename_template: settings.filename_template || "",
-            checksum: settings.checksum || ""
+            checksum: settings.checksum || "",
+            notifications_enabled: settings.notifications_enabled !== false,
+            language: settings.language || "",
+            max_history: settings.max_history || 1000,
+            theme: settings.theme || "auto"
         }
         call("settings_set", body)
         alert = "Settings saved"
@@ -1193,6 +1197,46 @@
                             <input type="number" min="0" value={settings.yt_max_playlist_items || 0}
                                 onChange={(e) => { settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} />
                         </label>
+
+                        <div className="cdm-section-header">Appearance</div>
+
+                        <label>Theme
+                            <select value={settings.theme || "auto"}
+                                onChange={(e) => { settings.theme = e.target.value }}>
+                                <option value="auto">Auto (system)</option>
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                            </select>
+                        </label>
+                        <label>Language (empty = auto)
+                            <input type="text" value={settings.language || ""}
+                                placeholder="en"
+                                onChange={(e) => { settings.language = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.notifications_enabled !== false}
+                                    onChange={(e) => { settings.notifications_enabled = e.target.checked }} />
+                                Desktop notifications
+                            </label>
+                        </div>
+                        <label>Max history items (0 = unlimited)
+                            <input type="number" min="0" value={settings.max_history || 0}
+                                onChange={(e) => { settings.max_history = parseInt(e.target.value) || 0 }} />
+                        </label>
+
+                        <div className="cdm-section-header">Backup</div>
+
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                            <button className="cdm-btn" onClick={() => {
+                                var path = prompt("Export settings to file:", "/tmp/cdm-settings.json")
+                                if(path) { call("settings_export", {path: path}); alert = "Settings exported to " + path }
+                            }}>Export Settings</button>
+                            <button className="cdm-btn" onClick={() => {
+                                var path = prompt("Import settings from file:")
+                                if(path) { call("settings_import", {path: path}, () => { refreshSettings() }); alert = "Settings imported" }
+                            }}>Import Settings</button>
+                        </div>
                     </div>
                     <div class="cdm-dialog-footer">
                         <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>

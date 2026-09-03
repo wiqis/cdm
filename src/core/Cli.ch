@@ -13,6 +13,13 @@ using std::vector;
 using std::Result;
 using std::Option;
 
+    // SIGINT flag — set by signal handler, checked in the headless wait loop.
+    public var g_sigint : bool = false
+
+    func sigint_handler(sig : int) {
+        g_sigint = true
+    }
+
     public struct CliOptions {
         var urls : vector<string>
         var download_dir : string        // empty => keep manager default
@@ -47,6 +54,8 @@ using std::Option;
         var force_ipv6 : bool             // --ipv6
         var filename_template : string    // --template
         var checksum : string             // --checksum
+        var export_settings : string      // --export-settings <path>
+        var import_settings : string      // --import-settings <path>
 
         @constructor func constructor() {
             return CliOptions {
@@ -78,7 +87,9 @@ using std::Option;
                 yt_audio_only = false,
                 yt_max_playlist = 0,
                 force_ipv4 = false,
-                force_ipv6 = false
+                force_ipv6 = false,
+                export_settings = string(),
+                import_settings = string()
             }
         }
     }
@@ -232,6 +243,14 @@ using std::Option;
                 i = i + 1
                 if(i >= argc || argv[i] == null) { return "--checksum requires algo:hex (e.g. md5:abc123)" }
                 out.checksum = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--export-settings")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--export-settings requires a file path" }
+                out.export_settings = string::make_no_len(argv[i])
+            } else if(h == comptime_fnv1_hash("--import-settings")) {
+                i = i + 1
+                if(i >= argc || argv[i] == null) { return "--import-settings requires a file path" }
+                out.import_settings = string::make_no_len(argv[i])
             } else if(arg[0] == '-') {
                 return "unknown option"
             } else {
@@ -341,6 +360,58 @@ using std::Option;
     // Headless runner: add the URLs, schedule them, and block until every task
     // reaches a terminal state. Returns process exit code (0 = all succeeded).
     public func run_headless(opts : &CliOptions) : int {
+        // Register SIGINT handler for graceful shutdown.
+        signal(2, sigint_handler)
+
+        // Handle --export-settings / --import-settings early (before DM init).
+        if(opts.export_settings.size() > 0) {
+            var dm_tmp = DownloadManager()
+            var settings = CdmSettings()
+            if(load_settings(&raw mut settings)) {
+                apply_settings_to_dm(&mut dm_tmp, &settings)
+            }
+            var json_out = settings_json(&mut dm_tmp)
+            var f = fopen(opts.export_settings.data(), "w")
+            if(f == null) {
+                printf("cdm: cannot write to %s\n", opts.export_settings.data())
+                return 1
+            }
+            fwrite(json_out.data() as *mut u8, 1, json_out.size(), f)
+            fclose(f)
+            printf("cdm: settings exported to %s\n", opts.export_settings.data())
+            return 0
+        }
+        if(opts.import_settings.size() > 0) {
+            var f = fopen(opts.import_settings.data(), "rb")
+            if(f == null) {
+                printf("cdm: cannot read %s\n", opts.import_settings.data())
+                return 1
+            }
+            fseek(f, 0, 2)
+            var fsize = ftell(f)
+            fseek(f, 0, 0)
+            var buf = string()
+            var chunk : [4096u]u8
+            while(fsize > 0) {
+                var to_read = fsize
+                if(to_read > 4096) { to_read = 4096 }
+                var n = fread(&raw mut chunk[0], 1, to_read as usize, f)
+                if(n == 0u) { break }
+                buf.append_with_len(&raw mut chunk[0] as *char, n)
+                fsize = fsize - n as i64
+            }
+            fclose(f)
+            var settings = CdmSettings()
+            var ok = parse_settings_json(buf.data() as *u8, buf.size(), &mut settings)
+            if(!ok) {
+                printf("cdm: invalid settings JSON in %s\n", opts.import_settings.data())
+                return 1
+            }
+            save_settings(&settings)
+            printf("cdm: settings imported from %s\n", opts.import_settings.data())
+            return 0
+        }
+
         var dm = DownloadManager()
 
         // Apply persisted settings first, then let explicit CLI flags override.
@@ -464,8 +535,9 @@ using std::Option;
         }
 
         // Wait for completion. The manager auto-starts up to max_concurrent.
+        // SIGINT: set g_sigint to break the loop gracefully.
         var all_done = false
-        while(!all_done) {
+        while(!all_done && !g_sigint) {
             std::concurrent.sleep_ms(250)
             var snap = vector<DownloadItem>()
             snapshot_into(&mut dm, &mut snap)
@@ -480,6 +552,9 @@ using std::Option;
             if(!opts.quiet) {
                 print_progress(&snap, opts.quiet)
             }
+        }
+        if(g_sigint && !opts.quiet) {
+            printf("\ncdm: interrupted — pausing active downloads...\n")
         }
 
         // Final summary (from the live snapshot so states are authoritative).
@@ -536,6 +611,27 @@ using std::Option;
         printf("  -g, --gui             force the GUI\n")
         printf("  -v, --version         print version\n")
         printf("  -h, --help            show this help\n")
+        printf("\n")
+        printf("Power-user options:\n")
+        printf("      --user-agent <ua> custom User-Agent string\n")
+        printf("      --cookies <path>  Netscape cookie file\n")
+        printf("      --referer <url>   HTTP Referer header\n")
+        printf("      --auth <value>    Authorization header (Bearer token)\n")
+        printf("      --connect-timeout N  TCP connect timeout in seconds\n")
+        printf("      --no-ssl-verify   skip SSL certificate verification\n")
+        printf("      --ipv4            force IPv4 connections\n")
+        printf("      --ipv6            force IPv6 connections\n")
+        printf("      --max-size N      max download size in bytes (0=unlimited)\n")
+        printf("      --min-disk N      min free disk space in MB\n")
+        printf("      --template <pat>  output filename template ({name}.{ext})\n")
+        printf("      --checksum <algo:hex>  verify checksum after download\n")
+        printf("      --post-cmd <cmd>  run command after download ({} = file path)\n")
+        printf("      --yt-quality <q>  YouTube quality (best/1080/720/480)\n")
+        printf("      --yt-format <f>   YouTube format (mp4/mkv/webm)\n")
+        printf("      --yt-audio-only   download audio only from YouTube\n")
+        printf("      --yt-max-playlist N  max items from a YouTube playlist\n")
+        printf("      --export-settings <path>  export settings to JSON file\n")
+        printf("      --import-settings <path>  import settings from JSON file\n")
     }
 
 } // end namespace cdm

@@ -233,6 +233,16 @@ using std::Result;
         out.append_string(&string::make_no_len(",\"checksum\": "))
         var cs_s = json_string(string_view::make_view(&dm.checksum))
         out.append_string(&cs_s)
+        out.append_string(&string::make_no_len(",\"notifications_enabled\": "))
+        if(dm.notifications_enabled) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"language\": "))
+        var lang_s = json_string(string_view::make_view(&dm.language))
+        out.append_string(&lang_s)
+        out.append_string(&string::make_no_len(",\"max_history\": "))
+        out.append_integer(dm.max_history as bigint)
+        out.append_string(&string::make_no_len(",\"theme\": "))
+        var th_s = json_string(string_view::make_view(&dm.theme))
+        out.append_string(&th_s)
         out.append('}')
         return out
     }
@@ -487,6 +497,14 @@ using std::Result;
             dm.force_ipv6 = fipv6
             if(ftemp.size() > 0) { dm.filename_template = ftemp.copy() }
             if(csum.size() > 0) { dm.checksum = csum.copy() }
+            var notifs = json_bool_field(args, string_view::make_no_len("notifications_enabled"), dm.notifications_enabled)
+            dm.notifications_enabled = notifs
+            var lang = json_field(args, string_view::make_no_len("language"))
+            if(lang.size() > 0) { dm.language = lang.copy() }
+            var mh = json_int_field(args, string_view::make_no_len("max_history"), dm.max_history)
+            if(mh >= 0) { dm.max_history = mh }
+            var th = json_field(args, string_view::make_no_len("theme"))
+            if(th.size() > 0) { dm.theme = th.copy() }
             // Persist the settings for next launch.
             var settings = CdmSettings()
             settings.download_dir = dm.download_dir.copy()
@@ -516,6 +534,66 @@ using std::Result;
             settings.force_ipv6 = dm.force_ipv6
             settings.filename_template = dm.filename_template.copy()
             settings.checksum = dm.checksum.copy()
+            settings.notifications_enabled = dm.notifications_enabled
+            settings.language = dm.language.copy()
+            settings.max_history = dm.max_history
+            settings.theme = dm.theme.copy()
+            save_settings(&settings)
+            return ok_json()
+        }
+        var m_settings_export = string_view::make_no_len("settings_export")
+        if(method.equals(&m_settings_export)) {
+            var file_path = json_field(args, string_view::make_no_len("path"))
+            if(file_path.size() == 0u) {
+                var msg = string::make_no_len("missing path")
+                return err_json(&msg)
+            }
+            var json_out = settings_json(&mut *dm)
+            var f = fopen(file_path.data(), "w")
+            if(f == null) {
+                var msg = string::make_no_len("cannot write to ")
+                msg.append_string(&file_path)
+                return err_json(&msg)
+            }
+            fwrite(json_out.data() as *mut u8, 1, json_out.size(), f)
+            fclose(f)
+            return ok_json()
+        }
+        var m_settings_import = string_view::make_no_len("settings_import")
+        if(method.equals(&m_settings_import)) {
+            var file_path = json_field(args, string_view::make_no_len("path"))
+            if(file_path.size() == 0u) {
+                var msg = string::make_no_len("missing path")
+                return err_json(&msg)
+            }
+            var f = fopen(file_path.data(), "rb")
+            if(f == null) {
+                var msg = string::make_no_len("cannot read ")
+                msg.append_string(&file_path)
+                return err_json(&msg)
+            }
+            fseek(f, 0, 2)
+            var fsize = ftell(f)
+            fseek(f, 0, 0)
+            var buf = string()
+            var chunk : [4096u]u8
+            while(fsize > 0) {
+                var to_read = fsize
+                if(to_read > 4096) { to_read = 4096 }
+                var n = fread(&raw mut chunk[0], 1, to_read as usize, f)
+                if(n == 0u) { break }
+                buf.append_with_len(&raw mut chunk[0] as *char, n)
+                fsize = fsize - n as i64
+            }
+            fclose(f)
+            // Parse as JSON and apply each field to dm.
+            var settings = CdmSettings()
+            var jres = parse_settings_json(buf.data() as *u8, buf.size(), &mut settings)
+            if(!jres) {
+                var msg = string::make_no_len("invalid settings JSON")
+                return err_json(&msg)
+            }
+            apply_settings_to_dm(&mut *dm, &settings)
             save_settings(&settings)
             return ok_json()
         }

@@ -52,6 +52,10 @@ using std::ordered_map;
         var force_ipv6 : bool
         var filename_template : string       // e.g. "{title}.{ext}"
         var checksum : string                // e.g. "md5:abc123" or "sha256:..."
+        var notifications_enabled : bool     // desktop notifications on completion/error
+        var language : string                // UI language code (empty = auto)
+        var max_history : int                // max completed downloads to keep in history (0 = unlimited)
+        var theme : string                   // "auto", "light", "dark"
 
         @constructor func constructor() {
             return CdmSettings {
@@ -91,7 +95,11 @@ using std::ordered_map;
                 force_ipv4 = false,
                 force_ipv6 = false,
                 filename_template = string(),
-                checksum = string()
+                checksum = string(),
+                notifications_enabled = true,
+                language = string(),
+                max_history = 1000,
+                theme = string::make_no_len("auto")
             }
         }
 
@@ -450,6 +458,10 @@ func settings_dir() : string {
         dm.force_ipv6 = s.force_ipv6
         dm.filename_template = s.filename_template.copy()
         dm.checksum = s.checksum.copy()
+        dm.notifications_enabled = s.notifications_enabled
+        dm.language = s.language.copy()
+        dm.max_history = s.max_history
+        dm.theme = s.theme.copy()
         if(s.download_dir.size() > 0) {
             dm.download_dir = s.download_dir.copy()
         }
@@ -560,6 +572,21 @@ func settings_dir() : string {
             out.append_string(&s.checksum)
             out.append_view("\n")
         }
+        out.append_view("notificationsEnabled:")
+        if(s.notifications_enabled) { out.append_view("true\n") } else { out.append_view("false\n") }
+        if(s.language.size() > 0) {
+            out.append_view("language:")
+            out.append_string(&s.language)
+            out.append_view("\n")
+        }
+        out.append_view("maxHistory:")
+        out.append_integer(s.max_history as bigint)
+        out.append_view("\n")
+        if(s.theme.size() > 0) {
+            out.append_view("theme:")
+            out.append_string(&s.theme)
+            out.append_view("\n")
+        }
         return out
     }
 
@@ -637,8 +664,116 @@ func settings_dir() : string {
             else if(kh == comptime_fnv1_hash("forceIpv6")) { s.force_ipv6 = parse_bool(&val) }
             else if(kh == comptime_fnv1_hash("filenameTemplate")) { s.filename_template = val.copy() }
             else if(kh == comptime_fnv1_hash("checksum")) { s.checksum = val.copy() }
+            else if(kh == comptime_fnv1_hash("notificationsEnabled")) { s.notifications_enabled = parse_bool(&val) }
+            else if(kh == comptime_fnv1_hash("language")) { s.language = val.copy() }
+            else if(kh == comptime_fnv1_hash("maxHistory")) {
+                var n = parse_int_opt(val.data())
+                if(n >= 0) { s.max_history = n }
+            }
+            else if(kh == comptime_fnv1_hash("theme")) { s.theme = val.copy() }
         }
         return s
+    }
+
+    // Parse a JSON settings export and populate a CdmSettings. Returns true on success.
+    // Uses a simple key-value JSON parser (handles flat objects only).
+    // Helper: read a JSON string value (after opening quote) into a string.
+    func read_json_string(s : &string_view, i : &mut usize) : string {
+        var out = string()
+        while(*i < s.size() && s.get(*i) != '"') {
+            if(s.get(*i) == '\\' && *i + 1 < s.size()) { *i = *i + 1 }  // skip escaped char
+            out.append(s.get(*i))
+            *i = *i + 1
+        }
+        if(*i < s.size()) { *i = *i + 1 }  // skip closing quote
+        return out
+    }
+
+    // Parse a JSON settings export and populate a CdmSettings. Returns true on success.
+    // Uses a simple key-value JSON parser (handles flat objects only).
+    public func parse_settings_json(data : *u8, len : usize, out : &mut CdmSettings) : bool {
+        var s = string_view(data as *char, len)
+        // Simple JSON parser: extract "key": value pairs
+        var i : usize = 0
+        while(i < s.size()) {
+            // Skip to next '"'
+            while(i < s.size() && s.get(i) != '"') { i = i + 1 }
+            if(i >= s.size()) { break }
+            i = i + 1  // skip opening quote
+            var key = read_json_string(&s, &mut i)
+            // Skip to ':'
+            while(i < s.size() && s.get(i) != ':') { i = i + 1 }
+            if(i >= s.size()) { break }
+            i = i + 1  // skip ':'
+            // Skip whitespace
+            while(i < s.size() && (s.get(i) == ' ' || s.get(i) == '\t' || s.get(i) == '\n' || s.get(i) == '\r')) { i = i + 1 }
+            if(i >= s.size()) { break }
+            // Parse value
+            var val = string()
+            var val_is_bool = false
+            var val_bool = false
+            var val_is_num = false
+            var val_num : i64 = 0
+            if(s.get(i) == '"') {
+                i = i + 1  // skip opening quote
+                val = read_json_string(&s, &mut i)
+            } else if(s.get(i) == 't' || s.get(i) == 'f') {
+                val_is_bool = true
+                if(s.get(i) == 't') { val_bool = true; i = i + 4 }  // true
+                else { val_bool = false; i = i + 5 }  // false
+            } else if(s.get(i) == '-' || (s.get(i) >= '0' && s.get(i) <= '9')) {
+                val_is_num = true
+                var neg = false
+                if(s.get(i) == '-') { neg = true; i = i + 1 }
+                var n : i64 = 0
+                while(i < s.size() && s.get(i) >= '0' && s.get(i) <= '9') {
+                    n = n * 10 + (s.get(i) as i64 - '0' as i64)
+                    i = i + 1
+                }
+                if(neg) { n = -n }
+                val_num = n
+            } else {
+                while(i < s.size() && s.get(i) != ',' && s.get(i) != '}') { i = i + 1 }
+                continue
+            }
+            // Apply to settings by key
+            var kh = fnv1_hash_view(string_view::make_view(&key))
+            if(kh == comptime_fnv1_hash("download_dir") || kh == comptime_fnv1_hash("downloadFolder")) { out.download_dir = val.copy() }
+            else if(kh == comptime_fnv1_hash("max_concurrent") || kh == comptime_fnv1_hash("parallelDownloads")) { if(val_is_num) { out.max_concurrent = val_num as int } }
+            else if(kh == comptime_fnv1_hash("max_segments") || kh == comptime_fnv1_hash("maxSegments")) { if(val_is_num) { out.max_segments = val_num as int } }
+            else if(kh == comptime_fnv1_hash("speed_limit_kbps") || kh == comptime_fnv1_hash("speedLimit")) { if(val_is_num) { out.speed_limit_kbps = val_num } }
+            else if(kh == comptime_fnv1_hash("enable_resume")) { if(val_is_bool) { out.enable_resume = val_bool } }
+            else if(kh == comptime_fnv1_hash("allow_segments")) { if(val_is_bool) { out.allow_segments = val_bool } }
+            else if(kh == comptime_fnv1_hash("duplicate_action") || kh == comptime_fnv1_hash("duplicateAction")) { if(val_is_num) { out.duplicate_action = val_num as int } }
+            else if(kh == comptime_fnv1_hash("auto_resume_failed")) { if(val_is_bool) { out.auto_resume_failed = val_bool } }
+            else if(kh == comptime_fnv1_hash("max_retries") || kh == comptime_fnv1_hash("maxRetries")) { if(val_is_num) { out.max_retries = val_num as int } }
+            else if(kh == comptime_fnv1_hash("retry_delay_ms") || kh == comptime_fnv1_hash("retryDelayMs")) { if(val_is_num) { out.retry_delay_ms = val_num } }
+            else if(kh == comptime_fnv1_hash("user_agent") || kh == comptime_fnv1_hash("userAgent")) { out.user_agent = val.copy() }
+            else if(kh == comptime_fnv1_hash("cookie_file") || kh == comptime_fnv1_hash("cookieFile")) { out.cookie_file = val.copy() }
+            else if(kh == comptime_fnv1_hash("verify_ssl") || kh == comptime_fnv1_hash("verifySsl")) { if(val_is_bool) { out.verify_ssl = val_bool } }
+            else if(kh == comptime_fnv1_hash("connect_timeout") || kh == comptime_fnv1_hash("connectTimeout")) { if(val_is_num) { out.connect_timeout = val_num as int } }
+            else if(kh == comptime_fnv1_hash("max_download_size") || kh == comptime_fnv1_hash("maxDownloadSize")) { if(val_is_num) { out.max_download_size = val_num } }
+            else if(kh == comptime_fnv1_hash("min_disk_space_mb") || kh == comptime_fnv1_hash("minDiskSpaceMb")) { if(val_is_num) { out.min_disk_space_mb = val_num as int } }
+            else if(kh == comptime_fnv1_hash("post_download_cmd") || kh == comptime_fnv1_hash("postDownloadCmd")) { out.post_download_cmd = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_quality") || kh == comptime_fnv1_hash("ytQuality")) { out.yt_quality = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_format") || kh == comptime_fnv1_hash("ytFormat")) { out.yt_format = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_audio_only") || kh == comptime_fnv1_hash("ytAudioOnly")) { if(val_is_bool) { out.yt_audio_only = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_max_playlist_items") || kh == comptime_fnv1_hash("ytMaxPlaylistItems")) { if(val_is_num) { out.yt_max_playlist_items = val_num as int } }
+            else if(kh == comptime_fnv1_hash("referer_header") || kh == comptime_fnv1_hash("refererHeader")) { out.referer_header = val.copy() }
+            else if(kh == comptime_fnv1_hash("auth_header") || kh == comptime_fnv1_hash("authHeader")) { out.auth_header = val.copy() }
+            else if(kh == comptime_fnv1_hash("force_ipv4") || kh == comptime_fnv1_hash("forceIpv4")) { if(val_is_bool) { out.force_ipv4 = val_bool } }
+            else if(kh == comptime_fnv1_hash("force_ipv6") || kh == comptime_fnv1_hash("forceIpv6")) { if(val_is_bool) { out.force_ipv6 = val_bool } }
+            else if(kh == comptime_fnv1_hash("filename_template") || kh == comptime_fnv1_hash("filenameTemplate")) { out.filename_template = val.copy() }
+            else if(kh == comptime_fnv1_hash("checksum")) { out.checksum = val.copy() }
+            else if(kh == comptime_fnv1_hash("notifications_enabled") || kh == comptime_fnv1_hash("notificationsEnabled")) { if(val_is_bool) { out.notifications_enabled = val_bool } }
+            else if(kh == comptime_fnv1_hash("language")) { out.language = val.copy() }
+            else if(kh == comptime_fnv1_hash("max_history") || kh == comptime_fnv1_hash("maxHistory")) { if(val_is_num) { out.max_history = val_num as int } }
+            else if(kh == comptime_fnv1_hash("theme")) { out.theme = val.copy() }
+            // Skip to next comma
+            while(i < s.size() && s.get(i) != ',') { i = i + 1 }
+            if(i < s.size()) { i = i + 1 }  // skip comma
+        }
+        return true
     }
 
     // Queue file format: one line per entry, `url<TAB>id<TAB>dir`. Versioned

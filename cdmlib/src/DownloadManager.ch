@@ -47,6 +47,10 @@ using std::mutex;
         var force_ipv6 : bool
         var filename_template : string
         var checksum : string
+        var notifications_enabled : bool
+        var language : string
+        var max_history : int
+        var theme : string
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -85,7 +89,11 @@ using std::mutex;
                 force_ipv4 = false,
                 force_ipv6 = false,
                 filename_template = string(),
-                checksum = string()
+                checksum = string(),
+                notifications_enabled = true,
+                language = string(),
+                max_history = 1000,
+                theme = string::make_no_len("auto")
             }
         }
 
