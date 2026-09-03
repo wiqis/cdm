@@ -459,7 +459,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
     }
 
     // Change the URL of an existing download. Only allowed for non-running
-    // items. Clears progress so the download restarts with the new URL.
+    // items. Preserves progress so the worker resumes from disk with the new URL.
     public func change_url(dm : &mut DownloadManager, id : &string, new_url : string_view) : bool {
         dm.items_mutex.lock()
         var idx = find_item_index(dm, id)
@@ -473,8 +473,8 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         it.url = string(new_url.data(), new_url.size())
         it.state = STATE_QUEUED
         it.error = string()
-        it.downloaded_bytes = 0
-        it.total_bytes = 0
+        // Preserve downloaded_bytes/total_bytes so the worker resumes from disk.
+        // The new URL is likely a refreshed link for the same content.
         it.retry_count = 0
         it.was_interrupted = false
         dm.items_mutex.unlock()
@@ -506,7 +506,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         path.append_string(&del_name)
         remove(path.data())
         var i : usize = 0
-        while(i < 64u) {
+        while(i < MAX_PART_FILES) {
             var ps = string()
             ps.append_string(&del_dir)
             ps.append('/')
@@ -682,7 +682,7 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
         if(delete_file) {
             del_path = it.local_path()
             var i : usize = 0
-            while(i < 64u) {
+            while(i < MAX_PART_FILES) {
                 var ps = string()
                 ps.append_string(&it.dir)
                 ps.append('/')

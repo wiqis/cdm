@@ -63,6 +63,7 @@ using std::Option;
     public const DEFAULT_MAX_SEGMENTS : int = 4
     public comptime const DEFAULT_MIN_SEGMENT_SIZE : i64 = 256 * 1024
     public const DEFAULT_WORKERS_PER_TASK : int = 1
+    public const MAX_PART_FILES : usize = 64
 
     // Persistent settings file (relative to $HOME).
     public const SETTINGS_FILE : *char = ".chemicaldm/config.txt"

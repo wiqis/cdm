@@ -322,8 +322,10 @@ using std::vector;
     }
 
     // Open the output file, truncating on a fresh start or opening in place
-    // at `resume_from` for resumable sessions.
+    // at `resume_from` for resumable sessions. Ensures parent directory exists.
     func open_output(path : *char, resume_from : i64) : *mut FILE {
+        // Ensure the parent directory exists (handles deleted dirs between sessions).
+        ensure_parent_dir(path)
         if(resume_from <= 0) {
             return fopen(path, "wb")
         }
@@ -332,6 +334,20 @@ using std::vector;
             fseek(f, resume_from, SEEK_SET)
         }
         return f
+    }
+
+    // Create parent directory of a file path if it doesn't exist.
+    func ensure_parent_dir(path : *char) {
+        // Find the last '/' in the path.
+        var p = string(path)
+        var last_slash : usize = 0
+        var found = false
+        for(var i = 0u; i < p.size(); i++) {
+            if(p.get(i) == '/') { last_slash = i; found = true }
+        }
+        if(!found || last_slash == 0u) { return }
+        var dir = p.substring(0u, last_slash)
+        fs::create_dir_all(dir.data())
     }
 
     // Compute the number of segments for a file of `total` bytes given the
@@ -631,6 +647,7 @@ using std::vector;
         dest.append('/')
         dest.append_char_ptr(filename)
 
+        ensure_parent_dir(dest.data())
         var out = fopen(dest.data(), "wb")
         if(out == null) { return false }
         var buf : [1024u * 1024u]u8
@@ -942,6 +959,28 @@ using std::vector;
                 fprintf(stderr, "[CDM] stream_body returned code=%d\n", code)
                 fclose(ofile)
                 if(code == 1) {
+                    // Verify completeness: if the server reported a total and
+                    // we received fewer bytes, the connection was truncated.
+                    var dl_final = locked_get_downloaded(rt)
+                    var tot_final = locked_get_total(rt)
+                    if(tot_final > 0 && dl_final < tot_final) {
+                        fprintf(stderr, "[CDM] incomplete download: got %lld of %lld bytes\n", dl_final, tot_final)
+                        var msg = string::make_no_len("server closed connection early (")
+                        var dl_s = string()
+                        dl_s.append_integer(dl_final as bigint)
+                        msg.append_string(&dl_s)
+                        msg.append('/')
+                        var tot_s = string()
+                        tot_s.append_integer(tot_final as bigint)
+                        msg.append_string(&tot_s)
+                        msg.append_string(&string::make_no_len(" bytes)"))
+                        locked_set_error(rt, &msg)
+                        retries = retries + 1
+                        if(rt.retry_policy.should_retry(retries)) {
+                            rt.retry_policy.sleep_between_retries()
+                        }
+                        continue
+                    }
                     fprintf(stderr, "[CDM] download DONE\n")
                     locked_set_state(rt, STATE_DONE)
                     done = true

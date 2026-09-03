@@ -784,7 +784,10 @@ using std::mutex;
     func save_yt_links() {
         if(g_yt_links == null) { return }
         var path = yt_links_file()
-        var f = fopen(path.data(), "w")
+        // Atomic write: tmp → rename so a crash never corrupts the file.
+        var tmp_path = path.copy()
+        tmp_path.append_view(string_view::make_no_len(".tmp"))
+        var f = fopen(tmp_path.data(), "w")
         if(f == null) { return }
         for(var i = 0u; i < g_yt_links.size(); i++) {
             var r = g_yt_links.get_ptr(i)
@@ -804,6 +807,7 @@ using std::mutex;
             fprintf(f, "%s", line.data())
         }
         fclose(f)
+        rename(tmp_path.data(), path.data())
     }
 
     func load_yt_links() {
@@ -1106,7 +1110,15 @@ using std::mutex;
         g_async_dl.mu.lock()
         g_async_dl.running = false; g_async_dl.done = true
         g_async_dl.error = string::make_no_len("cancelled")
+        var dm = g_async_dl.dm
+        var vid_id = g_async_dl.dm_task_id.copy()
+        var aud_id = g_async_dl.audio_task_id.copy()
         g_async_dl.mu.unlock()
+        // Actually cancel the DM tasks so they stop downloading.
+        if(dm != null) {
+            if(vid_id.size() > 0u) { cancel_task(&mut *dm, &vid_id) }
+            if(aud_id.size() > 0u) { cancel_task(&mut *dm, &aud_id) }
+        }
     }
 
     // TEMP DEBUG REPRO accessors.
@@ -1507,7 +1519,21 @@ using std::mutex;
         g_async_pl.mu.lock()
         g_async_pl.running = false; g_async_pl.done = true
         g_async_pl.error = string::make_no_len("cancelled")
+        var dm = g_async_pl.dm
+        var items_ptr = g_async_pl.items
         g_async_pl.mu.unlock()
+        // Cancel all individual playlist item DM tasks.
+        if(dm != null && items_ptr != null) {
+            for(var i = 0u; i < items_ptr.size(); i++) {
+                var it = *(items_ptr.get_ptr(i))
+                it.dl.mu.lock()
+                var vid_id = it.dl.dm_task_id.copy()
+                var aud_id = it.dl.audio_task_id.copy()
+                it.dl.mu.unlock()
+                if(vid_id.size() > 0u) { cancel_task(&mut *dm, &vid_id) }
+                if(aud_id.size() > 0u) { cancel_task(&mut *dm, &aud_id) }
+            }
+        }
     }
 
 } // end namespace cdm

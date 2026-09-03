@@ -36,19 +36,21 @@ using std::vector;
     public func parse_content_length(svc : &string) : i64 {
         if(svc.size() == 0) { return -1 }
         var val : i64 = 0
-        var neg = false
         var started = false
-        for(var i = 0u; i < svc.size(); i++) {
+        var i : usize = 0
+        // Content-Length must be non-negative. Leading '-' makes the whole value invalid.
+        if(svc.get(0) == '-') { return -1 }
+        while(i < svc.size()) {
             var c = svc.get(i)
             if(c >= '0' && c <= '9') {
                 val = val * 10 + (c as i64 - '0' as i64)
                 started = true
-            } else if(c == '-') {
-                neg = true
+            } else if(started) {
+                break
             }
+            i = i + 1u
         }
         if(!started) { return -1 }
-        if(neg) { return -1 }
         return val
     }
 
@@ -243,76 +245,88 @@ using std::vector;
             probe.filename = sanitize_filename(filename_hint)
         }
 
-        var res = request("GET", url_str, 0, 0)
-        if(res is Result.Err) {
-            var Err(e) = res else unreachable
-            probe.error = e.copy()
-            fprintf(stderr, "[CDM] probe failed for %s: %s\n", string(url_str.data(), url_str.size()).data(), e.data())
-            return probe
-        }
-        var Ok(rep) = res else unreachable
-        probe.status = rep.status
+        // Retry probe up to 3 times on network errors (transient failures).
+        var last_err = string()
+        var attempt = 0
+        while(attempt < 3) {
+            var res = request("GET", url_str, 0, 0)
+            if(res is Result.Ok) {
+                last_err = string()
+                var Ok(rep) = res else unreachable
+                probe.status = rep.status
 
-        if(rep.status == 206u) {
-            probe.ok = true
-            probe.supports_resume = true
-            // Content-Range: bytes <start>-<end>/<total>
-            var cr_opt = rep.headers.get("Content-Range")
-            if(cr_opt is Option.Some) {
-                var Some(cr) = cr_opt else unreachable
-                probe.total_bytes = parse_content_range_total(&cr)
-            }
-            fprintf(stderr, "[CDM] probe: 206 resume supported, total=%lld\n", probe.total_bytes)
-        } else if(rep.status == 200u) {
-            probe.ok = true
-            probe.supports_resume = false
-            var cl_opt = rep.headers.get("Content-Length")
-            if(cl_opt is Option.Some) {
-                var Some(cl) = cl_opt else unreachable
-                probe.total_bytes = parse_content_length(&cl)
-            }
-            fprintf(stderr, "[CDM] probe: 200 no resume, total=%lld\n", probe.total_bytes)
-        } else if(rep.status == 416u) {
-            // Range not satisfiable — server usually gives total via Content-Range.
-            probe.ok = true
-            probe.supports_resume = false
-            var cr_opt = rep.headers.get("Content-Range")
-            if(cr_opt is Option.Some) {
-                var Some(cr) = cr_opt else unreachable
-                probe.total_bytes = parse_content_range_total(&cr)
-            }
-            fprintf(stderr, "[CDM] probe: 416 Range not satisfiable, total=%lld\n", probe.total_bytes)
-        } else {
-            probe.error = string::make_no_len("server returned HTTP ")
-            probe.error.append_uinteger(rep.status as ubigint)
-            if(rep.status == 403u) {
-                probe.error.append_string(&string::make_no_len(" (access denied)") )
-            } else if(rep.status == 404u) {
-                probe.error.append_string(&string::make_no_len(" (not found)"))
-            } else if(rep.status == 429u) {
-                probe.error.append_string(&string::make_no_len(" (rate limited — try again later)"))
-            } else if(rep.status >= 500u) {
-                probe.error.append_string(&string::make_no_len(" (server error)"))
-            }
-            fprintf(stderr, "[CDM] probe: HTTP %u\n", rep.status)
-        }
+                if(rep.status == 206u) {
+                    probe.ok = true
+                    probe.supports_resume = true
+                    // Content-Range: bytes <start>-<end>/<total>
+                    var cr_opt = rep.headers.get("Content-Range")
+                    if(cr_opt is Option.Some) {
+                        var Some(cr) = cr_opt else unreachable
+                        probe.total_bytes = parse_content_range_total(&cr)
+                    }
+                    fprintf(stderr, "[CDM] probe: 206 resume supported, total=%lld\n", probe.total_bytes)
+                } else if(rep.status == 200u) {
+                    probe.ok = true
+                    probe.supports_resume = false
+                    var cl_opt = rep.headers.get("Content-Length")
+                    if(cl_opt is Option.Some) {
+                        var Some(cl) = cl_opt else unreachable
+                        probe.total_bytes = parse_content_length(&cl)
+                    }
+                    fprintf(stderr, "[CDM] probe: 200 no resume, total=%lld\n", probe.total_bytes)
+                } else if(rep.status == 416u) {
+                    // Range not satisfiable — server usually gives total via Content-Range.
+                    probe.ok = true
+                    probe.supports_resume = false
+                    var cr_opt = rep.headers.get("Content-Range")
+                    if(cr_opt is Option.Some) {
+                        var Some(cr) = cr_opt else unreachable
+                        probe.total_bytes = parse_content_range_total(&cr)
+                    }
+                    fprintf(stderr, "[CDM] probe: 416 Range not satisfiable, total=%lld\n", probe.total_bytes)
+                } else {
+                    probe.error = string::make_no_len("server returned HTTP ")
+                    probe.error.append_uinteger(rep.status as ubigint)
+                    if(rep.status == 403u) {
+                        probe.error.append_string(&string::make_no_len(" (access denied)") )
+                    } else if(rep.status == 404u) {
+                        probe.error.append_string(&string::make_no_len(" (not found)"))
+                    } else if(rep.status == 429u) {
+                        probe.error.append_string(&string::make_no_len(" (rate limited — try again later)"))
+                    } else if(rep.status >= 500u) {
+                        probe.error.append_string(&string::make_no_len(" (server error)"))
+                    }
+                    fprintf(stderr, "[CDM] probe: HTTP %u\n", rep.status)
+                }
 
-        // Filename from Content-Disposition, falling back to the URL path.
-        var cd_opt = rep.headers.get("Content-Disposition")
-        if(cd_opt is Option.Some) {
-            var Some(cd) = cd_opt else unreachable
-            var nm_opt = parse_content_disposition_name(&cd)
-            if(nm_opt is Option.Some) {
-                var Some(nm) = nm_opt else unreachable
-                probe.filename = sanitize_filename(string_view::make_view(&nm))
+                // Filename from Content-Disposition, falling back to the URL path.
+                var cd_opt = rep.headers.get("Content-Disposition")
+                if(cd_opt is Option.Some) {
+                    var Some(cd) = cd_opt else unreachable
+                    var nm_opt = parse_content_disposition_name(&cd)
+                    if(nm_opt is Option.Some) {
+                        var Some(nm) = nm_opt else unreachable
+                        probe.filename = sanitize_filename(string_view::make_view(&nm))
+                    }
+                }
+                if(probe.filename.empty()) {
+                    probe.filename = suggested_filename(url_str)
+                }
+
+                // Abandon the connection — only headers were needed.
+                rep.body.close_socket()
+                return probe
+            } else {
+                var Err(e) = res else unreachable
+                last_err = e.copy()
+                fprintf(stderr, "[CDM] probe attempt %d failed for %s: %s\n", attempt + 1, string(url_str.data(), url_str.size()).data(), e.data())
+            }
+            attempt = attempt + 1
+            if(attempt < 3) {
+                std::concurrent.sleep_ms(200u)
             }
         }
-        if(probe.filename.empty()) {
-            probe.filename = suggested_filename(url_str)
-        }
-
-        // Abandon the connection — only headers were needed.
-        rep.body.close_socket()
+        probe.error = last_err.copy()
         return probe
     }
 
