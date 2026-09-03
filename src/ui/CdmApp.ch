@@ -1158,14 +1158,14 @@
                             <input type="number" min="0" value={settings.min_disk_space_mb || 0}
                                 onChange={(e) => { settings.min_disk_space_mb = parseInt(e.target.value) || 0 }} />
                         </label>
-                        <label>Filename template ({name}, {ext}, {date} placeholders)
+                        <label>Filename template (placeholders: name, ext, date)
                             <input type="text" value={settings.filename_template || ""}
-                                placeholder="{name}.{ext}"
+                                placeholder="name.ext"
                                 onChange={(e) => { settings.filename_template = e.target.value }} />
                         </label>
-                        <label>Post-download command ({path} = output file)
+                        <label>Post-download command (placeholder: path = output file)
                             <input type="text" value={settings.post_download_cmd || ""}
-                                placeholder="mpv {}"
+                                placeholder="mpv"
                                 onChange={(e) => { settings.post_download_cmd = e.target.value }} />
                         </label>
                         <label>Checksum verification (md5, sha256)
@@ -1227,16 +1227,7 @@
 
                         <div class="cdm-section-header">Backup</div>
 
-                        <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
-                            <button class="cdm-btn" onClick={() => {
-                                var path = prompt("Export settings to file:", "/tmp/cdm-settings.json")
-                                if(path) { call("settings_export", {path: path}); alert = "Settings exported to " + path }
-                            }}>Export Settings</button>
-                            <button class="cdm-btn" onClick={() => {
-                                var path = prompt("Import settings from file:")
-                                if(path) { call("settings_import", {path: path}, () => { refreshSettings() }); alert = "Settings imported" }
-                            }}>Import Settings</button>
-                        </div>
+                        <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))" }}>Export/Import available via CLI: cdm --export-settings / cdm --import-settings</p>
                     </div>
                     <div class="cdm-dialog-footer">
                         <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>
