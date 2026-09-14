@@ -99,6 +99,7 @@ using std::mutex;
         var download_scheduler_end : string
         var clipboard_monitor : bool
         var use_categories : bool
+        var next_seq : u64
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -188,7 +189,8 @@ using std::mutex;
                 download_scheduler_start = string(),
                 download_scheduler_end = string(),
                 clipboard_monitor = false,
-                use_categories = true
+                use_categories = true,
+                next_seq = 0
             }
         }
 
@@ -265,11 +267,6 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
 
     // Find the (priority, queue position) of an item, used for scheduling.
     // Returns true when the item is queued for download.
-    func pick_next_queued(dm : &DownloadManager) : bool {
-        // helper unused (see start_pending); kept for symmetry
-        return false
-    }
-
     // Start queued items up to max_concurrent, honoring priority (lower value
     // first) and the original queue order as a tie-breaker.
     public func start_pending(dm : &mut DownloadManager) {
@@ -454,6 +451,9 @@ public func find_item_index(dm : &DownloadManager, id : &string) : usize {
                                 resolved_dir.copy(), suggested.copy())
         item.priority = priority
         item.category = category
+        // Set creation timestamp for "newest"/"oldest" sorting.
+        dm.next_seq = dm.next_seq + 1
+        item.created_at = dm.next_seq as i64
 
         // Duplicate policy.
         var dup_dir_copy = resolved_dir.copy()

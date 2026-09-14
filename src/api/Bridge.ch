@@ -10,7 +10,6 @@ using std::string_view;
 using std::Option;
 using std::Result;
 using std::vector;
-using std::Result;
 // json module types (JsonParser, ASTJsonHandler, JsonValue) are top-level.
 
     // Build the full queue state as a JSON document for the UI.
@@ -380,27 +379,32 @@ using std::Result;
         }
         if(method.equals(&m_pause)) {
             var id = json_field(args, string_view::make_no_len("id"))
-            if(id.size() > 0u) { pause_task(&mut *dm, &id) }
+            if(id.size() == 0u) { return err_msg("missing id parameter") }
+            pause_task(&mut *dm, &id)
             return ok_json()
         }
         if(method.equals(&m_resume)) {
             var id = json_field(args, string_view::make_no_len("id"))
-            if(id.size() > 0u) { resume_task(&mut *dm, &id) }
+            if(id.size() == 0u) { return err_msg("missing id parameter") }
+            resume_task(&mut *dm, &id)
             return ok_json()
         }
         if(method.equals(&m_cancel)) {
             var id = json_field(args, string_view::make_no_len("id"))
-            if(id.size() > 0u) { cancel_task(&mut *dm, &id) }
+            if(id.size() == 0u) { return err_msg("missing id parameter") }
+            cancel_task(&mut *dm, &id)
             return ok_json()
         }
         if(method.equals(&m_remove)) {
             var id = json_field(args, string_view::make_no_len("id"))
-            if(id.size() > 0u) { remove_task(&mut *dm, &id) }
+            if(id.size() == 0u) { return err_msg("missing id parameter") }
+            remove_task(&mut *dm, &id)
             return ok_json()
         }
         if(method.equals(&m_remove_file)) {
             var id = json_field(args, string_view::make_no_len("id"))
-            if(id.size() > 0u) { remove_task_file(&mut *dm, &id, true) }
+            if(id.size() == 0u) { return err_msg("missing id parameter") }
+            remove_task_file(&mut *dm, &id, true)
             return ok_json()
         }
         if(method.equals(&m_retry)) {
@@ -460,6 +464,8 @@ using std::Result;
                 var msg = string::make_no_len("missing id or url")
                 return err_json(&msg)
             }
+            var url_val = validate_url(string_view::make_view(&new_url))
+            if(!url_val.is_ok()) { return err_json(&url_val.message) }
             var ok = change_url(&mut *dm, &id, string_view::make_view(&new_url))
             if(!ok) {
                 var msg = string::make_no_len("cannot change url (item may be running)")
@@ -582,7 +588,7 @@ using std::Result;
             var mct = json_field(args, string_view::make_no_len("move_completed_to"))
             if(mct.size() > 0) { settings.move_completed_to = mct.copy() }
             settings.clipboard_monitor = json_bool_field(args, string_view::make_no_len("clipboard_monitor"), dm.clipboard_monitor)
-            settings.use_categories = json_bool_field(args, string_view::make_no_len("use_categories"), true)
+            settings.use_categories = json_bool_field(args, string_view::make_no_len("use_categories"), dm.use_categories)
             // Validate core fields before applying.
             var cv = validate_max_concurrent(settings.max_concurrent)
             if(!cv.is_ok()) { return err_json(&cv.message) }
@@ -638,6 +644,7 @@ using std::Result;
                 return err_json(&msg)
             }
             fwrite(json_out.data() as *mut u8, 1, json_out.size(), f)
+            fflush(f)
             fclose(f)
             return ok_json()
         }

@@ -14,34 +14,39 @@ configurable per task.
 
 ```chemical
 public struct HttpOptions {
-    var user_agent : string      // default UA: "ChemicalDM/0.1"
+    var user_agent : string      // default UA: "ChemicalDM/0.1" when empty
     var timeout_secs : int       // default 30
     var referer : string         // extra Referer header
     var auth : string            // Authorization header (raw value)
-    var force_ipv4 : bool
-    var force_ipv6 : bool
-    var cookie_file : string     // Netscape-style cookie jar (yt-dlp compat)
-    var verify_ssl : bool        // default true
+    var force_ipv4 : bool        // NOT consumed by request() yet (dead field)
+    var force_ipv6 : bool        // NOT consumed by request() yet (dead field)
+    var cookie_file : string     // NOT consumed anywhere (dead field)
+    var verify_ssl : bool        // default true → build_client(): insecure_skip_verify
     var proxy_host : string
     var proxy_port : int         // used only when host is non-empty AND port > 0
 }
 ```
 
-Applied per request via `cl.set_proxy(...)` when `proxy_host.size() > 0 && proxy_port > 0`,
-`header("Referer", ...)` when set, `opts.auth` → Authorization header, and IPv4/v6 forced
-resolution when requested.
+Fields actually consumed by `request()`/`build_client()`: `timeout_secs`, `user_agent`,
+`referer`, `auth`, `verify_ssl`, `proxy_host`/`proxy_port`. The other three are
+struct-but-unwired (see gaps below).
 
 ## Plumbing chain: settings → UI/CLI → engine → socket
 
 ```
-CdmSettings.proxy_host/proxy_port/user_agent/cookie_file/verify_ssl/connect_timeout/
-  referer_header/auth_header/force_ipv4/force_ipv6
+CdmSettings.proxy_host/proxy_port/user_agent/connect_timeout/referer_header/
+  auth_header/force_ipv4/force_ipv6
   → apply_settings_to_dm (Settings.ch)      // copies onto the manager
   → DownloadManager fields
   → start_pending copies them onto the new TaskRuntime (per-task snapshot)
   → build_http_opts(rt) (Engine.ch)          // TaskRuntime → HttpOptions
   → open_download / open_download_range / probe(..., opts)
 ```
+
+**Not in the chain**: `verify_ssl` and `cookie_file` have NO TaskRuntime field, so
+`build_http_opts` cannot copy them — engine requests always use the default
+(`verify_ssl = true`) regardless of settings. The proxy/auth/referer/UA/timeout fields
+are the fully-wired set.
 
 **Per-task snapshot semantics**: changes to manager-level network settings apply to NEW
 tasks; a running task keeps the options captured into its `TaskRuntime` at start. That's
@@ -78,17 +83,23 @@ an open-ended request.
 These exist in `CdmSettings` + config.txt + UI, but the engine does not read them yet —
 known deltas, don't assume they work, and don't silently "implement" them without tests:
 
-- `checksum` ("md5:abc123" / "sha256:...") — stored on TaskRuntime, never verified after
-  download.
+- `checksum` ("md5:abc123" / "sha256:...") — parsed (`--checksum`), stored on TaskRuntime,
+  never verified after download.
 - `move_completed_to` — persisted, never applied (no post-completion move in Engine).
 - `max_download_size` / `min_disk_space_mb` — parsed from CLI/config, never checked
   mid-download.
-- `post_download_cmd` — the ONE hook that IS wired: Engine runs it on completion via
-  `system()` after replacing `{}` with the output path (note: `system()`, not
-  `process::execute` — safe today only because it runs on the worker thread, not the GTK
-  thread; migrating it to `process::execute` would be consistent with the fork-safety rule).
+- `verify_ssl` — IMPLEMENTED in CdHttp (`insecure_skip_verify`) but never plumbed:
+  `TaskRuntime` lacks the field, so `--no-ssl-verify`/settings never reach the client.
+  Wiring it = add `verify_ssl` to TaskRuntime + copy in `build_http_opts`.
+- `force_ipv4`/`force_ipv6` — plumbed all the way into HttpOptions, then never read by
+  `request()`.
+- `cookie_file` — dead everywhere (no reader in CdHttp or Engine).
 - `notifications_enabled`, `clipboard_monitor` — UI/settings exist; clipboard polling and
   desktop notifications are not implemented.
+- `post_download_cmd` — the ONE post-download hook that IS wired: Engine runs it on
+  completion via `system()` after replacing `{}` with the output path (note: `system()`,
+  not `process::execute` — safe today only because it runs on the worker thread, not the
+  GTK thread; migrating to `process::execute` would match the fork-safety rule).
 
 If you wire one of these up, follow the `post_download_cmd` pattern: capture onto
 `TaskRuntime` in `start_pending`, act on the worker thread after `STATE_DONE`, add a

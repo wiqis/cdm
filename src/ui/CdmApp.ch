@@ -779,8 +779,8 @@
 
     // Sort
     visibleItems.sort((a, b) => {
-        if(sortBy === "newest") return b.id > a.id ? 1 : (b.id < a.id ? -1 : 0)
-        if(sortBy === "oldest") return a.id > b.id ? 1 : (a.id < b.id ? -1 : 0)
+        if(sortBy === "newest") return (b.created_at || 0) - (a.created_at || 0)
+        if(sortBy === "oldest") return (a.created_at || 0) - (b.created_at || 0)
         if(sortBy === "name") {
             var na = (a.display_name || a.filename || "").toLowerCase()
             var nb = (b.display_name || b.filename || "").toLowerCase()
@@ -1458,7 +1458,7 @@
                                 placeholder="/usr/bin/ffmpeg"
                                 onChange={(e) => { settings.yt_ffmpeg_location = e.target.value }} />
                         </label>
-                        <label>Post-download command
+                        <label>yt-dlp --exec command
                             <input type="text" value={settings.yt_exec_cmd || ""}
                                 placeholder="mpv {}"
                                 onChange={(e) => { settings.yt_exec_cmd = e.target.value }} />
@@ -1917,7 +1917,10 @@
                 {ctxItem.state === "Cancelled" && ctxItem.downloaded_bytes > 0 ? (
                     <div class="cdm-ctx-item" onClick={() => ctxAction("resume")}>&#9654; Resume</div>
                 ) : null}
-                {ctxItem.state === "Failed" ? (
+                {ctxItem.state === "Failed" && ctxItem.error === "interrupted by shutdown" ? (
+                    <div class="cdm-ctx-item" onClick={() => ctxAction("resume")}>&#9654; Resume</div>
+                ) : null}
+                {ctxItem.state === "Failed" && ctxItem.error !== "interrupted by shutdown" ? (
                     <div class="cdm-ctx-item" onClick={() => ctxAction("retry")}>&#10227; Retry</div>
                 ) : null}
                 {ctxItem.state === "Done" || ctxItem.state === "Failed" || ctxItem.state === "Cancelled" ? (

@@ -26,7 +26,7 @@ cdmlib; cdmlib can never see app types).
 | `src/Constants.ch` | `CDM_VERSION`, state ints (`STATE_QUEUED=0 … STATE_CANCELLED=5`), `RetryPolicy` struct, defaults (`DEFAULT_DOWNLOAD_DIR="~/Downloads/cdm"`, `DEFAULT_MAX_CONCURRENT=3`, `DEFAULT_MAX_SEGMENTS=4`, `DEFAULT_MIN_SEGMENT_SIZE=256KiB`, `DEFAULT_MAX_RETRIES=3`, `DEFAULT_RETRY_DELAY_MS=1000`, socket timeout 30s), `expand_home()` |
 | `src/Model.ch` | `DownloadItem` — pure data POD (id/url/dir/filename, byte counters, state, priority, duplicate_suffix, category tag, segments_json, was_interrupted). No pointers/sockets by design. Has `local_path()`, `display_filename()`, manual `copy()` |
 | `src/UrlUtil.ch` | `UrlInfo`, `parse_url` (wraps `http::URL::parse`), `sanitize_filename` (strips path separators + unsafe chars, falls back to "download"), `suggested_filename` (last URL path segment) |
-| `src/CdHttp.ch` | `request(method, url, range_start, range_end=-1)` — redirect-following GET/HEAD-ish client (`MAX_REDIRECTS=10`, `Accept-Encoding: identity`, UA `ChemicalDM/0.1`). `probe(url, hint)` → `CdProbe{ok,status,total_bytes,supports_resume,filename,error}` using `Range: bytes=0-0`. `open_download(url, resume_from)`, `open_download_range(url,start,end)`. Header parsers: `parse_content_length`, `parse_content_range_total`, `parse_content_disposition_name` |
+| `src/CdHttp.ch` | `HttpOptions` struct + `request(method, url, range_start, range_end, opts)` — redirect-following client (`MAX_REDIRECTS=10`, `Accept-Encoding: identity`, UA `ChemicalDM/0.1` unless overridden). `probe(url, hint, opts)` → `CdProbe{ok,status,total_bytes,supports_resume,filename,error}` using `Range: bytes=0-0`. `open_download(url, resume_from, opts)`, `open_download_range(url,start,end,opts)`. Header parsers: `parse_content_length`, `parse_content_range_total`, `parse_content_disposition_name` |
 | `src/Engine.ch` | `TaskRuntime`, `TaskProgress`, `SegmentState`, job structs, thread entries, `stream_body`, `run_download_task`, segment split/assemble, all locked_* helpers |
 | `src/DownloadManager.ch` | The public queue facade: add/edit/retry/restart/pause/resume/cancel/remove/change_url/clear_finished/snapshot/poll_auto_resume/shutdown + scheduler `start_pending`, plus periodic progress persistence (`periodic_save_progress`, `restore_progress`) |
 
@@ -136,7 +136,8 @@ cdm::snapshot(&mut dm) -> vector<DownloadItem>   // merge of record + live progr
 cdm::poll_auto_resume(&mut dm) -> requeued_count // was_interrupted items (and FAILED if auto_resume_failed)
 cdm::shutdown(&mut dm)                           // app exit
 cdm::find_item_index(&dm, &id) -> usize (== items.size() means missing)
-cdm::save_progress/restore_progress              // progress.txt (see cdm_persistence skill)
+cdm::create_container_item/set_item_card_type/set_item_state_progress  // card_type system (see cdm_containers skill)
+cdm::periodic_save_progress / restore_progress   // progress.txt (see cdm_persistence skill)
 ```
 
 **Retry vs restart (distinct semantics):**
@@ -170,7 +171,6 @@ Pure helpers also public (tested directly): `compute_segment_count`, `build_segm
 
 ## Known quirks / dead code (don't blindly "fix")
 
-- `pick_next_queued()` is an unused stub kept "for symmetry".
 - `save_interval_millis` / `last_save_millis` fields are used ONLY by the periodic
   progress writer (`periodic_save_progress`); queue persistence itself lives in the app.
 - `count_active` treats "has runtime && progress says DOWNLOADING" as active — a task

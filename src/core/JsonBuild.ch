@@ -139,6 +139,8 @@ using std::vector;
         var interrupted_s = if(item.was_interrupted) "true" else "false"
         var interrupted_sv = string::make_no_len(interrupted_s)
         json_kv(&mut out, "was_interrupted", &interrupted_sv, &mut first)
+        var created_s = json_i64(item.created_at)
+        json_kv(&mut out, "created_at", &created_s, &mut first)
         if(!item.segments_json.empty()) {
             json_kv_raw(&mut out, "segments", &item.segments_json, &mut first)
         }
