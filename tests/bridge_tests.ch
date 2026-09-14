@@ -576,7 +576,7 @@ public func CDM_BR_pause_resume_cancel(env : &mut TestEnv) {
     var root = br_tmp_dir(string_view::make_no_len("prc-src"))
     var src = root.copy()
     src.append_view(string_view::make_no_len("prc.bin"))
-    if(!br_write_pattern(src.data(), 512 * 1024)) { env.error("payload"); return }
+    if(!br_write_pattern(src.data(), 2 * 1024 * 1024)) { env.error("payload"); return }
 
     var srv = BrServer()
     srv.chunk_delay_ms = 12
@@ -848,8 +848,8 @@ public func CDM_BR_error_paths(env : &mut TestEnv) {
     if(!r4.contains(&string_view::make_no_len("\"ok\":false"))) { env.error("open_file w/o path must fail"); return }
 
     var r5 = br_call(dmp, "pause", br_args_empty())
-    // pause with no id is a no-op success (UI treats it as fire-and-forget)
-    if(!r5.contains(&string_view::make_no_len("\"ok\":true"))) { env.error("pause w/o id should be benign"); return }
+    // pause with no id now returns an error (empty id should not silently succeed)
+    if(!r5.contains(&string_view::make_no_len("\"ok\":false"))) { env.error("pause w/o id should fail"); return }
 
     cdm::shutdown(&mut dm)
     fs::remove_dir_all_recursive(dl.data())

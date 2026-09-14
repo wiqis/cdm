@@ -403,6 +403,14 @@ public func CdmTheme(page : &mut HtmlPage) {
             outline: none;
             transition: border-color 0.15s, box-shadow 0.15s;
         }
+        .cdm-dialog-body select {
+            -webkit-appearance: none;
+            appearance: none;
+            padding-right: 28px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+        }
         .cdm-dialog-body input:focus,
         .cdm-dialog-body select:focus {
             border-color: hsl(var(--ring));
@@ -569,7 +577,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             color: hsl(var(--muted-foreground) / 0.5);
         }
         .cdm-sort-select {
-            padding: 5px 8px;
+            padding: 5px 28px 5px 8px;
             font-size: 12px;
             font-family: var(--font-mono);
             background: hsl(var(--background));
@@ -578,6 +586,11 @@ public func CdmTheme(page : &mut HtmlPage) {
             border-radius: calc(var(--radius) - 2px);
             outline: none;
             cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
         }
         .cdm-toggle-row {
             display: flex;

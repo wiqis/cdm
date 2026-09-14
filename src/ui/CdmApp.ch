@@ -1043,7 +1043,7 @@
 
         <div class="cdm-toolbar">
             <input class="cdm-url-input" type="text" spellcheck="false" autocomplete="off"
-                placeholder="Type or paste a download URL and press Enter&#8230;" value={newUrl}
+                placeholder="Type or paste a download URL and press Enter…" value={newUrl}
                 onChange={(e) => { newUrl = e.target.value }}
                 onKeyDown={(e) => { if(e.key === "Enter") addDownload() }} />
             <button class="cdm-add-btn" onClick={addDownload} disabled={newUrl.trim() === ""}>Add Download</button>
