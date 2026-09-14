@@ -1099,6 +1099,11 @@
                                     asyncBridge("browse_folder", "{}", function(d) {
                                         if(d && d.ok && d.path) {
                                             settings.download_dir = d.path
+                                            // Persist to native so settings_json reflects the change,
+                                            // then re-fetch to trigger a full re-render.
+                                            asyncBridge("settings_set", JSON.stringify({download_dir: d.path}), function() {
+                                                refreshSettings()
+                                            })
                                             showToast("Folder: " + d.path, "success")
                                         }
                                     })
