@@ -31,6 +31,18 @@ See the comment in `src/api/Bridge.ch` ("Category routing … resolve here in th
 
 ---
 
+## Skills (`.agents/skills/` — load by name when the topic matches)
+
+| Skill | Load when… |
+|---|---|
+| `cdm_bridge_ui` | Adding/using bridge methods, wire format, CdmApp UI patterns, theme, GUI lifecycle |
+| `cdm_app_core` | Settings/config.txt, CLI flags, categories, validation, JsonBuild, Formatters |
+| `cdm_persistence` | queue.txt / progress.txt, save/restore ordering, crash recovery, atomic writes |
+| `cdmlib_engine` | Anything under `cdmlib/` — engine, threads, segmentation, resume, retry |
+| `cdm_testing` | Writing/running `@test` suites, TestEnv, loopback HTTP servers, isolation tricks |
+| `cdm_yt_tools` | yt-dlp/ffmpeg install, fork-safety (`process::execute`), PATH scanning, status JSON |
+| `yt_playlist` | YouTube single-video + playlist downloads, AsyncDlState, link refresh |
+
 ## Directory map
 
 ```
@@ -422,7 +434,7 @@ Project-specific ones:
   reads `d.items`/`d.x` directly). Do NOT `JSON.parse()` a bridge result — parsing an
   already-parsed object throws `SyntaxError`, and a silent `catch` leaves the UI stuck on a
   stale fallback. Guard with `typeof res === "string" ? JSON.parse(res) : res` if unsure.
-  (The `cdm_bridge_ui` skill's `jsonResultString` naming is misleading — treat it as an object.)
+  (Skill `cdm_bridge_ui` documents the full bridge method list and UI patterns.)
 - Uninitialized locals need `unsafe var x : T` (e.g. stream buffers, argv arrays).
 - Strings: no `+`; use `append_view/append_string(&s)/append(char)`. Never append a moved
   string; copy explicitly with `.copy()` when both sides stay alive.
