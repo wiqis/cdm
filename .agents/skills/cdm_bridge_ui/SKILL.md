@@ -135,10 +135,10 @@ One `#universal CdmApp(props)`. Conventions to follow:
 - **Derived lists** are computed inline each render: `visibleItems = items.filter(...)`
   then `.sort(...)` — filter chips (`filter`, `catFilter`), search box, sort dropdown all
   feed this. Match states by HUMAN strings ("Downloading"), categories by name too.
-- **Playlist child-item hiding**: `pollYtPlaylist` rebuilds `ytPlTaskIds` from
-  `v.video_task_id`/`v.audio_task_id` every poll; the main list renders
-  `mainItems = items.filter((u) => !ytPlTaskIds[u.id])` so playlist children don't appear
-  as separate cards. Keep `ytDownloading = true` until `d.done` (clears empty-state flicker).
+- **Playlist child-item hiding**: children are filtered by `card_type` in the item JSON —
+  `mainItems = items.filter((u) => u.card_type !== CARD_YT_CHILD)`; top-level cards dispatch
+  on type (`renderPlaylistCard` / `renderYtVideoCard` / `renderNormalCard`). Keep
+  `ytDownloading = true` until `d.done` (clears empty-state flicker). See the `cdm_containers` skill.
 - **Dialogs**: pattern `{open && item ? (<div class="cdm-dialog-overlay" onClick={close}>
   <div class="cdm-dialog" onClick={(e)=>{e.stopPropagation()}}>...) : null}`.
 - **Context menu**: `openContextMenu(e,item)` records clientX/Y into state; actions map to

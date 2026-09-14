@@ -91,20 +91,23 @@ Tool availability/exec rules live in the `cdm_yt_tools` skill; metadata parsing 
 
 - Single: `openYtDownload` → `fetchYtInfo` (setTimeout-wrapped `yt_info`, then
   `pollYtInfo` interval) → format list + quality chips → `startYtDownload` →
-  `pollYtDownload` interval → progress card with video/audio segmented bars.
+  `pollYtDownload` interval → progress card with video/audio segmented bars. The single
+  job ALSO gets a `ITEM_TYPE_YT_SINGLE` container card (`renderYtVideoCard`) whose
+  header progress is driven from the async poll via `set_item_state_progress`.
 - Playlist card: collapsed by default; overall combined progress + `items_done/items_total`;
   per-video rows with a combined progress bar; expand → video+audio segmented bars
   (`items.find(it.id === v.video_task_id)`), merge status/error, Retry (failed) / Open
   (done) / Cancel (active child) buttons.
 - **Hide the child DM items**: the playlist's video/audio `DownloadItem`s are real tasks
-  but must NOT appear as separate cards. `pollYtPlaylist` rebuilds `ytPlTaskIds` (object
-  of `v.video_task_id`/`v.audio_task_id` → true) every poll; the main list filters
-  `items` → `mainItems = items.filter((u) => !ytPlTaskIds[u.id])` before rendering, and
-  the Active/Done/Total stats and the "No downloads yet" empty state use `mainItems`.
+  but must NOT appear as separate cards. Children are tagged `card_type = ITEM_TYPE_YT_CHILD`
+  (+ `parent_id`), and the UI renders top-level cards from
+  `mainItems = items.filter((u) => u.card_type !== CARD_YT_CHILD)`. The playlist card itself
+  is the `ITEM_TYPE_PLAYLIST` container item created by `create_container_item`; the poll's
+  `container_id` is also kept in `ytPlContainerId` for card-side progress updates.
 - **Keep `ytDownloading = true` for the whole job** — set it on start, clear it only in
   the poll callback when `d.done`. (Clearing it in the start callback makes the empty
   state reappear during the download.)
-- Reset `ytPlVideos = []`, `ytPlTaskIds = {}`, `ytPlExpanded = {}` when starting a new
+- Reset `ytPlVideos = []`, `ytPlContainerId = ""`, `ytPlExpanded = {}` when starting a new
   playlist.
 
 ## Cross-session link refresh (`src/core/YtAsync.ch` + `Main.ch`)

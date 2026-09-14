@@ -36,12 +36,15 @@ See the comment in `src/api/Bridge.ch` ("Category routing … resolve here in th
 | Skill | Load when… |
 |---|---|
 | `cdm_bridge_ui` | Adding/using bridge methods, wire format, CdmApp UI patterns, theme, GUI lifecycle |
-| `cdm_app_core` | Settings/config.txt, CLI flags, categories, validation, JsonBuild, Formatters |
+| `cdm_app_core` | Settings/config.txt, categories, validation, JsonBuild, Formatters |
+| `cdm_cli` | CLI flags, headless mode, batch files, main() dispatch order |
+| `cdm_containers` | Container/card_type items (YouTube job cards), parent/child nesting, card dispatch |
+| `cdm_http_client` | CdHttp, HttpOptions, proxy/auth/cookie plumbing chain, enforcement gaps |
 | `cdm_persistence` | queue.txt / progress.txt, save/restore ordering, crash recovery, atomic writes |
 | `cdmlib_engine` | Anything under `cdmlib/` — engine, threads, segmentation, resume, retry |
 | `cdm_testing` | Writing/running `@test` suites, TestEnv, loopback HTTP servers, isolation tricks |
 | `cdm_yt_tools` | yt-dlp/ffmpeg install, fork-safety (`process::execute`), PATH scanning, status JSON |
-| `yt_playlist` | YouTube single-video + playlist downloads, AsyncDlState, link refresh |
+| `yt_playlist` | YouTube single-video + playlist downloads, AsyncDlState, link refresh, container cards |
 
 ## Directory map
 
@@ -392,8 +395,8 @@ Build & verify:
 ```
 
 Also note these intentional-but-dead leftovers (candidates for cleanup, don't "fix"
-blindly): `pick_next_queued` (stub),
-`Storage.ch` `save_state/load_state` (superseded by Settings.ch queue persistence).
+blindly): `Storage.ch` (superseded by Settings.ch queue persistence — now contains only a
+reference comment).
 
 ---
 
@@ -481,8 +484,9 @@ downloads + ffmpeg merges. Decisions that are easy to break:
   (in `src/core/Main.ch` after `restore_queue`) and re-queues any stale links. Keep this call.
 - **UI hides the child items**: the playlist's individual video/audio `DownloadItem`s are real
   DM tasks, but the main queue list must NOT show them as separate cards (the playlist card is
-  enough). Track their task ids in `ytPlTaskIds` (rebuilt every `pollYtPlaylist` from
-  `v.video_task_id`/`v.audio_task_id`) and filter `items` → `mainItems` before rendering. Keep
+  enough). Children are tagged `card_type = ITEM_TYPE_YT_CHILD` + `parent_id`, and the UI filters
+  `mainItems = items.filter((u) => u.card_type !== CARD_YT_CHILD)` before rendering (see the
+  `cdm_containers` skill). Keep
   `ytDownloading = true` for the whole playlist (clear it only in `pollYtPlaylist` when `d.done`)
   so the "No downloads yet" empty state stays suppressed while the playlist downloads.
 - **Open file**: `yt_download_playlist_open` resolves `playlist_item_output_path(index)` then
@@ -620,5 +624,5 @@ These bit us and cost real debugging time — honor them:
 | New category/folder mapping | `src/core/Categories.ch` (+ `validate_category_name` in Validation.ch) |
 | Human-readable text | `src/core/Formatters.ch` |
 | yt-dlp invocation / progress parsing / ffmpeg merge | `src/core/YtDownloader.ch` (+ `YtInfo.ch` for metadata, `YtTools.ch` for install/status) |
-| YouTube playlist (async fan-out, per-item `AsyncDlState`, poll `videos` array, retry/link-refresh, hide child cards) | `src/core/YtAsync.ch` (`g_async_pl`, `playlist_thread_entry`, `do_item_download`, `merge_monitor_entry`, `requeue_item`, `retry_playlist_item`, `playlist_item_output_path`, `poll_async_playlist_download`) + `yt_download_playlist*` handlers in `src/api/Bridge.ch` + playlist card / `ytPlTaskIds` filter in `src/ui/CdmApp.ch` |
+| YouTube playlist (async fan-out, per-item `AsyncDlState`, poll `videos` array, retry/link-refresh, hide child cards) | `src/core/YtAsync.ch` (`g_async_pl`, `playlist_thread_entry`, `do_item_download`, `merge_monitor_entry`, `requeue_item`, `retry_playlist_item`, `playlist_item_output_path`, `poll_async_playlist_download`) + `yt_download_playlist*` handlers in `src/api/Bridge.ch` + playlist card / `card_type !== CARD_YT_CHILD` filter in `src/ui/CdmApp.ch` |
 | YouTube info parsing (playlist NDJSON vs single video) | `src/core/YtInfo.ch` (`parse_playlist_json` NDJSON-first, `YtPlaylistInfo.is_playlist`) + `get_async_info` playlist dispatch in `src/core/YtAsync.ch` |
