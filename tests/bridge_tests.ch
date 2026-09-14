@@ -1010,3 +1010,82 @@ public func CDM_BR_tool_download_progress(env : &mut TestEnv) {
     fs::remove_dir_all_recursive(root.data())
     if(failed) { return }
 }
+
+// ─── BR 14: open_file returns error for missing files ──────────────────
+
+@test
+public func CDM_BR_open_file_missing(env : &mut TestEnv) {
+    var dm = cdm::DownloadManager()
+    var dmp = &raw mut dm
+
+    var args = string::make_no_len("{\"path\":\"/tmp/definitely_does_not_exist_\"}")
+    var r = br_call(dmp, "open_file", string_view::make_view(&args))
+    // open_file on a missing file should return ok:false with an error message.
+    if(!r.contains(&string_view::make_no_len("\"ok\":false"))) { env.error("missing file should fail"); return }
+
+    cdm::shutdown(&mut dm)
+}
+
+// ─── BR 15: show_in_folder returns ok for existing dir ──────────────────
+
+@test
+public func CDM_BR_show_in_folder(env : &mut TestEnv) {
+    var dl = br_tmp_dir(string_view::make_no_len("sif"))
+    var dm = cdm::DownloadManager()
+    dm.download_dir = dl.copy()
+    var dmp = &raw mut dm
+
+    var args = string::make_no_len("{\"path\":\"")
+    args.append_string(&dl)
+    args.append_view(string_view::make_no_len("\"}"))
+    var r = br_call(dmp, "show_in_folder", string_view::make_view(&args))
+    if(!r.contains(&string_view::make_no_len("\"ok\":true"))) {
+        env.error("show_in_folder should succeed for existing dir")
+        cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return
+    }
+
+    cdm::shutdown(&mut dm)
+    fs::remove_dir_all_recursive(dl.data())
+}
+
+// ─── BR 16: settings_set persists advanced fields ──────────────────────
+
+@test
+public func CDM_BR_settings_set_advanced_fields(env : &mut TestEnv) {
+    var dl = br_tmp_dir(string_view::make_no_len("cfg_set"))
+    var dm = cdm::DownloadManager()
+    dm.download_dir = dl.copy()
+    var dmp = &raw mut dm
+
+    // Build a JSON payload with advanced fields.
+    var payload = string::make_no_len("{\"connect_timeout\":25,")
+    payload.append_view(string_view::make_no_len("\"auth_header\":\"Bearer mytoken\","))
+    payload.append_view(string_view::make_no_len("\"user_agent\":\"CustomAgent/2.0\","))
+    payload.append_view(string_view::make_no_len("\"verify_ssl\":false,"))
+    payload.append_view(string_view::make_no_len("\"force_ipv4\":true,"))
+    payload.append_view(string_view::make_no_len("\"referer_header\":\"https://ref.example.com\","))
+    payload.append_view(string_view::make_no_len("\"max_retries\":-1,"))
+    payload.append_view(string_view::make_no_len("\"retry_delay_ms\":5000,"))
+    payload.append_view(string_view::make_no_len("\"cookie_file\":\"/tmp/cookies.txt\","))
+    payload.append_view(string_view::make_no_len("\"max_concurrent\":8,"))
+    payload.append_view(string_view::make_no_len("\"max_segments\":4}"))
+
+    var r = br_call(dmp, "settings_set", string_view::make_view(&payload))
+    if(!r.contains(&string_view::make_no_len("\"ok\":true"))) {
+        env.error("settings_set should succeed")
+        cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return
+    }
+
+    // Verify values were applied directly to dm.
+    if(dm.connect_timeout != 25) { env.error("connect_timeout not applied"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+    if(!dm.auth_header.equals_view("Bearer mytoken")) { env.error("auth_header wrong"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+    if(!dm.user_agent.equals_view("CustomAgent/2.0")) { env.error("user_agent wrong"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+    if(dm.verify_ssl != false) { env.error("verify_ssl not false"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+    if(dm.force_ipv4 != true) { env.error("force_ipv4 not true"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+    if(dm.retry_policy.max_retries != -1) { env.error("max_retries not -1"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+    if(dm.retry_policy.delay_ms != 5000) { env.error("retry_delay_ms not 5000"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+    if(!dm.referer_header.equals_view("https://ref.example.com")) { env.error("referer_header wrong"); cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return }
+
+    cdm::shutdown(&mut dm)
+    fs::remove_dir_all_recursive(dl.data())
+}

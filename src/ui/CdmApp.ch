@@ -721,7 +721,12 @@
         if(!ctxItem) return
         if(method === "open_file") {
             var path = ctxItem.dir + "/" + (ctxItem.display_name || ctxItem.filename)
-            call("open_file", { path: path })
+            asyncBridge("open_file", JSON.stringify({ path: path }), function(d) {
+                if(d && !d.ok) {
+                    showToast(d.error || "Could not open file", "error")
+                }
+                refresh()
+            })
         } else if(method === "show_in_folder") {
             call("show_in_folder", { path: ctxItem.dir })
         } else {

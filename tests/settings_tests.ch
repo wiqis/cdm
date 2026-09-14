@@ -182,3 +182,70 @@ public func CDM_settings_disk_roundtrip(env : &mut TestEnv) {
     // Clean up the test config directory.
     fs::remove_dir_all_recursive(cfg_dir.data())
 }
+
+@test
+public func CDM_settings_json_advanced_fields(env : &mut TestEnv) {
+    // Regression: settings_json must produce valid JSON for all advanced fields.
+    // Previously every advanced field prefix had an extra " producing ""value"".
+    var dm = cdm::DownloadManager()
+    dm.connect_timeout = 15
+    dm.auth_header = string::make_no_len("Bearer tok123")
+    dm.referer_header = string::make_no_len("https://ref.example.com")
+    dm.user_agent = string::make_no_len("TestAgent/1.0")
+    dm.cookie_file = string::make_no_len("/tmp/cookies.txt")
+    dm.verify_ssl = false
+    dm.force_ipv4 = true
+    dm.force_ipv6 = false
+
+    var s = cdm::settings_json(&dm)
+    // Verify the JSON starts with { and ends with }.
+    if(s.get(0) != '{') { env.error("settings_json not JSON object"); return }
+    var last = s.get(s.size() - 1)
+    if(last != '}') { env.error("settings_json not closed"); return }
+
+    // Verify key advanced fields are present with correct values.
+    if(s.find("connect_timeout") == std::NPOS) { env.error("missing connect_timeout key"); return }
+    if(s.find("auth_header") == std::NPOS) { env.error("missing auth_header key"); return }
+    if(s.find("referer_header") == std::NPOS) { env.error("missing referer_header key"); return }
+    if(s.find("verify_ssl") == std::NPOS) { env.error("missing verify_ssl key"); return }
+    if(s.find("force_ipv4") == std::NPOS) { env.error("missing force_ipv4 key"); return }
+}
+
+@test
+public func CDM_settings_get_returns_valid_json(env : &mut TestEnv) {
+    // Regression: settings_json must return a string starting with { and ending with }
+    // with no unclosed strings.
+    var dm = cdm::DownloadManager()
+    var result = cdm::settings_json(&dm)
+    if(result.size() < 2) { env.error("settings_get too short"); return }
+    if(result.get(0) != '{') { env.error("settings_get not JSON object"); return }
+    var last = result.get(result.size() - 1)
+    if(last != '}') { env.error("settings_get not closed"); return }
+}
+
+@test
+public func CDM_json_int_field_negative(env : &mut TestEnv) {
+    // Regression: json_int_field must handle negative values like -1.
+    // Previously the negative sign was dropped.
+    var j = string::make_no_len("{\"max_retries\":-1,\"delay\":5000}")
+    var retries = cdm::json_int_field(string_view::make_view(&j), string_view::make_no_len("max_retries"), 0)
+    if(retries != -1) { env.error("max_retries should be -1"); return }
+    var delay = cdm::json_int_field(string_view::make_view(&j), string_view::make_no_len("delay"), 0)
+    if(delay != 5000) { env.error("delay should be 5000"); return }
+}
+
+@test
+public func CDM_json_int_field_negative_large(env : &mut TestEnv) {
+    var j = string::make_no_len("{\"val\":-999,\"zero\":0}")
+    var val = cdm::json_int_field(string_view::make_view(&j), string_view::make_no_len("val"), 0)
+    if(val != -999) { env.error("-999"); return }
+    var zero = cdm::json_int_field(string_view::make_view(&j), string_view::make_no_len("zero"), -1)
+    if(zero != 0) { env.error("0"); return }
+}
+
+@test
+public func CDM_json_int_field_missing(env : &mut TestEnv) {
+    var j = string::make_no_len("{\"a\":1}")
+    var val = cdm::json_int_field(string_view::make_view(&j), string_view::make_no_len("b"), 42)
+    if(val != 42) { env.error("missing field should return default 42"); return }
+}
