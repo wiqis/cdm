@@ -79,8 +79,10 @@ Tool availability/exec rules live in the `cdm_yt_tools` skill; metadata parsing 
 
 ## Poll shapes
 
-- `yt_download_poll` → single object: `{state, progress, title, video_task_id,
-  audio_task_id, merge_status, merge_error, done, error, output_path}`.
+- `yt_download_poll` → single object: `{running, done, error, progress, speed, status,
+  title, video_task_id, audio_task_id, merge_status, merge_error, needs_merge,
+  container_id}` — `container_id` is the YT_SINGLE card id (see the `cdm_containers`
+  skill).
 - `poll_async_playlist_download` returns a flat `videos` array, one object per item:
   `{index,title,state,progress,video_task_id,audio_task_id,merge_status,merge_error,
   status,retry_count,output_path}`. The UI renders the playlist card from this and
@@ -103,7 +105,8 @@ Tool availability/exec rules live in the `cdm_yt_tools` skill; metadata parsing 
   (+ `parent_id`), and the UI renders top-level cards from
   `mainItems = items.filter((u) => u.card_type !== CARD_YT_CHILD)`. The playlist card itself
   is the `ITEM_TYPE_PLAYLIST` container item created by `create_container_item`; the poll's
-  `container_id` is also kept in `ytPlContainerId` for card-side progress updates.
+  `container_id` is kept in `ytPlContainerId`, and the card renders as "active" while
+  `item.id === ytPlContainerId` (expanded-card state + progress sync).
 - **Keep `ytDownloading = true` for the whole job** — set it on start, clear it only in
   the poll callback when `d.done`. (Clearing it in the start callback makes the empty
   state reappear during the download.)

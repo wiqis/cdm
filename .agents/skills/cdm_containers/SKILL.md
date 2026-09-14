@@ -15,7 +15,7 @@ the engine — but they are **nested inside the parent card**, never shown top-l
 ```chemical
 public const ITEM_TYPE_NORMAL    : int = 0   // a regular download
 public const ITEM_TYPE_PLAYLIST  : int = 1   // a YouTube playlist container
-public type  ITEM_TYPE_YT_SINGLE : int = 2   // a single YouTube video container
+public const ITEM_TYPE_YT_SINGLE : int = 2   // a single YouTube video container
 public const ITEM_TYPE_YT_CHILD  : int = 3   // a video/audio stream belonging to a container
 ```
 
@@ -31,6 +31,9 @@ CARD_YT_CHILD=3`. `DownloadItem.card_type` and `DownloadItem.parent_id` live in
 | `create_container_item(dm, card_type, url, dir, name) -> id` | Inserts a `DownloadItem` with `state = STATE_DOWNLOADING` — deliberately NOT `STATE_QUEUED`, so `start_pending` (which only picks QUEUED) never spawns a worker for it. Progress is driven externally. |
 | `set_item_card_type(dm, id, card_type, parent_id) -> bool` | Tags a child with its type + parent id (under `items_mutex`). |
 | `set_item_state_progress(dm, id, state, downloaded, total) -> bool` | The async yt-dlp poll drives the container's header state/progress through this. |
+
+Container ids also ride the poll payloads: both `poll_async_download()` (single) and
+`poll_async_playlist_download()` emit `container_id` so the UI can sync card state.
 
 The flow (`src/core/YtAsync.ch`):
 
@@ -65,8 +68,9 @@ return renderNormalCard(item)
   (`yt_download_playlist_poll` → `videos` array), not from DM items — the card is a
   view over the async job state, while the DM children only provide per-stream
   segmented progress bars (matched by task id).
-- `ytPlContainerId` (JS state) captures `d.container_id` from the poll for card-side
-  progress sync.
+- `ytPlContainerId` (JS state) captures `d.container_id` from the playlist poll; the card
+  renders as "active" while `item.id === ytPlContainerId` (drives expanded-card state and
+  progress sync).
 - NOTE: an older approach tracked child ids in a `ytPlTaskIds` map — **gone**. The
   `card_type` filter replaced it; do not reintroduce id-map filtering.
 

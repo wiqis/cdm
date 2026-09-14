@@ -59,8 +59,9 @@ the legit yt-dlp download.
 1. UI "Install" → `yt_install` (Bridge.ch) queues the tool as a REGULAR download task
    (priority 100, target `$CDM_TOOLS_DIR`) through the app's own DownloadManager —
    the downloader downloads its own tools.
-2. Status tracked via globals `g_tool_dl_status` / `g_tool_dl_task_id` (YtTools.ch);
-   `yt_status` polls the manager snapshot for that task id, reports
+2. Status tracked via globals `g_tool_dl_status` (int enum: 0=idle, 1=downloading yt-dlp,
+   2=downloading ffmpeg, 10=done, 11=error) + `g_tool_dl_task_id`/`g_tool_dl_task_id_len`
+   (YtTools.ch); `yt_status` polls the manager snapshot for that task id, reports
    `status:"downloading"` + progress while running.
 3. On completion: `ensure_tool_executable(path)` runs `fs::set_permissions(path, 0o755)`
    on Unix (a downloaded tool is always runnable — the status poll re-applies this for
@@ -79,7 +80,10 @@ the legit yt-dlp download.
 { "yt_dlp": {name,status,version,path}, "ffmpeg": {...}, "both_ready": bool }
 ```
 - `name` is the machine id (`yt-dlp`/`ffmpeg`), `status` is `"installed"`,
-  `"not_installed"`, or `"downloading"`.
+  `"not_installed"`, or `"downloading"`. Version strings are intentionally EMPTY in the
+  status poll (`ytdlp_version()`/`ffmpeg_version()` exist and work, but calling them
+  would spawn a process — line ~807 in YtTools.ch); the UI shows "installed" without a
+  version.
 - **Every string value wrapped with `json_string()` EXACTLY ONCE** — it already adds the
   surrounding quotes. Use the `json_kv`/`json_kv_raw` helpers instead of hand-concatenating
   quotes; double-wrapping produced `""yt-dlp""` → invalid JSON → `JSON.parse` rejected the

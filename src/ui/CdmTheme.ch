@@ -5,6 +5,7 @@ using std::string_view;
 
 public func CdmTheme(page : &mut HtmlPage) {
     page.append_css_view("""
+        /* ===== Layout ===== */
         .cdm-app {
             max-width: 860px;
             margin: 0 auto;
@@ -13,6 +14,8 @@ public func CdmTheme(page : &mut HtmlPage) {
             flex-direction: column;
             gap: 16px;
         }
+
+        /* ===== Header ===== */
         .cdm-header {
             display: flex;
             align-items: center;
@@ -35,8 +38,10 @@ public func CdmTheme(page : &mut HtmlPage) {
             border-radius: 12px;
             background: hsl(var(--primary) / 0.12);
             color: hsl(var(--primary));
-            font-size: 20px;
+            font-size: 22px;
+            transition: transform 0.2s ease;
         }
+        .cdm-logo:hover { transform: scale(1.08) rotate(-4deg); }
         .cdm-header h1 {
             font-size: 19px;
             font-weight: 700;
@@ -50,6 +55,7 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-header-stats {
             display: flex;
             gap: 12px;
+            align-items: center;
         }
         .cdm-stat {
             font-size: 13px;
@@ -58,6 +64,8 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-stat b {
             color: hsl(var(--foreground));
         }
+
+        /* ===== Toolbar ===== */
         .cdm-toolbar {
             display: flex;
             gap: 8px;
@@ -78,6 +86,11 @@ public func CdmTheme(page : &mut HtmlPage) {
             border-color: hsl(var(--ring));
             box-shadow: 0 0 0 3px hsl(var(--ring) / 0.25);
         }
+        .cdm-url-input::placeholder {
+            color: hsl(var(--muted-foreground) / 0.6);
+        }
+
+        /* ===== Buttons ===== */
         .cdm-add-btn {
             padding: 10px 18px;
             font-size: 14px;
@@ -87,10 +100,11 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: none;
             border-radius: calc(var(--radius) - 2px);
             cursor: pointer;
-            transition: opacity 0.15s;
+            transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
         }
-        .cdm-add-btn:hover { opacity: 0.9; }
-        .cdm-add-btn:disabled { opacity: 0.4; cursor: default; }
+        .cdm-add-btn:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 2px 8px hsl(var(--primary) / 0.3); }
+        .cdm-add-btn:active { transform: translateY(0); box-shadow: none; }
+        .cdm-add-btn:disabled { opacity: 0.4; cursor: default; transform: none; box-shadow: none; }
         .cdm-alert {
             padding: 10px 14px;
             font-size: 13.5px;
@@ -99,27 +113,34 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: 1px solid hsl(var(--destructive) / 0.4);
             border-radius: calc(var(--radius) - 2px);
             cursor: pointer;
+            transition: opacity 0.15s;
         }
+        .cdm-alert:hover { opacity: 0.85; }
+
+        /* ===== Empty State ===== */
         .cdm-empty {
             text-align: center;
-            padding: 56px 24px;
+            padding: 64px 24px;
             color: hsl(var(--muted-foreground));
             font-size: 15px;
         }
         .cdm-empty-icon {
-            font-size: 40px;
-            margin-bottom: 10px;
-            opacity: 0.6;
+            font-size: 56px;
+            margin-bottom: 14px;
+            opacity: 0.35;
+            display: block;
         }
         .cdm-empty-sub {
             font-size: 13px;
-            margin-top: 4px;
-            color: hsl(var(--muted-foreground) / 0.8);
+            margin-top: 6px;
+            color: hsl(var(--muted-foreground) / 0.7);
         }
+
+        /* ===== Download Cards ===== */
         .cdm-list {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
         .cdm-item {
             background: hsl(var(--card));
@@ -129,10 +150,19 @@ public func CdmTheme(page : &mut HtmlPage) {
             display: flex;
             flex-direction: column;
             gap: 10px;
-            transition: border-color 0.15s;
+            transition: border-color 0.15s, box-shadow 0.2s, transform 0.15s;
         }
-        .cdm-item:hover { border-color: hsl(var(--ring) / 0.5); }
-        .cdm-item-error { border-color: hsl(var(--destructive) / 0.5); }
+        .cdm-item:hover {
+            border-color: hsl(var(--ring) / 0.4);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+        }
+        .cdm-item-error {
+            border-color: hsl(var(--destructive) / 0.4);
+        }
+        .cdm-item-error:hover {
+            border-color: hsl(var(--destructive) / 0.6);
+            box-shadow: 0 2px 12px hsl(var(--destructive) / 0.06);
+        }
         .cdm-item-head {
             display: flex;
             align-items: center;
@@ -146,19 +176,32 @@ public func CdmTheme(page : &mut HtmlPage) {
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+
+        /* ===== Status Badges ===== */
         .cdm-badge {
             flex-shrink: 0;
             padding: 3px 10px;
             border-radius: 999px;
             font-size: 11.5px;
             font-weight: 600;
+            letter-spacing: 0.02em;
         }
-        .cdm-badge-active { background: hsl(var(--info) / 0.15); color: hsl(var(--info)); }
+        .cdm-badge-active {
+            background: hsl(var(--info) / 0.15);
+            color: hsl(var(--info));
+            animation: cdm-pulse-badge 2s ease-in-out infinite;
+        }
+        @keyframes cdm-pulse-badge {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.75; }
+        }
         .cdm-badge-done   { background: hsl(var(--success) / 0.15); color: hsl(var(--success)); }
         .cdm-badge-error  { background: hsl(var(--destructive) / 0.15); color: hsl(var(--destructive)); }
         .cdm-badge-idle   { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+
+        /* ===== Progress Bar ===== */
         .cdm-progress {
-            height: 8px;
+            height: 6px;
             background: hsl(var(--muted));
             border-radius: 999px;
             overflow: hidden;
@@ -168,7 +211,22 @@ public func CdmTheme(page : &mut HtmlPage) {
             background: linear-gradient(90deg, hsl(var(--info)), hsl(var(--ring)));
             border-radius: 999px;
             transition: width 0.4s ease;
+            position: relative;
         }
+        /* Animated shimmer for active downloads */
+        .cdm-progress-fill::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+            animation: cdm-shimmer 1.5s ease-in-out infinite;
+        }
+        @keyframes cdm-shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(200%); }
+        }
+
+        /* ===== Item Meta & Actions ===== */
         .cdm-item-meta {
             display: flex;
             gap: 16px;
@@ -185,7 +243,10 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-item-actions {
             display: flex;
             gap: 8px;
+            flex-wrap: wrap;
         }
+
+        /* ===== Buttons (generic) ===== */
         .cdm-btn {
             padding: 6px 14px;
             font-size: 13px;
@@ -195,11 +256,21 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: 1px solid hsl(var(--border));
             border-radius: calc(var(--radius) - 2px);
             cursor: pointer;
-            transition: background 0.15s, border-color 0.15s;
+            transition: background 0.15s, border-color 0.15s, transform 0.1s;
         }
-        .cdm-btn:hover { background: hsl(var(--secondary)); }
-        .cdm-btn-danger { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.4); }
-        .cdm-btn-danger:hover { background: hsl(var(--destructive) / 0.1); }
+        .cdm-btn:hover {
+            background: hsl(var(--secondary));
+            border-color: hsl(var(--border));
+        }
+        .cdm-btn:active { transform: scale(0.97); }
+        .cdm-btn-danger {
+            color: hsl(var(--destructive));
+            border-color: hsl(var(--destructive) / 0.4);
+        }
+        .cdm-btn-danger:hover {
+            background: hsl(var(--destructive) / 0.1);
+            border-color: hsl(var(--destructive) / 0.6);
+        }
         .cdm-btn-accent {
             padding: 6px 14px;
             font-size: 13px;
@@ -209,9 +280,12 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: 1px solid hsl(var(--primary));
             border-radius: calc(var(--radius) - 2px);
             cursor: pointer;
-            transition: opacity 0.15s;
+            transition: opacity 0.15s, transform 0.1s;
         }
-        .cdm-btn-accent:hover { opacity: 0.85; }
+        .cdm-btn-accent:hover { opacity: 0.88; transform: translateY(-1px); }
+        .cdm-btn-accent:active { transform: translateY(0); }
+
+        /* ===== Filter Chips ===== */
         .cdm-filterbar {
             display: flex;
             gap: 6px;
@@ -226,24 +300,33 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: 1px solid hsl(var(--border));
             border-radius: 999px;
             cursor: pointer;
-            transition: background 0.15s, color 0.15s;
+            transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
         }
-        .cdm-filter-chip:hover { background: hsl(var(--secondary)); }
+        .cdm-filter-chip:hover {
+            background: hsl(var(--secondary));
+            border-color: hsl(var(--border));
+        }
+        .cdm-filter-chip:active { transform: scale(0.95); }
         .cdm-filter-chip-on {
             color: hsl(var(--primary-foreground));
             background: hsl(var(--primary));
             border-color: hsl(var(--primary));
         }
+        .cdm-filter-chip-on:hover {
+            background: hsl(var(--primary) / 0.9);
+            border-color: hsl(var(--primary) / 0.9);
+        }
+        /* ===== Dialog Overlay ===== */
         .cdm-dialog-overlay {
             position: fixed;
             inset: 0;
             z-index: 1000;
-            background: rgba(0, 0, 0, 0.55);
+            background: rgba(0, 0, 0, 0.5);
             display: flex;
             align-items: center;
             justify-content: center;
-            backdrop-filter: blur(4px);
-            animation: cdm-fade-in 0.15s ease;
+            backdrop-filter: blur(6px);
+            animation: cdm-fade-in 0.12s ease;
         }
         @keyframes cdm-fade-in {
             from { opacity: 0; }
@@ -258,11 +341,11 @@ public func CdmTheme(page : &mut HtmlPage) {
             max-height: 85vh;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
-            animation: cdm-dialog-in 0.18s ease;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px hsl(var(--border));
+            animation: cdm-dialog-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
         @keyframes cdm-dialog-in {
-            from { opacity: 0; transform: scale(0.96) translateY(8px); }
+            from { opacity: 0; transform: scale(0.95) translateY(12px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
         .cdm-dialog-header {
@@ -288,9 +371,12 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: none;
             border-radius: calc(var(--radius) - 2px);
             cursor: pointer;
-            transition: background 0.12s;
+            transition: background 0.12s, color 0.12s;
         }
-        .cdm-dialog-close:hover { background: hsl(var(--secondary)); }
+        .cdm-dialog-close:hover {
+            background: hsl(var(--secondary));
+            color: hsl(var(--foreground));
+        }
         .cdm-dialog-body {
             padding: 16px 20px;
             display: flex;
@@ -395,13 +481,13 @@ public func CdmTheme(page : &mut HtmlPage) {
             background: hsl(var(--card));
             border: 1px solid hsl(var(--border));
             border-radius: var(--radius);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px hsl(var(--border));
             padding: 4px 0;
-            animation: cdm-ctx-in 0.1s ease;
+            animation: cdm-ctx-in 0.12s cubic-bezier(0.16, 1, 0.3, 1);
         }
         @keyframes cdm-ctx-in {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
+            from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
         }
         .cdm-ctx-item {
             padding: 7px 14px;
@@ -478,6 +564,9 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-search-input:focus {
             border-color: hsl(var(--ring));
             box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
+        }
+        .cdm-search-input::placeholder {
+            color: hsl(var(--muted-foreground) / 0.5);
         }
         .cdm-sort-select {
             padding: 5px 8px;
@@ -698,10 +787,12 @@ public func CdmTheme(page : &mut HtmlPage) {
             border-radius: var(--radius);
             font-size: 13px;
             font-weight: 500;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-            animation: cdm-toast-in 0.3s ease;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255,255,255,0.1);
+            animation: cdm-toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             cursor: pointer;
+            transition: opacity 0.2s, transform 0.2s;
         }
+        .cdm-yt-toast:hover { opacity: 0.92; transform: translateY(-1px); }
         .cdm-yt-toast-success {
             background: hsl(var(--success));
             color: white;
@@ -725,7 +816,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             border: 2px solid hsl(var(--border));
             border-top-color: hsl(var(--primary));
             border-radius: 50%;
-            animation: cdm-spin 0.6s linear infinite;
+            animation: cdm-spin 0.5s linear infinite;
         }
         @keyframes cdm-spin {
             to { transform: rotate(360deg); }
