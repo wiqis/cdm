@@ -13,6 +13,7 @@
     state loading = true
     state settings = null
     state showSettings = false
+    state settingsTab = "general"
     state filter = "All"          // All | Active | Done | Failed | Paused
     state catFilter = "All"       // All | Other | Documents | Programs | Video | Music | Compressed
     state searchQuery = ""
@@ -1047,7 +1048,7 @@
                 onChange={(e) => { newUrl = e.target.value }}
                 onKeyDown={(e) => { if(e.key === "Enter") addDownload() }} />
             <button class="cdm-add-btn" onClick={addDownload} disabled={newUrl.trim() === ""}>Add Download</button>
-            <button class="cdm-btn" onClick={() => { addUrl = newUrl; addOpen = true }} disabled={newUrl.trim() === ""}>Options&#8230;</button>
+            <button class="cdm-btn" onClick={() => { addUrl = newUrl; addOpen = true }} disabled={newUrl.trim() === ""}>Options…</button>
         </div>
 
         <div class="cdm-filterbar">
@@ -1063,7 +1064,7 @@
                 ))}
             </div>
             <div class="cdm-filter-row cdm-filter-secondary">
-                <input class="cdm-search-input" type="text" placeholder="Search filename or URL&#8230;"
+                <input class="cdm-search-input" type="text" placeholder="Search filename or URL…"
                     value={searchQuery} onChange={(e) => { searchQuery = e.target.value }} />
                 <select class="cdm-sort-select" value={sortBy} onChange={(e) => { sortBy = e.target.value }}>
                     <option value="newest">Newest first</option>
@@ -1082,6 +1083,14 @@
                         <button class="cdm-dialog-close" onClick={() => { showSettings = false }}>&#10005;</button>
                     </div>
                     <div class="cdm-dialog-body">
+                        <div class="cdm-settings-tabs">
+                            <button class={"cdm-settings-tab" + (settingsTab === "general" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "general" }}>General</button>
+                            <button class={"cdm-settings-tab" + (settingsTab === "youtube" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "youtube" }}>YouTube</button>
+                            <button class={"cdm-settings-tab" + (settingsTab === "network" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "network" }}>Network</button>
+                            <button class={"cdm-settings-tab" + (settingsTab === "advanced" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "advanced" }}>Advanced</button>
+                        </div>
+
+                        {settingsTab === "general" ? <div>
                         <label>Download folder
                             <input type="text" value={settings.download_dir}
                                 onChange={(e) => { settings.download_dir = e.target.value }} />
@@ -1106,6 +1115,13 @@
                                 <option value="2">Skip</option>
                             </select>
                         </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.auto_rename_duplicates || false}
+                                    onChange={(e) => { settings.auto_rename_duplicates = e.target.checked }} />
+                                Auto-rename duplicates
+                            </label>
+                        </div>
                         <div class="cdm-toggle-row">
                             <label class="cdm-toggle-label">
                                 <input type="checkbox" checked={settings.enable_resume}
@@ -1142,9 +1158,190 @@
                             <input type="number" min="0" value={settings.retry_delay_ms}
                                 onChange={(e) => { settings.retry_delay_ms = parseInt(e.target.value) || 0 }} />
                         </label>
+                        <label>Move completed files to
+                            <input type="text" value={settings.move_completed_to || ""}
+                                placeholder="Leave in download folder"
+                                onChange={(e) => { settings.move_completed_to = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.clipboard_monitor || false}
+                                    onChange={(e) => { settings.clipboard_monitor = e.target.checked }} />
+                                Monitor clipboard for URLs
+                            </label>
+                        </div>
+                        </div> : null}
 
-                        <div class="cdm-section-header">HTTP</div>
+                        {settingsTab === "youtube" ? <div>
+                        <label>Quality (best, 1080, 720, 480)
+                            <input type="text" value={settings.yt_quality || ""}
+                                placeholder="best"
+                                onChange={(e) => { settings.yt_quality = e.target.value }} />
+                        </label>
+                        <label>Format (mp4, mkv, webm)
+                            <input type="text" value={settings.yt_format || ""}
+                                placeholder="mp4"
+                                onChange={(e) => { settings.yt_format = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_audio_only || false}
+                                    onChange={(e) => { settings.yt_audio_only = e.target.checked }} />
+                                Audio only
+                            </label>
+                        </div>
+                        <label>Max playlist items (0 = all)
+                            <input type="number" min="0" value={settings.yt_max_playlist_items || 0}
+                                onChange={(e) => { settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Output template (yt-dlp format)
+                            <input type="text" value={settings.yt_output_template || ""}
+                                placeholder="%(title)s.%(ext)s"
+                                onChange={(e) => { settings.yt_output_template = e.target.value }} />
+                        </label>
+                        <label>Merge output format
+                            <select value={settings.yt_merge_output_format || "mp4"}
+                                onChange={(e) => { settings.yt_merge_output_format = e.target.value }}>
+                                <option value="mp4">MP4</option>
+                                <option value="mkv">MKV</option>
+                                <option value="webm">WebM</option>
+                                <option value="avi">AVI</option>
+                            </select>
+                        </label>
+                        <label>Recode video to
+                            <select value={settings.yt_recode_video || ""}
+                                onChange={(e) => { settings.yt_recode_video = e.target.value }}>
+                                <option value="">Don't recode</option>
+                                <option value="mp4">MP4</option>
+                                <option value="mkv">MKV</option>
+                                <option value="webm">WebM</option>
+                            </select>
+                        </label>
+                        <label>Audio extraction format
+                            <select value={settings.yt_audio_format || ""}
+                                onChange={(e) => { settings.yt_audio_format = e.target.value }}>
+                                <option value="">None</option>
+                                <option value="mp3">MP3</option>
+                                <option value="aac">AAC</option>
+                                <option value="flac">FLAC</option>
+                                <option value="opus">Opus</option>
+                                <option value="vorbis">Vorbis</option>
+                            </select>
+                        </label>
+                        <label>Audio quality (0=best, 10=worst)
+                            <input type="number" min="0" max="10" value={settings.yt_audio_quality || 0}
+                                onChange={(e) => { settings.yt_audio_quality = parseInt(e.target.value) || 0 }} />
+                        </label>
 
+                        <div class="cdm-section-header">Subtitles</div>
+
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_subs || false}
+                                    onChange={(e) => { settings.yt_write_subs = e.target.checked }} />
+                                Download subtitles
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_auto_subs || false}
+                                    onChange={(e) => { settings.yt_write_auto_subs = e.target.checked }} />
+                                Auto-generated subtitles
+                            </label>
+                        </div>
+                        <label>Subtitle languages
+                            <input type="text" value={settings.yt_sub_langs || "en"}
+                                placeholder="en,ja,es"
+                                onChange={(e) => { settings.yt_sub_langs = e.target.value }} />
+                        </label>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_embed_subs || false}
+                                    onChange={(e) => { settings.yt_embed_subs = e.target.checked }} />
+                                Embed subtitles in video
+                            </label>
+                        </div>
+                        <label>Convert subtitles to
+                            <select value={settings.yt_convert_subs || ""}
+                                onChange={(e) => { settings.yt_convert_subs = e.target.value }}>
+                                <option value="">No conversion</option>
+                                <option value="srt">SRT</option>
+                                <option value="vtt">VTT</option>
+                                <option value="ass">ASS</option>
+                            </select>
+                        </label>
+
+                        <div class="cdm-section-header">Metadata</div>
+
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_embed_metadata !== false}
+                                    onChange={(e) => { settings.yt_embed_metadata = e.target.checked }} />
+                                Embed metadata
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_embed_thumbnail || false}
+                                    onChange={(e) => { settings.yt_embed_thumbnail = e.target.checked }} />
+                                Embed thumbnail as cover art
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_description || false}
+                                    onChange={(e) => { settings.yt_write_description = e.target.checked }} />
+                                Write description file
+                            </label>
+                        </div>
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_write_info_json || false}
+                                    onChange={(e) => { settings.yt_write_info_json = e.target.checked }} />
+                                Write info.json file
+                            </label>
+                        </div>
+
+                        <div class="cdm-section-header">Playlist</div>
+
+                        <label>Playlist start index (1-based)
+                            <input type="number" min="1" value={settings.yt_playlist_start || 0}
+                                placeholder="0 = from start"
+                                onChange={(e) => { settings.yt_playlist_start = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Playlist end index (0 = all)
+                            <input type="number" min="0" value={settings.yt_playlist_end || 0}
+                                placeholder="0 = all"
+                                onChange={(e) => { settings.yt_playlist_end = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Playlist items (e.g. 1,2,5-10)
+                            <input type="text" value={settings.yt_playlist_items || ""}
+                                placeholder=""
+                                onChange={(e) => { settings.yt_playlist_items = e.target.value }} />
+                        </label>
+
+                        <div class="cdm-section-header">Sponsorblock</div>
+
+                        <div class="cdm-toggle-row">
+                            <label class="cdm-toggle-label">
+                                <input type="checkbox" checked={settings.yt_remove_sponsorblock || false}
+                                    onChange={(e) => { settings.yt_remove_sponsorblock = e.target.checked }} />
+                                Remove sponsor segments
+                            </label>
+                        </div>
+                        <label>Mark sponsor segments (colors)
+                            <input type="text" value={settings.yt_sponsorblock_mark || ""}
+                                placeholder="sponsor,intro,outro"
+                                onChange={(e) => { settings.yt_sponsorblock_mark = e.target.value }} />
+                        </label>
+                        <label>yt-dlp --exec command
+                            <input type="text" value={settings.yt_exec_cmd || ""}
+                                placeholder="mpv {}"
+                                onChange={(e) => { settings.yt_exec_cmd = e.target.value }} />
+                        </label>
+                        </div> : null}
+
+                        {settingsTab === "network" ? <div>
                         <label>User-Agent
                             <input type="text" value={settings.user_agent || ""}
                                 placeholder="ChemicalDM/0.1"
@@ -1191,182 +1388,7 @@
                             </label>
                         </div>
 
-                        <div class="cdm-section-header">Limits</div>
-
-                        <label>Max download size (bytes, 0 = unlimited)
-                            <input type="number" min="0" value={settings.max_download_size || 0}
-                                onChange={(e) => { settings.max_download_size = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Min free disk space (MB, 0 = check disabled)
-                            <input type="number" min="0" value={settings.min_disk_space_mb || 0}
-                                onChange={(e) => { settings.min_disk_space_mb = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Filename template (placeholders: name, ext, date)
-                            <input type="text" value={settings.filename_template || ""}
-                                placeholder="name.ext"
-                                onChange={(e) => { settings.filename_template = e.target.value }} />
-                        </label>
-                        <label>Post-download command (placeholder: path = output file)
-                            <input type="text" value={settings.post_download_cmd || ""}
-                                placeholder="mpv"
-                                onChange={(e) => { settings.post_download_cmd = e.target.value }} />
-                        </label>
-                        <label>Checksum verification (md5, sha256)
-                            <input type="text" value={settings.checksum || ""}
-                                placeholder="sha256"
-                                onChange={(e) => { settings.checksum = e.target.value }} />
-                        </label>
-
-                        <div class="cdm-section-header">YouTube</div>
-
-                        <label>Quality (best, 1080, 720, 480)
-                            <input type="text" value={settings.yt_quality || ""}
-                                placeholder="best"
-                                onChange={(e) => { settings.yt_quality = e.target.value }} />
-                        </label>
-                        <label>Format (mp4, mkv, webm)
-                            <input type="text" value={settings.yt_format || ""}
-                                placeholder="mp4"
-                                onChange={(e) => { settings.yt_format = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_audio_only || false}
-                                    onChange={(e) => { settings.yt_audio_only = e.target.checked }} />
-                                Audio only (YouTube)
-                            </label>
-                        </div>
-                        <label>Max playlist items (0 = all)
-                            <input type="number" min="0" value={settings.yt_max_playlist_items || 0}
-                                onChange={(e) => { settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} />
-                        </label>
-
-                        <div class="cdm-section-header">YouTube Advanced</div>
-
-                        <label>Output template (yt-dlp format)
-                            <input type="text" value={settings.yt_output_template || ""}
-                                placeholder="%(title)s.%(ext)s"
-                                onChange={(e) => { settings.yt_output_template = e.target.value }} />
-                        </label>
-                        <label>Merge output format
-                            <select value={settings.yt_merge_output_format || "mp4"}
-                                onChange={(e) => { settings.yt_merge_output_format = e.target.value }}>
-                                <option value="mp4">MP4</option>
-                                <option value="mkv">MKV</option>
-                                <option value="webm">WebM</option>
-                                <option value="avi">AVI</option>
-                            </select>
-                        </label>
-                        <label>Recode video to
-                            <select value={settings.yt_recode_video || ""}
-                                onChange={(e) => { settings.yt_recode_video = e.target.value }}>
-                                <option value="">Don't recode</option>
-                                <option value="mp4">MP4</option>
-                                <option value="mkv">MKV</option>
-                                <option value="webm">WebM</option>
-                            </select>
-                        </label>
-                        <label>Audio extraction format
-                            <select value={settings.yt_audio_format || ""}
-                                onChange={(e) => { settings.yt_audio_format = e.target.value }}>
-                                <option value="">None</option>
-                                <option value="mp3">MP3</option>
-                                <option value="aac">AAC</option>
-                                <option value="flac">FLAC</option>
-                                <option value="opus">Opus</option>
-                                <option value="vorbis">Vorbis</option>
-                            </select>
-                        </label>
-                        <label>Audio quality (0=best, 10=worst)
-                            <input type="number" min="0" max="10" value={settings.yt_audio_quality || 0}
-                                onChange={(e) => { settings.yt_audio_quality = parseInt(e.target.value) || 0 }} />
-                        </label>
-
-                        <div class="cdm-section-header">Subtitles & Metadata</div>
-
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_subs || false}
-                                    onChange={(e) => { settings.yt_write_subs = e.target.checked }} />
-                                Download subtitles
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_auto_subs || false}
-                                    onChange={(e) => { settings.yt_write_auto_subs = e.target.checked }} />
-                                Download auto-generated subtitles
-                            </label>
-                        </div>
-                        <label>Subtitle languages
-                            <input type="text" value={settings.yt_sub_langs || "en"}
-                                placeholder="en,ja,es"
-                                onChange={(e) => { settings.yt_sub_langs = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_embed_subs || false}
-                                    onChange={(e) => { settings.yt_embed_subs = e.target.checked }} />
-                                Embed subtitles in video
-                            </label>
-                        </div>
-                        <label>Convert subtitles to
-                            <select value={settings.yt_convert_subs || ""}
-                                onChange={(e) => { settings.yt_convert_subs = e.target.value }}>
-                                <option value="">No conversion</option>
-                                <option value="srt">SRT</option>
-                                <option value="vtt">VTT</option>
-                                <option value="ass">ASS</option>
-                            </select>
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_embed_metadata !== false}
-                                    onChange={(e) => { settings.yt_embed_metadata = e.target.checked }} />
-                                Embed metadata
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_embed_thumbnail || false}
-                                    onChange={(e) => { settings.yt_embed_thumbnail = e.target.checked }} />
-                                Embed thumbnail as cover art
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_description || false}
-                                    onChange={(e) => { settings.yt_write_description = e.target.checked }} />
-                                Write description file
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_info_json || false}
-                                    onChange={(e) => { settings.yt_write_info_json = e.target.checked }} />
-                                Write info.json file
-                            </label>
-                        </div>
-
-                        <div class="cdm-section-header">Playlist Control</div>
-
-                        <label>Playlist start index (1-based)
-                            <input type="number" min="1" value={settings.yt_playlist_start || 0}
-                                placeholder="0 = from start"
-                                onChange={(e) => { settings.yt_playlist_start = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Playlist end index (0 = all)
-                            <input type="number" min="0" value={settings.yt_playlist_end || 0}
-                                placeholder="0 = all"
-                                onChange={(e) => { settings.yt_playlist_end = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Playlist items (e.g. 1,2,5-10)
-                            <input type="text" value={settings.yt_playlist_items || ""}
-                                placeholder=""
-                                onChange={(e) => { settings.yt_playlist_items = e.target.value }} />
-                        </label>
-
-                        <div class="cdm-section-header">Network</div>
+                        <div class="cdm-section-header">Proxy</div>
 
                         <label>HTTP proxy host
                             <input type="text" value={settings.proxy_host || ""}
@@ -1421,8 +1443,43 @@
                             <input type="number" min="0" value={settings.yt_extractor_retries || 3}
                                 onChange={(e) => { settings.yt_extractor_retries = parseInt(e.target.value) || 3 }} />
                         </label>
+                        </div> : null}
 
-                        <div class="cdm-section-header">Post-Processing</div>
+                        {settingsTab === "advanced" ? <div>
+                        <div class="cdm-section-header">Limits</div>
+
+                        <label>Max download size (bytes, 0 = unlimited)
+                            <input type="number" min="0" value={settings.max_download_size || 0}
+                                onChange={(e) => { settings.max_download_size = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Min free disk space (MB, 0 = check disabled)
+                            <input type="number" min="0" value={settings.min_disk_space_mb || 0}
+                                onChange={(e) => { settings.min_disk_space_mb = parseInt(e.target.value) || 0 }} />
+                        </label>
+                        <label>Per-download speed limit (KB/s, 0=unlimited)
+                            <input type="number" min="0" value={settings.bandwidth_limit_per || 0}
+                                onChange={(e) => { settings.bandwidth_limit_per = parseInt(e.target.value) || 0 }} />
+                        </label>
+
+                        <div class="cdm-section-header">Files</div>
+
+                        <label>Filename template (placeholders: name, ext, date)
+                            <input type="text" value={settings.filename_template || ""}
+                                placeholder="name.ext"
+                                onChange={(e) => { settings.filename_template = e.target.value }} />
+                        </label>
+                        <label>Post-download command (placeholder: path = output file)
+                            <input type="text" value={settings.post_download_cmd || ""}
+                                placeholder="mpv"
+                                onChange={(e) => { settings.post_download_cmd = e.target.value }} />
+                        </label>
+                        <label>Checksum verification (md5, sha256)
+                            <input type="text" value={settings.checksum || ""}
+                                placeholder="sha256"
+                                onChange={(e) => { settings.checksum = e.target.value }} />
+                        </label>
+
+                        <div class="cdm-section-header">Post-Processing (ffmpeg)</div>
 
                         <label>Video codec
                             <select value={settings.ffmpeg_video_codec || ""}
@@ -1458,52 +1515,6 @@
                                 placeholder="/usr/bin/ffmpeg"
                                 onChange={(e) => { settings.yt_ffmpeg_location = e.target.value }} />
                         </label>
-                        <label>yt-dlp --exec command
-                            <input type="text" value={settings.yt_exec_cmd || ""}
-                                placeholder="mpv {}"
-                                onChange={(e) => { settings.yt_exec_cmd = e.target.value }} />
-                        </label>
-
-                        <div class="cdm-section-header">Sponsorblock</div>
-
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_remove_sponsorblock || false}
-                                    onChange={(e) => { settings.yt_remove_sponsorblock = e.target.checked }} />
-                                Remove sponsor segments
-                            </label>
-                        </div>
-                        <label>Mark sponsor segments (colors)
-                            <input type="text" value={settings.yt_sponsorblock_mark || ""}
-                                placeholder="sponsor,intro,outro"
-                                onChange={(e) => { settings.yt_sponsorblock_mark = e.target.value }} />
-                        </label>
-
-                        <div class="cdm-section-header">Download Management</div>
-
-                        <label>Per-download speed limit (KB/s, 0=unlimited)
-                            <input type="number" min="0" value={settings.bandwidth_limit_per || 0}
-                                onChange={(e) => { settings.bandwidth_limit_per = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Move completed files to
-                            <input type="text" value={settings.move_completed_to || ""}
-                                placeholder="Leave in download folder"
-                                onChange={(e) => { settings.move_completed_to = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.auto_rename_duplicates || false}
-                                    onChange={(e) => { settings.auto_rename_duplicates = e.target.checked }} />
-                                Auto-rename duplicates
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.clipboard_monitor || false}
-                                    onChange={(e) => { settings.clipboard_monitor = e.target.checked }} />
-                                Monitor clipboard for URLs
-                            </label>
-                        </div>
 
                         <div class="cdm-section-header">Appearance</div>
 
@@ -1559,6 +1570,7 @@
                             }}>Import Settings</button>
                         </div>
                         <p style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", marginTop: "4px" }}>Export saves current settings to a JSON file. Import loads and applies settings from a file.</p>
+                        </div> : null}
                     </div>
                     <div class="cdm-dialog-footer">
                         <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>
@@ -1942,7 +1954,7 @@
 
         {alert !== "" ? <div class="cdm-alert" onClick={() => { alert = "" }}>{alert}</div> : null}
 
-        {loading ? <div class="cdm-empty">Loading downloads&#8230;</div> : null}
+        {loading ? <div class="cdm-empty">Loading downloads…</div> : null}
 
         {!loading && visibleItems.length === 0 && !ytDownloading ? (
             <div class="cdm-empty">

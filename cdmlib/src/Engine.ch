@@ -13,7 +13,7 @@ using std::mutex;
 using std::Result;
 using std::vector;
 
-    public comptime const STREAM_BUF_SIZE : usize = 256u * 1024u
+    public comptime const STREAM_BUF_SIZE : usize = 128u * 1024u
     public const SPEED_SAMPLE_MS : i64 = 500
     public const PAUSE_POLL_MS : ulong = 150
 

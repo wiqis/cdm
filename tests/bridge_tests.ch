@@ -576,7 +576,7 @@ public func CDM_BR_pause_resume_cancel(env : &mut TestEnv) {
     var root = br_tmp_dir(string_view::make_no_len("prc-src"))
     var src = root.copy()
     src.append_view(string_view::make_no_len("prc.bin"))
-    if(!br_write_pattern(src.data(), 2 * 1024 * 1024)) { env.error("payload"); return }
+    if(!br_write_pattern(src.data(), 512 * 1024)) { env.error("payload"); return }
 
     var srv = BrServer()
     srv.chunk_delay_ms = 12

@@ -621,6 +621,32 @@ public func CdmTheme(page : &mut HtmlPage) {
             padding-bottom: 4px;
             border-bottom: 1px solid hsl(var(--border));
         }
+        .cdm-settings-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid hsl(var(--border));
+            margin-bottom: 16px;
+        }
+        .cdm-settings-tab {
+            flex: 1;
+            padding: 8px 4px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            color: hsl(var(--muted-foreground));
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .cdm-settings-tab:hover {
+            color: hsl(var(--foreground));
+        }
+        .cdm-settings-tab-active {
+            color: hsl(var(--primary));
+            border-bottom-color: hsl(var(--primary));
+        }
         /* ---- YouTube download styles ---- */
         .cdm-yt-btn {
             padding: 10px 18px;
