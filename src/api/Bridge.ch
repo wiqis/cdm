@@ -742,6 +742,19 @@ using std::vector;
             process::execute(cfg)
             return ok_json()
         }
+        var m_browse_folder = string_view::make_no_len("browse_folder")
+        if(method.equals(&m_browse_folder)) {
+            var title_ptr = string_view::make_no_len("Select Download Folder").data()
+            var selected = webview::webview_browse_folder(title_ptr)
+            if(selected.size() == 0u) {
+                var msg = string::make_no_len("no folder selected")
+                return err_json(&msg)
+            }
+            var out = string::make_no_len("{\"ok\":true,\"path\":")
+            out.append_string(&json_string(string_view::make_view(&selected)))
+            out.append('}')
+            return out
+        }
         // ---- YouTube / yt-dlp methods ----
         var m_yt_status = string_view::make_no_len("yt_status")
         if(method.equals(&m_yt_status)) {

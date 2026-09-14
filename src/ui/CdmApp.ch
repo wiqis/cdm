@@ -1092,8 +1092,18 @@
 
                         {settingsTab === "general" ? <div>
                         <label>Download folder
-                            <input type="text" value={settings.download_dir}
-                                onChange={(e) => { settings.download_dir = e.target.value }} />
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                <input type="text" value={settings.download_dir} style={{ flex: "1" }}
+                                    onChange={(e) => { settings.download_dir = e.target.value }} />
+                                <button class="cdm-btn" onClick={() => {
+                                    asyncBridge("browse_folder", "{}", function(d) {
+                                        if(d && d.ok && d.path) {
+                                            settings.download_dir = d.path
+                                            showToast("Folder: " + d.path, "success")
+                                        }
+                                    })
+                                }} style={{ whiteSpace: "nowrap" }}>Browse</button>
+                            </div>
                         </label>
                         <label>Max concurrent downloads
                             <input type="number" min="1" value={settings.max_concurrent}
