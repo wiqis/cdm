@@ -467,244 +467,136 @@ using std::Result;
             return settings_json(&mut *dm)
         }
         if(method.equals(&m_settings_set)) {
-            var dl = json_field(args, string_view::make_no_len("download_dir"))
-            var conc = json_int_field(args, string_view::make_no_len("max_concurrent"), dm.max_concurrent)
-            var seats = json_int_field(args, string_view::make_no_len("max_segments"), dm.max_segments)
-            var speed = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), dm.speed_limit_kbps as int)
-            var dupact = json_int_field(args, string_view::make_no_len("duplicate_action"), dm.duplicate_action)
-            var en_resume = json_bool_field(args, string_view::make_no_len("enable_resume"), dm.enable_resume)
-            var al_segs = json_bool_field(args, string_view::make_no_len("allow_segments"), dm.allow_segments)
-            var auto_res = json_bool_field(args, string_view::make_no_len("auto_resume_failed"), dm.auto_resume_failed)
-            var retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.retry_policy.max_retries)
-            var delay = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_policy.delay_ms as int)
-            // Validate settings before applying.
-            var cv = validate_max_concurrent(conc)
-            if(!cv.is_ok()) { return err_json(&cv.message) }
-            var sv = validate_max_segments(seats)
-            if(!sv.is_ok()) { return err_json(&sv.message) }
-            var slv = validate_speed_limit(speed as i64)
-            if(!slv.is_ok()) { return err_json(&slv.message) }
-            var dv = validate_duplicate_action(dupact)
-            if(!dv.is_ok()) { return err_json(&dv.message) }
-            var rv = validate_max_retries(retries)
-            if(!rv.is_ok()) { return err_json(&rv.message) }
-            var rlv = validate_retry_delay(delay as i64)
-            if(!rlv.is_ok()) { return err_json(&rlv.message) }
-            if(dl.size() > 0u) {
-                var dv2 = validate_directory(string_view::make_view(&dl))
-                if(!dv2.is_ok()) { return err_json(&dv2.message) }
-                dm.download_dir = dl.copy()
-            }
-            if(conc > 0) { dm.max_concurrent = conc }
-            if(seats > 0) { dm.max_segments = seats }
-            dm.speed_limit_kbps = speed as i64
-            dm.duplicate_action = dupact
-            dm.enable_resume = en_resume
-            dm.allow_segments = al_segs
-            dm.auto_resume_failed = auto_res
-            dm.retry_policy.max_retries = retries
-            if(delay >= 0) { dm.retry_policy.delay_ms = delay as i64 }
-            // New power-user settings.
-            var ua = json_field(args, string_view::make_no_len("user_agent"))
-            var ck = json_field(args, string_view::make_no_len("cookie_file"))
-            var vssl = json_bool_field(args, string_view::make_no_len("verify_ssl"), dm.verify_ssl)
-            var cto = json_int_field(args, string_view::make_no_len("connect_timeout"), dm.connect_timeout)
-            var maxdl = json_int_field(args, string_view::make_no_len("max_download_size"), dm.max_download_size as int)
-            var minds = json_int_field(args, string_view::make_no_len("min_disk_space_mb"), dm.min_disk_space_mb)
-            var postcmd = json_field(args, string_view::make_no_len("post_download_cmd"))
-            var yq = json_field(args, string_view::make_no_len("yt_quality"))
-            var yf = json_field(args, string_view::make_no_len("yt_format"))
-            var ya = json_bool_field(args, string_view::make_no_len("yt_audio_only"), dm.yt_audio_only)
-            var ypl = json_int_field(args, string_view::make_no_len("yt_max_playlist_items"), dm.yt_max_playlist_items)
-            if(ua.size() > 0) { dm.user_agent = ua.copy() }
-            if(ck.size() > 0) { dm.cookie_file = ck.copy() }
-            dm.verify_ssl = vssl
-            if(cto > 0) { dm.connect_timeout = cto }
-            if(maxdl >= 0) { dm.max_download_size = maxdl as i64 }
-            if(minds >= 0) { dm.min_disk_space_mb = minds }
-            if(postcmd.size() > 0) { dm.post_download_cmd = postcmd.copy() }
-            if(yq.size() > 0) { dm.yt_quality = yq.copy() }
-            if(yf.size() > 0) { dm.yt_format = yf.copy() }
-            dm.yt_audio_only = ya
-            if(ypl >= 0) { dm.yt_max_playlist_items = ypl }
-            var ref = json_field(args, string_view::make_no_len("referer_header"))
-            var auth = json_field(args, string_view::make_no_len("auth_header"))
-            var fipv4 = json_bool_field(args, string_view::make_no_len("force_ipv4"), dm.force_ipv4)
-            var fipv6 = json_bool_field(args, string_view::make_no_len("force_ipv6"), dm.force_ipv6)
-            var ftemp = json_field(args, string_view::make_no_len("filename_template"))
-            var csum = json_field(args, string_view::make_no_len("checksum"))
-            if(ref.size() > 0) { dm.referer_header = ref.copy() }
-            if(auth.size() > 0) { dm.auth_header = auth.copy() }
-            dm.force_ipv4 = fipv4
-            dm.force_ipv6 = fipv6
-            if(ftemp.size() > 0) { dm.filename_template = ftemp.copy() }
-            if(csum.size() > 0) { dm.checksum = csum.copy() }
-            var notifs = json_bool_field(args, string_view::make_no_len("notifications_enabled"), dm.notifications_enabled)
-            dm.notifications_enabled = notifs
-            var lang = json_field(args, string_view::make_no_len("language"))
-            if(lang.size() > 0) { dm.language = lang.copy() }
-            var mh = json_int_field(args, string_view::make_no_len("max_history"), dm.max_history)
-            if(mh >= 0) { dm.max_history = mh }
-            var th = json_field(args, string_view::make_no_len("theme"))
-            if(th.size() > 0) { dm.theme = th.copy() }
-            var prxh = json_field(args, string_view::make_no_len("proxy_host"))
-            var prxp = json_int_field(args, string_view::make_no_len("proxy_port"), dm.proxy_port)
-            if(prxh.size() > 0) { dm.proxy_host = prxh.copy() }
-            if(prxp >= 0) { dm.proxy_port = prxp }
-            // Read advanced yt-dlp settings.
-            var yt_out_tpl = json_field(args, string_view::make_no_len("yt_output_template"))
-            var yt_aud_fmt = json_field(args, string_view::make_no_len("yt_audio_format"))
-            var yt_aud_q = json_int_field(args, string_view::make_no_len("yt_audio_quality"), dm.yt_audio_quality)
-            var yt_rv = json_field(args, string_view::make_no_len("yt_recode_video"))
-            var yt_mof = json_field(args, string_view::make_no_len("yt_merge_output_format"))
-            var yt_ws = json_bool_field(args, string_view::make_no_len("yt_write_subs"), dm.yt_write_subs)
-            var yt_was = json_bool_field(args, string_view::make_no_len("yt_write_auto_subs"), dm.yt_write_auto_subs)
-            var yt_sl = json_field(args, string_view::make_no_len("yt_sub_langs"))
-            var yt_es = json_bool_field(args, string_view::make_no_len("yt_embed_subs"), dm.yt_embed_subs)
-            var yt_cs = json_field(args, string_view::make_no_len("yt_convert_subs"))
-            var yt_em = json_bool_field(args, string_view::make_no_len("yt_embed_metadata"), dm.yt_embed_metadata)
-            var yt_et = json_bool_field(args, string_view::make_no_len("yt_embed_thumbnail"), dm.yt_embed_thumbnail)
-            var yt_wd = json_bool_field(args, string_view::make_no_len("yt_write_description"), dm.yt_write_description)
-            var yt_wij = json_bool_field(args, string_view::make_no_len("yt_write_info_json"), dm.yt_write_info_json)
-            var yt_rf = json_bool_field(args, string_view::make_no_len("yt_restrict_filenames"), dm.yt_restrict_filenames)
-            var yt_tf = json_int_field(args, string_view::make_no_len("yt_trim_filenames"), dm.yt_trim_filenames)
-            var yt_no = json_bool_field(args, string_view::make_no_len("yt_no_overwrites"), dm.yt_no_overwrites)
-            var yt_ps = json_int_field(args, string_view::make_no_len("yt_playlist_start"), dm.yt_playlist_start)
-            var yt_pe = json_int_field(args, string_view::make_no_len("yt_playlist_end"), dm.yt_playlist_end)
-            var yt_pi = json_field(args, string_view::make_no_len("yt_playlist_items"))
-            var yt_px = json_field(args, string_view::make_no_len("yt_proxy"))
-            var yt_gb = json_bool_field(args, string_view::make_no_len("yt_geo_bypass"), dm.yt_geo_bypass)
-            var yt_gbc = json_field(args, string_view::make_no_len("yt_geo_bypass_country"))
-            var yt_er = json_int_field(args, string_view::make_no_len("yt_extractor_retries"), dm.yt_extractor_retries)
-            var yt_st = json_int_field(args, string_view::make_no_len("yt_socket_timeout"), dm.yt_socket_timeout)
-            var yt_ec = json_field(args, string_view::make_no_len("yt_exec_cmd"))
-            var yt_fl = json_field(args, string_view::make_no_len("yt_ffmpeg_location"))
-            var yt_rsb = json_bool_field(args, string_view::make_no_len("yt_remove_sponsorblock"), dm.yt_remove_sponsorblock)
-            var yt_sbm = json_field(args, string_view::make_no_len("yt_sponsorblock_mark"))
-            var yt_sa = json_field(args, string_view::make_no_len("yt_source_address"))
-            var yt_lsc = json_bool_field(args, string_view::make_no_len("yt_legacy_server_connect"), dm.yt_legacy_server_connect)
-            var yt_ncc = json_bool_field(args, string_view::make_no_len("yt_no_check_certificates"), dm.yt_no_check_certificates)
-            var ff_vc = json_field(args, string_view::make_no_len("ffmpeg_video_codec"))
-            var ff_ac = json_field(args, string_view::make_no_len("ffmpeg_audio_codec"))
-            var ff_ab = json_field(args, string_view::make_no_len("ffmpeg_audio_bitrate"))
-            var blp = json_int_field(args, string_view::make_no_len("bandwidth_limit_per"), dm.bandwidth_limit_per as int)
-            var ard = json_bool_field(args, string_view::make_no_len("auto_rename_duplicates"), dm.auto_rename_duplicates)
-            var mct = json_field(args, string_view::make_no_len("move_completed_to"))
-            var cm = json_bool_field(args, string_view::make_no_len("clipboard_monitor"), dm.clipboard_monitor)
-            // Apply advanced settings to dm.
-            if(yt_out_tpl.size() > 0) { dm.yt_output_template = yt_out_tpl.copy() }
-            if(yt_aud_fmt.size() > 0) { dm.yt_audio_format = yt_aud_fmt.copy() }
-            dm.yt_audio_quality = yt_aud_q
-            if(yt_rv.size() > 0) { dm.yt_recode_video = yt_rv.copy() }
-            if(yt_mof.size() > 0) { dm.yt_merge_output_format = yt_mof.copy() }
-            dm.yt_write_subs = yt_ws
-            dm.yt_write_auto_subs = yt_was
-            if(yt_sl.size() > 0) { dm.yt_sub_langs = yt_sl.copy() }
-            dm.yt_embed_subs = yt_es
-            if(yt_cs.size() > 0) { dm.yt_convert_subs = yt_cs.copy() }
-            dm.yt_embed_metadata = yt_em
-            dm.yt_embed_thumbnail = yt_et
-            dm.yt_write_description = yt_wd
-            dm.yt_write_info_json = yt_wij
-            dm.yt_restrict_filenames = yt_rf
-            dm.yt_trim_filenames = yt_tf
-            dm.yt_no_overwrites = yt_no
-            dm.yt_playlist_start = yt_ps
-            dm.yt_playlist_end = yt_pe
-            if(yt_pi.size() > 0) { dm.yt_playlist_items = yt_pi.copy() }
-            if(yt_px.size() > 0) { dm.yt_proxy = yt_px.copy() }
-            dm.yt_geo_bypass = yt_gb
-            if(yt_gbc.size() > 0) { dm.yt_geo_bypass_country = yt_gbc.copy() }
-            dm.yt_extractor_retries = yt_er
-            dm.yt_socket_timeout = yt_st
-            if(yt_ec.size() > 0) { dm.yt_exec_cmd = yt_ec.copy() }
-            if(yt_fl.size() > 0) { dm.yt_ffmpeg_location = yt_fl.copy() }
-            dm.yt_remove_sponsorblock = yt_rsb
-            if(yt_sbm.size() > 0) { dm.yt_sponsorblock_mark = yt_sbm.copy() }
-            if(yt_sa.size() > 0) { dm.yt_source_address = yt_sa.copy() }
-            dm.yt_legacy_server_connect = yt_lsc
-            dm.yt_no_check_certificates = yt_ncc
-            if(ff_vc.size() > 0) { dm.ffmpeg_video_codec = ff_vc.copy() }
-            if(ff_ac.size() > 0) { dm.ffmpeg_audio_codec = ff_ac.copy() }
-            if(ff_ab.size() > 0) { dm.ffmpeg_audio_bitrate = ff_ab.copy() }
-            dm.bandwidth_limit_per = blp as i64
-            dm.auto_rename_duplicates = ard
-            if(mct.size() > 0) { dm.move_completed_to = mct.copy() }
-            dm.clipboard_monitor = cm
-            // Persist the settings for next launch.
+            // Build a CdmSettings from JSON args, validate, then apply + persist.
             var settings = CdmSettings()
-            settings.download_dir = dm.download_dir.copy()
-            settings.max_concurrent = dm.max_concurrent
-            settings.max_segments = dm.max_segments
-            settings.speed_limit_kbps = dm.speed_limit_kbps
-            settings.duplicate_action = dm.duplicate_action
-            settings.enable_resume = dm.enable_resume
-            settings.allow_segments = dm.allow_segments
-            settings.auto_resume_failed = dm.auto_resume_failed
-            settings.max_retries = dm.retry_policy.max_retries
-            settings.retry_delay_ms = dm.retry_policy.delay_ms
-            settings.user_agent = dm.user_agent.copy()
-            settings.cookie_file = dm.cookie_file.copy()
-            settings.verify_ssl = dm.verify_ssl
-            settings.connect_timeout = dm.connect_timeout
-            settings.max_download_size = dm.max_download_size
-            settings.min_disk_space_mb = dm.min_disk_space_mb
-            settings.post_download_cmd = dm.post_download_cmd.copy()
-            settings.yt_quality = dm.yt_quality.copy()
-            settings.yt_format = dm.yt_format.copy()
-            settings.yt_audio_only = dm.yt_audio_only
-            settings.yt_max_playlist_items = dm.yt_max_playlist_items
-            settings.referer_header = dm.referer_header.copy()
-            settings.auth_header = dm.auth_header.copy()
-            settings.force_ipv4 = dm.force_ipv4
-            settings.force_ipv6 = dm.force_ipv6
-            settings.filename_template = dm.filename_template.copy()
-            settings.checksum = dm.checksum.copy()
-            settings.notifications_enabled = dm.notifications_enabled
-            settings.language = dm.language.copy()
-            settings.max_history = dm.max_history
-            settings.theme = dm.theme.copy()
-            settings.proxy_host = dm.proxy_host.copy()
-            settings.proxy_port = dm.proxy_port
-            settings.yt_output_template = dm.yt_output_template.copy()
-            settings.yt_audio_format = dm.yt_audio_format.copy()
-            settings.yt_audio_quality = dm.yt_audio_quality
-            settings.yt_recode_video = dm.yt_recode_video.copy()
-            settings.yt_merge_output_format = dm.yt_merge_output_format.copy()
-            settings.yt_write_subs = dm.yt_write_subs
-            settings.yt_write_auto_subs = dm.yt_write_auto_subs
-            settings.yt_sub_langs = dm.yt_sub_langs.copy()
-            settings.yt_embed_subs = dm.yt_embed_subs
-            settings.yt_convert_subs = dm.yt_convert_subs.copy()
-            settings.yt_embed_metadata = dm.yt_embed_metadata
-            settings.yt_embed_thumbnail = dm.yt_embed_thumbnail
-            settings.yt_write_description = dm.yt_write_description
-            settings.yt_write_info_json = dm.yt_write_info_json
-            settings.yt_restrict_filenames = dm.yt_restrict_filenames
-            settings.yt_trim_filenames = dm.yt_trim_filenames
-            settings.yt_no_overwrites = dm.yt_no_overwrites
-            settings.yt_playlist_start = dm.yt_playlist_start
-            settings.yt_playlist_end = dm.yt_playlist_end
-            settings.yt_playlist_items = dm.yt_playlist_items.copy()
-            settings.yt_proxy = dm.yt_proxy.copy()
-            settings.yt_geo_bypass = dm.yt_geo_bypass
-            settings.yt_geo_bypass_country = dm.yt_geo_bypass_country.copy()
-            settings.yt_extractor_retries = dm.yt_extractor_retries
-            settings.yt_socket_timeout = dm.yt_socket_timeout
-            settings.yt_exec_cmd = dm.yt_exec_cmd.copy()
-            settings.yt_ffmpeg_location = dm.yt_ffmpeg_location.copy()
-            settings.yt_remove_sponsorblock = dm.yt_remove_sponsorblock
-            settings.yt_sponsorblock_mark = dm.yt_sponsorblock_mark.copy()
-            settings.yt_source_address = dm.yt_source_address.copy()
-            settings.yt_legacy_server_connect = dm.yt_legacy_server_connect
-            settings.yt_no_check_certificates = dm.yt_no_check_certificates
-            settings.ffmpeg_video_codec = dm.ffmpeg_video_codec.copy()
-            settings.ffmpeg_audio_codec = dm.ffmpeg_audio_codec.copy()
-            settings.ffmpeg_audio_bitrate = dm.ffmpeg_audio_bitrate.copy()
-            settings.bandwidth_limit_per = dm.bandwidth_limit_per
-            settings.auto_rename_duplicates = dm.auto_rename_duplicates
-            settings.move_completed_to = dm.move_completed_to.copy()
-            settings.clipboard_monitor = dm.clipboard_monitor
+            // Core fields.
+            var dl = json_field(args, string_view::make_no_len("download_dir"))
+            if(dl.size() > 0u) { settings.download_dir = dl.copy() }
+            settings.max_concurrent = json_int_field(args, string_view::make_no_len("max_concurrent"), dm.max_concurrent)
+            settings.max_segments = json_int_field(args, string_view::make_no_len("max_segments"), dm.max_segments)
+            settings.speed_limit_kbps = json_int_field(args, string_view::make_no_len("speed_limit_kbps"), dm.speed_limit_kbps as int) as i64
+            settings.duplicate_action = json_int_field(args, string_view::make_no_len("duplicate_action"), dm.duplicate_action)
+            settings.enable_resume = json_bool_field(args, string_view::make_no_len("enable_resume"), dm.enable_resume)
+            settings.allow_segments = json_bool_field(args, string_view::make_no_len("allow_segments"), dm.allow_segments)
+            settings.auto_resume_failed = json_bool_field(args, string_view::make_no_len("auto_resume_failed"), dm.auto_resume_failed)
+            settings.max_retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.retry_policy.max_retries)
+            settings.retry_delay_ms = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_policy.delay_ms as int) as i64
+            // HTTP / network.
+            var ua = json_field(args, string_view::make_no_len("user_agent"))
+            if(ua.size() > 0) { settings.user_agent = ua.copy() }
+            var ck = json_field(args, string_view::make_no_len("cookie_file"))
+            if(ck.size() > 0) { settings.cookie_file = ck.copy() }
+            settings.verify_ssl = json_bool_field(args, string_view::make_no_len("verify_ssl"), dm.verify_ssl)
+            settings.connect_timeout = json_int_field(args, string_view::make_no_len("connect_timeout"), dm.connect_timeout)
+            settings.max_download_size = json_int_field(args, string_view::make_no_len("max_download_size"), dm.max_download_size as int) as i64
+            settings.min_disk_space_mb = json_int_field(args, string_view::make_no_len("min_disk_space_mb"), dm.min_disk_space_mb)
+            var postcmd = json_field(args, string_view::make_no_len("post_download_cmd"))
+            if(postcmd.size() > 0) { settings.post_download_cmd = postcmd.copy() }
+            var ref = json_field(args, string_view::make_no_len("referer_header"))
+            if(ref.size() > 0) { settings.referer_header = ref.copy() }
+            var auth = json_field(args, string_view::make_no_len("auth_header"))
+            if(auth.size() > 0) { settings.auth_header = auth.copy() }
+            settings.force_ipv4 = json_bool_field(args, string_view::make_no_len("force_ipv4"), dm.force_ipv4)
+            settings.force_ipv6 = json_bool_field(args, string_view::make_no_len("force_ipv6"), dm.force_ipv6)
+            var ftemp = json_field(args, string_view::make_no_len("filename_template"))
+            if(ftemp.size() > 0) { settings.filename_template = ftemp.copy() }
+            var csum = json_field(args, string_view::make_no_len("checksum"))
+            if(csum.size() > 0) { settings.checksum = csum.copy() }
+            settings.notifications_enabled = json_bool_field(args, string_view::make_no_len("notifications_enabled"), dm.notifications_enabled)
+            var lang = json_field(args, string_view::make_no_len("language"))
+            if(lang.size() > 0) { settings.language = lang.copy() }
+            settings.max_history = json_int_field(args, string_view::make_no_len("max_history"), dm.max_history)
+            var th = json_field(args, string_view::make_no_len("theme"))
+            if(th.size() > 0) { settings.theme = th.copy() }
+            var prxh = json_field(args, string_view::make_no_len("proxy_host"))
+            if(prxh.size() > 0) { settings.proxy_host = prxh.copy() }
+            settings.proxy_port = json_int_field(args, string_view::make_no_len("proxy_port"), dm.proxy_port)
+            // YouTube basic.
+            var yq = json_field(args, string_view::make_no_len("yt_quality"))
+            if(yq.size() > 0) { settings.yt_quality = yq.copy() }
+            var yf = json_field(args, string_view::make_no_len("yt_format"))
+            if(yf.size() > 0) { settings.yt_format = yf.copy() }
+            settings.yt_audio_only = json_bool_field(args, string_view::make_no_len("yt_audio_only"), dm.yt_audio_only)
+            settings.yt_max_playlist_items = json_int_field(args, string_view::make_no_len("yt_max_playlist_items"), dm.yt_max_playlist_items)
+            // YouTube advanced.
+            var yt_out_tpl = json_field(args, string_view::make_no_len("yt_output_template"))
+            if(yt_out_tpl.size() > 0) { settings.yt_output_template = yt_out_tpl.copy() }
+            var yt_aud_fmt = json_field(args, string_view::make_no_len("yt_audio_format"))
+            if(yt_aud_fmt.size() > 0) { settings.yt_audio_format = yt_aud_fmt.copy() }
+            settings.yt_audio_quality = json_int_field(args, string_view::make_no_len("yt_audio_quality"), dm.yt_audio_quality)
+            var yt_rv = json_field(args, string_view::make_no_len("yt_recode_video"))
+            if(yt_rv.size() > 0) { settings.yt_recode_video = yt_rv.copy() }
+            var yt_mof = json_field(args, string_view::make_no_len("yt_merge_output_format"))
+            if(yt_mof.size() > 0) { settings.yt_merge_output_format = yt_mof.copy() }
+            settings.yt_write_subs = json_bool_field(args, string_view::make_no_len("yt_write_subs"), dm.yt_write_subs)
+            settings.yt_write_auto_subs = json_bool_field(args, string_view::make_no_len("yt_write_auto_subs"), dm.yt_write_auto_subs)
+            var yt_sl = json_field(args, string_view::make_no_len("yt_sub_langs"))
+            if(yt_sl.size() > 0) { settings.yt_sub_langs = yt_sl.copy() }
+            settings.yt_embed_subs = json_bool_field(args, string_view::make_no_len("yt_embed_subs"), dm.yt_embed_subs)
+            var yt_cs = json_field(args, string_view::make_no_len("yt_convert_subs"))
+            if(yt_cs.size() > 0) { settings.yt_convert_subs = yt_cs.copy() }
+            settings.yt_embed_metadata = json_bool_field(args, string_view::make_no_len("yt_embed_metadata"), dm.yt_embed_metadata)
+            settings.yt_embed_thumbnail = json_bool_field(args, string_view::make_no_len("yt_embed_thumbnail"), dm.yt_embed_thumbnail)
+            settings.yt_write_description = json_bool_field(args, string_view::make_no_len("yt_write_description"), dm.yt_write_description)
+            settings.yt_write_info_json = json_bool_field(args, string_view::make_no_len("yt_write_info_json"), dm.yt_write_info_json)
+            settings.yt_write_comments = json_bool_field(args, string_view::make_no_len("yt_write_comments"), dm.yt_write_comments)
+            settings.yt_restrict_filenames = json_bool_field(args, string_view::make_no_len("yt_restrict_filenames"), dm.yt_restrict_filenames)
+            settings.yt_trim_filenames = json_int_field(args, string_view::make_no_len("yt_trim_filenames"), dm.yt_trim_filenames)
+            settings.yt_no_overwrites = json_bool_field(args, string_view::make_no_len("yt_no_overwrites"), dm.yt_no_overwrites)
+            settings.yt_playlist_start = json_int_field(args, string_view::make_no_len("yt_playlist_start"), dm.yt_playlist_start)
+            settings.yt_playlist_end = json_int_field(args, string_view::make_no_len("yt_playlist_end"), dm.yt_playlist_end)
+            var yt_pi = json_field(args, string_view::make_no_len("yt_playlist_items"))
+            if(yt_pi.size() > 0) { settings.yt_playlist_items = yt_pi.copy() }
+            var yt_px = json_field(args, string_view::make_no_len("yt_proxy"))
+            if(yt_px.size() > 0) { settings.yt_proxy = yt_px.copy() }
+            settings.yt_geo_bypass = json_bool_field(args, string_view::make_no_len("yt_geo_bypass"), dm.yt_geo_bypass)
+            var yt_gbc = json_field(args, string_view::make_no_len("yt_geo_bypass_country"))
+            if(yt_gbc.size() > 0) { settings.yt_geo_bypass_country = yt_gbc.copy() }
+            settings.yt_extractor_retries = json_int_field(args, string_view::make_no_len("yt_extractor_retries"), dm.yt_extractor_retries)
+            settings.yt_socket_timeout = json_int_field(args, string_view::make_no_len("yt_socket_timeout"), dm.yt_socket_timeout)
+            var yt_ec = json_field(args, string_view::make_no_len("yt_exec_cmd"))
+            if(yt_ec.size() > 0) { settings.yt_exec_cmd = yt_ec.copy() }
+            var yt_fl = json_field(args, string_view::make_no_len("yt_ffmpeg_location"))
+            if(yt_fl.size() > 0) { settings.yt_ffmpeg_location = yt_fl.copy() }
+            settings.yt_remove_sponsorblock = json_bool_field(args, string_view::make_no_len("yt_remove_sponsorblock"), dm.yt_remove_sponsorblock)
+            var yt_sbm = json_field(args, string_view::make_no_len("yt_sponsorblock_mark"))
+            if(yt_sbm.size() > 0) { settings.yt_sponsorblock_mark = yt_sbm.copy() }
+            var yt_sa = json_field(args, string_view::make_no_len("yt_source_address"))
+            if(yt_sa.size() > 0) { settings.yt_source_address = yt_sa.copy() }
+            settings.yt_legacy_server_connect = json_bool_field(args, string_view::make_no_len("yt_legacy_server_connect"), dm.yt_legacy_server_connect)
+            settings.yt_no_check_certificates = json_bool_field(args, string_view::make_no_len("yt_no_check_certificates"), dm.yt_no_check_certificates)
+            // FFmpeg.
+            var ff_vc = json_field(args, string_view::make_no_len("ffmpeg_video_codec"))
+            if(ff_vc.size() > 0) { settings.ffmpeg_video_codec = ff_vc.copy() }
+            var ff_ac = json_field(args, string_view::make_no_len("ffmpeg_audio_codec"))
+            if(ff_ac.size() > 0) { settings.ffmpeg_audio_codec = ff_ac.copy() }
+            var ff_ab = json_field(args, string_view::make_no_len("ffmpeg_audio_bitrate"))
+            if(ff_ab.size() > 0) { settings.ffmpeg_audio_bitrate = ff_ab.copy() }
+            // Misc.
+            settings.bandwidth_limit_per = json_int_field(args, string_view::make_no_len("bandwidth_limit_per"), dm.bandwidth_limit_per as int) as i64
+            settings.auto_rename_duplicates = json_bool_field(args, string_view::make_no_len("auto_rename_duplicates"), dm.auto_rename_duplicates)
+            var mct = json_field(args, string_view::make_no_len("move_completed_to"))
+            if(mct.size() > 0) { settings.move_completed_to = mct.copy() }
+            settings.clipboard_monitor = json_bool_field(args, string_view::make_no_len("clipboard_monitor"), dm.clipboard_monitor)
+            // Validate core fields before applying.
+            var cv = validate_max_concurrent(settings.max_concurrent)
+            if(!cv.is_ok()) { return err_json(&cv.message) }
+            var sv = validate_max_segments(settings.max_segments)
+            if(!sv.is_ok()) { return err_json(&sv.message) }
+            var slv = validate_speed_limit(settings.speed_limit_kbps)
+            if(!slv.is_ok()) { return err_json(&slv.message) }
+            var dv = validate_duplicate_action(settings.duplicate_action)
+            if(!dv.is_ok()) { return err_json(&dv.message) }
+            var rv = validate_max_retries(settings.max_retries)
+            if(!rv.is_ok()) { return err_json(&rv.message) }
+            var rlv = validate_retry_delay(settings.retry_delay_ms)
+            if(!rlv.is_ok()) { return err_json(&rlv.message) }
+            if(settings.download_dir.size() > 0u) {
+                var dv2 = validate_directory(string_view::make_view(&settings.download_dir))
+                if(!dv2.is_ok()) { return err_json(&dv2.message) }
+            }
+            // Apply to the live manager and persist for next launch.
+            apply_settings_to_dm(&mut *dm, &settings)
             save_settings(&settings)
             return ok_json()
         }

@@ -204,6 +204,8 @@
 
     var applySettings = () => {
         if(!settings) return
+        // settings_get always returns all fields, so no || fallback needed.
+        // Using || would incorrectly override 0 values (e.g. connect_timeout=0).
         var body = {
             download_dir: settings.download_dir,
             max_concurrent: settings.max_concurrent,
@@ -216,66 +218,66 @@
             auto_resume_failed: settings.auto_resume_failed,
             max_retries: settings.max_retries,
             retry_delay_ms: settings.retry_delay_ms,
-            user_agent: settings.user_agent || "",
-            cookie_file: settings.cookie_file || "",
-            verify_ssl: settings.verify_ssl !== false,
-            connect_timeout: settings.connect_timeout || 30,
-            max_download_size: settings.max_download_size || 0,
-            min_disk_space_mb: settings.min_disk_space_mb || 0,
-            post_download_cmd: settings.post_download_cmd || "",
-            yt_quality: settings.yt_quality || "",
-            yt_format: settings.yt_format || "",
-            yt_audio_only: settings.yt_audio_only || false,
-            yt_max_playlist_items: settings.yt_max_playlist_items || 0,
-            referer_header: settings.referer_header || "",
-            auth_header: settings.auth_header || "",
-            force_ipv4: settings.force_ipv4 || false,
-            force_ipv6: settings.force_ipv6 || false,
-            filename_template: settings.filename_template || "",
-            checksum: settings.checksum || "",
-            notifications_enabled: settings.notifications_enabled !== false,
-            language: settings.language || "",
-            max_history: settings.max_history || 1000,
-            theme: settings.theme || "auto",
-            yt_output_template: settings.yt_output_template || "",
-            yt_audio_format: settings.yt_audio_format || "",
-            yt_audio_quality: settings.yt_audio_quality || 0,
-            yt_recode_video: settings.yt_recode_video || "",
-            yt_merge_output_format: settings.yt_merge_output_format || "mp4",
-            yt_write_subs: settings.yt_write_subs || false,
-            yt_write_auto_subs: settings.yt_write_auto_subs || false,
-            yt_sub_langs: settings.yt_sub_langs || "en",
-            yt_embed_subs: settings.yt_embed_subs || false,
-            yt_convert_subs: settings.yt_convert_subs || "",
-            yt_embed_metadata: settings.yt_embed_metadata !== false,
-            yt_embed_thumbnail: settings.yt_embed_thumbnail || false,
-            yt_write_description: settings.yt_write_description || false,
-            yt_write_info_json: settings.yt_write_info_json || false,
-            yt_write_comments: settings.yt_write_comments || false,
-            yt_restrict_filenames: settings.yt_restrict_filenames || false,
-            yt_trim_filenames: settings.yt_trim_filenames || 0,
-            yt_no_overwrites: settings.yt_no_overwrites !== false,
-            yt_proxy: settings.yt_proxy || "",
-            yt_geo_bypass: settings.yt_geo_bypass || false,
-            yt_geo_bypass_country: settings.yt_geo_bypass_country || "",
-            yt_extractor_retries: settings.yt_extractor_retries || 3,
-            yt_socket_timeout: settings.yt_socket_timeout || 30,
-            yt_exec_cmd: settings.yt_exec_cmd || "",
-            yt_ffmpeg_location: settings.yt_ffmpeg_location || "",
-            yt_remove_sponsorblock: settings.yt_remove_sponsorblock || false,
-            yt_sponsorblock_mark: settings.yt_sponsorblock_mark || "",
-            yt_source_address: settings.yt_source_address || "",
-            yt_legacy_server_connect: settings.yt_legacy_server_connect || false,
-            yt_no_check_certificates: settings.yt_no_check_certificates || false,
-            ffmpeg_video_codec: settings.ffmpeg_video_codec || "",
-            ffmpeg_audio_codec: settings.ffmpeg_audio_codec || "",
-            ffmpeg_audio_bitrate: settings.ffmpeg_audio_bitrate || "",
-            bandwidth_limit_per: settings.bandwidth_limit_per || 0,
-            auto_rename_duplicates: settings.auto_rename_duplicates || false,
-            move_completed_to: settings.move_completed_to || "",
-            clipboard_monitor: settings.clipboard_monitor || false,
-            proxy_host: settings.proxy_host || "",
-            proxy_port: settings.proxy_port || 0
+            user_agent: settings.user_agent,
+            cookie_file: settings.cookie_file,
+            verify_ssl: settings.verify_ssl,
+            connect_timeout: settings.connect_timeout,
+            max_download_size: settings.max_download_size,
+            min_disk_space_mb: settings.min_disk_space_mb,
+            post_download_cmd: settings.post_download_cmd,
+            yt_quality: settings.yt_quality,
+            yt_format: settings.yt_format,
+            yt_audio_only: settings.yt_audio_only,
+            yt_max_playlist_items: settings.yt_max_playlist_items,
+            referer_header: settings.referer_header,
+            auth_header: settings.auth_header,
+            force_ipv4: settings.force_ipv4,
+            force_ipv6: settings.force_ipv6,
+            filename_template: settings.filename_template,
+            checksum: settings.checksum,
+            notifications_enabled: settings.notifications_enabled,
+            language: settings.language,
+            max_history: settings.max_history,
+            theme: settings.theme,
+            yt_output_template: settings.yt_output_template,
+            yt_audio_format: settings.yt_audio_format,
+            yt_audio_quality: settings.yt_audio_quality,
+            yt_recode_video: settings.yt_recode_video,
+            yt_merge_output_format: settings.yt_merge_output_format,
+            yt_write_subs: settings.yt_write_subs,
+            yt_write_auto_subs: settings.yt_write_auto_subs,
+            yt_sub_langs: settings.yt_sub_langs,
+            yt_embed_subs: settings.yt_embed_subs,
+            yt_convert_subs: settings.yt_convert_subs,
+            yt_embed_metadata: settings.yt_embed_metadata,
+            yt_embed_thumbnail: settings.yt_embed_thumbnail,
+            yt_write_description: settings.yt_write_description,
+            yt_write_info_json: settings.yt_write_info_json,
+            yt_write_comments: settings.yt_write_comments,
+            yt_restrict_filenames: settings.yt_restrict_filenames,
+            yt_trim_filenames: settings.yt_trim_filenames,
+            yt_no_overwrites: settings.yt_no_overwrites,
+            yt_proxy: settings.yt_proxy,
+            yt_geo_bypass: settings.yt_geo_bypass,
+            yt_geo_bypass_country: settings.yt_geo_bypass_country,
+            yt_extractor_retries: settings.yt_extractor_retries,
+            yt_socket_timeout: settings.yt_socket_timeout,
+            yt_exec_cmd: settings.yt_exec_cmd,
+            yt_ffmpeg_location: settings.yt_ffmpeg_location,
+            yt_remove_sponsorblock: settings.yt_remove_sponsorblock,
+            yt_sponsorblock_mark: settings.yt_sponsorblock_mark,
+            yt_source_address: settings.yt_source_address,
+            yt_legacy_server_connect: settings.yt_legacy_server_connect,
+            yt_no_check_certificates: settings.yt_no_check_certificates,
+            ffmpeg_video_codec: settings.ffmpeg_video_codec,
+            ffmpeg_audio_codec: settings.ffmpeg_audio_codec,
+            ffmpeg_audio_bitrate: settings.ffmpeg_audio_bitrate,
+            bandwidth_limit_per: settings.bandwidth_limit_per,
+            auto_rename_duplicates: settings.auto_rename_duplicates,
+            move_completed_to: settings.move_completed_to,
+            clipboard_monitor: settings.clipboard_monitor,
+            proxy_host: settings.proxy_host,
+            proxy_port: settings.proxy_port
         }
         call("settings_set", body)
         alert = "Settings saved"
@@ -1535,7 +1537,31 @@
 
                         <div class="cdm-section-header">Backup</div>
 
-                        <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))" }}>Export/Import available via CLI: cdm --export-settings / cdm --import-settings</p>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                            <button class="cdm-btn" onClick={() => {
+                                var path = prompt("Export settings to file:", "/tmp/cdm-settings.json")
+                                if(path) {
+                                    asyncBridge("settings_export", JSON.stringify({ path: path }), function(d) {
+                                        if(d && d.ok) { showToast("Settings exported to " + path) }
+                                        else { showToast(d && d.error ? d.error : "Export failed", "error") }
+                                    })
+                                }
+                            }}>Export Settings</button>
+                            <button class="cdm-btn" onClick={() => {
+                                var path = prompt("Import settings from file:", "/tmp/cdm-settings.json")
+                                if(path) {
+                                    asyncBridge("settings_import", JSON.stringify({ path: path }), function(d) {
+                                        if(d && d.ok) {
+                                            showToast("Settings imported — refreshing")
+                                            refreshSettings()
+                                        } else {
+                                            showToast(d && d.error ? d.error : "Import failed", "error")
+                                        }
+                                    })
+                                }
+                            }}>Import Settings</button>
+                        </div>
+                        <p style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", marginTop: "4px" }}>Export saves current settings to a JSON file. Import loads and applies settings from a file.</p>
                     </div>
                     <div class="cdm-dialog-footer">
                         <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>

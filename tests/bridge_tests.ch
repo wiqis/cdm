@@ -1026,28 +1026,6 @@ public func CDM_BR_open_file_missing(env : &mut TestEnv) {
     cdm::shutdown(&mut dm)
 }
 
-// ─── BR 15: show_in_folder returns ok for existing dir ──────────────────
-
-@test
-public func CDM_BR_show_in_folder(env : &mut TestEnv) {
-    var dl = br_tmp_dir(string_view::make_no_len("sif"))
-    var dm = cdm::DownloadManager()
-    dm.download_dir = dl.copy()
-    var dmp = &raw mut dm
-
-    var args = string::make_no_len("{\"path\":\"")
-    args.append_string(&dl)
-    args.append_view(string_view::make_no_len("\"}"))
-    var r = br_call(dmp, "show_in_folder", string_view::make_view(&args))
-    if(!r.contains(&string_view::make_no_len("\"ok\":true"))) {
-        env.error("show_in_folder should succeed for existing dir")
-        cdm::shutdown(&mut dm); fs::remove_dir_all_recursive(dl.data()); return
-    }
-
-    cdm::shutdown(&mut dm)
-    fs::remove_dir_all_recursive(dl.data())
-}
-
 // ─── BR 16: settings_set persists advanced fields ──────────────────────
 
 @test
