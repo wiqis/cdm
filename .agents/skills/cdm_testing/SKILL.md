@@ -37,12 +37,12 @@ App suites (run by `./run.sh --test`):
 
 | Suite | File | Tests | Covers |
 |-------|------|-------|--------|
-| bridge | `tests/bridge_tests.ch` | 25 | `bridge_call` methods, state JSON, tool-download progress (`CDM_BR_tool_download_progress` drives a REAL redirected install via `CDM_TOOL_URL_OVERRIDE` + python loopback server) |
+| bridge | `tests/bridge_tests.ch` | 25 `@test` fns (15 named `CDM_BR_*` + helpers) | `bridge_call` methods, state JSON, tool-download progress (`CDM_BR_tool_download_progress` drives a REAL redirected install via `CDM_TOOL_URL_OVERRIDE` + python loopback server) |
 | cli | `tests/cli_tests.ch` | 5 | `parse_cli` flags, priority parsing |
 | format | `tests/format_tests.ch` | 6 | Formatters (bytes/speed/eta/state) |
 | http | `tests/http_tests.ch` | 3 | REAL downloads vs `tests/http_server.py` (python `ThreadingHTTPServer` with full Range/206 + Accept-Ranges) on loopback — 1 MiB segmented, 50 KiB single-stream, 5 MiB large; byte-verifies output; tears down with `fuser -k PORT/tcp` + `remove_dir_all_recursive`. Needs `python3` + `fuser` |
 | json | `tests/json_tests.ch` | 6 | JsonBuild wire format incl. escaping |
-| persist | `tests/persist_tests.ch` | 23 | queue.txt/progress.txt roundtrips: every state survives save→restore, progress overlay (progress.txt beats stale queue.txt), v1 backward compat, atomic writes (no `.tmp` left), retry preserves progress, parse_i64 semantics |
+| persist | `tests/persist_tests.ch` | 23 | queue.txt/progress.txt/yt_links.txt roundtrips: every state survives save→restore, progress overlay (progress.txt beats stale queue.txt), v1-width row backward compat (`CDM_persist_v1_backward_compat` — rows without progress fields still parse), atomic writes (no `.tmp` left), retry preserves progress, yt_links atomic write/overwrite |
 | proc | `tests/proc_test.ch` | 1 | process execution plumbing |
 | queue | `tests/queue_tests.ch` | 15 | add_task_ex/priority/change_url/pause/resume/cancel/remove via public API (uses `find_item_for_tests` to poke state) |
 | segment | `tests/segment_tests.ch` | 11 | `compute_segment_count` boundaries, `build_segments` math, category helpers |

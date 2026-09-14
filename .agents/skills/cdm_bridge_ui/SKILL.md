@@ -113,22 +113,25 @@ From `item_to_json` (`JsonBuild.ch`) + `snapshot_segments_json` (Engine.ch):
 `id, url, filename, display_name, dir, state` (HUMAN name: Queued/Downloading/Paused/Done/
 Failed/Cancelled — NOT the int), `error, total_bytes, downloaded_bytes,
 speed_bytes_per_sec, priority, max_segments, speed_limit_kbps, duplicate_suffix,
-category` (human name), `percent` (string), `eta` (string), `retry_count,
-was_interrupted` (raw bool literal), and optional `segments` array of
-`{index,start,end,total,copied,done}`.
-Top-level `state` doc: `download_dir, max_concurrent, version, items[]`.
-Settings doc (`settings_json`): mirrors `CdmSettings` (`download_dir, max_concurrent,
-max_segments, speed_limit_kbps, enable_resume, allow_segments, duplicate_action,
-auto_resume_failed, max_retries, retry_delay_ms, proxy_host, proxy_port, user_agent, …`
-— see the `cdm_app_core` skill for the full field list).
+category` (human name), `percent` (string), `eta` (string), `card_type` (int —
+see the `cdm_containers` skill), `parent_id`, `retry_count, was_interrupted` (raw bool
+literal), `created_at` (unix seconds), and optional raw `segments` array of
+`{index,start,end,total,copied,done}` (present only when `segments_json` is non-empty,
+i.e. live segmented tasks).
+Top-level `state` doc: `download_dir, max_concurrent, version, items[]` — exactly those
+four keys.
+Settings doc (`settings_json`): mirrors the full `CdmSettings`/manager field set
+(network, yt_* options, clipboard_monitor, use_categories, …) — see `cdm_app_core`.
 
 ## CdmApp component patterns (`src/ui/CdmApp.ch`)
 
 One `#universal CdmApp(props)`. Conventions to follow:
 
 - **State**: plain `state name = initial` per concern (items, dialog open flags, form
-  fields, toast, ctx menu, tabs). Reassign whole values; don't mutate arrays in place for
+  fields, toast, ctx menu). Reassign whole values; don't mutate arrays in place for
   reactivity (`ytPlaylistSelected = ytPlaylistSelected.filter(...)` not push).
+- **URL check**: `isUrl(s)` accepts only `http://`/`https://` prefixes; clipboard paste
+  runs it before prefilling the Add dialog.
 - **Polling**: `useEffect(..., [])` sets `setInterval(refresh, 1000)` calling bridge
   `state`; cleanup returns `() => clearInterval(t)` plus removes the global mousedown
   listener that closes the context menu.

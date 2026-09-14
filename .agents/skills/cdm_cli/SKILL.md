@@ -19,17 +19,28 @@ The binary dispatches on argv shape (see `src/Main.ch` main()):
 
 ```
 cdm <url>...                     # download URLs
-  --file batch.txt               # one URL per line
-  -d, --dir DIR                  # destination directory
-  -o, --out NAME                 # output filename
-  -p, --segments N               # max segments per download
-  -j, --jobs N                   # max concurrent downloads
-  --speed-limit KB               # per-task speed limit
-  --priority N                   # queue priority (lower = sooner)
-  --category NAME                # route to a category folder
+  --file/-f batch.txt            # one URL per line, blank lines + # comments skipped
+  -d,  --dir DIR                 # destination directory
+  -o,  --output NAME             # output filename (--name alias too)
+  -p,  --segments N              # max segments per download
+  -j,  --concurrent N            # max concurrent downloads
+  --speed-limit / --limit KB     # per-task speed limit
+  --priority / --prio N          # queue priority (lower = sooner)
+  --category/--categories NAME   # route to a category folder (--no-categories to disable)
+  --user-agent / --ua S          # custom UA
+  --cookies FILE                 # cookie jar (parsed; not yet consumed by the engine)
+  --no-ssl-verify                # parsed; NOT yet plumbed to the engine (see cdm_http_client)
+  --connect-timeout / --cto S    # socket timeout
+  --referer / --ref / --auth     # extra headers
+  --proxy host:port              # proxy for engine requests
+  --template S / --name S        # filename template / name
+  --checksum algo:hex            # e.g. md5:abc123 (parsed; not verified yet)
   --max-size BYTES               # max_download_size (parsed, not enforced)
   --min-disk MB                  # min_disk_space_mb (parsed, not enforced)
   --post-cmd CMD                 # post-download command, {} = output path (ENFORCED)
+  --yt-quality / --yt-format / --yt-audio-only / --yt-max-playlist   # yt-dlp overrides
+  --export-settings FILE         # write current settings as JSON and exit
+  --import-settings FILE         # load settings JSON and exit
   --gui / -g                     # force GUI
   -q                             # quiet
   -v / -h                        # version / help
@@ -41,15 +52,20 @@ switch pattern. argv buffers are `unsafe var argv : [N]*char` (see cli_tests).
 
 ## run_headless flow
 
-1. `load_settings` → overlay CLI flags (CLI wins over config.txt).
-2. Apply onto the DownloadManager (`apply_settings_to_dm` equivalent fields: jobs,
-   segments, speed limit, post_download_cmd…).
-3. Route categories: `--category`/`--categories` → `cli_route` resolves the destination
+1. `load_settings` → `apply_settings_to_dm`, then overlay CLI flags onto the manager
+   (CLI wins over config.txt; explicit `if(opts.X > 0)` guards per field).
+2. Route categories: `--category`/`--categories` → `cli_route` resolves the destination
    dir exactly like the Bridge `add` path (see `cdm_app_core` skill) — one truth for
    category → folder mapping.
-4. `add_task_ex` per URL (validating first), then poll `snapshot()` and print progress
-   lines (formatted by Formatters.ch) until all items reach a terminal state.
-5. Exit code reflects failures (validation errors and failed downloads).
+3. `add_task_ex` per URL, then poll `snapshot()` and print progress lines (formatted by
+   Formatters.ch) until all items reach a terminal state.
+4. Exit codes: 0 = success, 1 = validation/parse failure or failed downloads (see the
+   `return 1` sites in Cli.ch).
+
+NOTE: the CLI currently does NOT call `Validation.ch` validators on flags (the Bridge
+`add` path does `validate_url` before queueing). Flag values are range-checked only where
+`parse_cli` builds them — if you touch CLI input handling, prefer funneling through
+Validation.ch so GUI and CLI share one truth.
 
 ## Batch file semantics
 
@@ -70,13 +86,9 @@ gets its own task with the shared dir/name/priority options.
 
 ## Conventions & gotchas
 
-- CLI and Bridge must BOTH call `Validation.ch` validators — no separate CLI-only
-  validation rules (single truth, see `cdm_app_core` skill).
 - Headless prints to stdout with `\r` progress updates; the GUI bridge never writes to
   stdout (the webview owns the process stdio). Don't add prints inside bridge paths.
 - `--test` dispatch in main() must stay FIRST — the test runner spawns this same binary
   with `--test-id/--comm-id` and any other handling would break it.
-- Exit codes: 0 = all downloads ok, non-zero = validation failure or any failed task
-  (used by scripts/CI).
 - CLI-only flags that don't exist as settings (e.g. `--file`) live only in CliOptions;
   do not force every flag into CdmSettings.

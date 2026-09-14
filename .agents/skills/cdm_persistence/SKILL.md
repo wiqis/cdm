@@ -10,7 +10,7 @@ Two files, both written atomically (tmp + rename) so a crash mid-write can't cor
 | File | Owner | Module | Written |
 |------|-------|--------|---------|
 | `queue.txt` | app (`src/core/Settings.ch`) | chemicaldm | **clean shutdown only** (`save_queue` in run_gui cleanup) |
-| `progress.txt` | library (`cdmlib/src/DownloadManager.ch`) | cdmlib | **periodically** (`periodic_save_progress` every `save_interval_millis`, default 30 s) + on shutdown |
+| `progress.txt` | library (`cdmlib/src/DownloadManager.ch`) | cdmlib | **periodically** (`periodic_save_progress` every `save_interval_millis`, default 30 s). `save_queue` (app) ALSO rewrites it on clean shutdown as a fresh baseline |
 | `yt_links.txt` | app (`src/core/YtAsync.ch`) | chemicaldm | after link refresh / when links recorded (YouTube URL cache, see `yt_playlist` skill) |
 
 Root dir: `$HOME/.chemicaldm/` unless `CDM_CONFIG_DIR` is set (tests use it heavily).
@@ -18,7 +18,9 @@ Root dir: `$HOME/.chemicaldm/` unless `CDM_CONFIG_DIR` is set (tests use it heav
 
 ## queue.txt (app-side)
 
-- Header `#cdm-queue-v2`; v1 rows (without progress fields) still parse.
+- Header constant is `#cdm-queue-v1` (`QUEUE_HEADER` in Settings.ch) — the FORMAT is v2
+  (8 fields incl. progress) but the header string was never bumped; the parser accepts
+  rows with or without the progress fields, so both widths parse under the one header.
 - Tab-separated per row:
   `url \t id \t dir \t category \t downloaded \t total \t interrupted \t state`
 - DONE items are skipped (nothing to resume).
@@ -26,8 +28,8 @@ Root dir: `$HOME/.chemicaldm/` unless `CDM_CONFIG_DIR` is set (tests use it heav
   `queue.txt.tmp` → `fwrite` → `fflush` → `fclose` → `rename()` → `queue.txt`.
 - `restore_queue(dm)` (Settings.ch ~line 1164) parses it back. It inserts items DIRECTLY
   (bypasses `add_task_ex_id`) to preserve saved state and avoid firing `start_pending`
-  per item. Restored items keep their saved state; interrupted ones become
-  `STATE_FAILED` + `was_interrupted = true`.
+  per item. Restored items keep their saved state; interrupted ones are forced to
+  `STATE_FAILED` + error "interrupted by shutdown" (unless already DONE/FAILED).
 
 ## progress.txt (cdmlib-side)
 
@@ -67,7 +69,7 @@ path (restore already handles interrupted items).
 `tests/persist_tests.ch` (23 tests) owns this area: state roundtrips (queued/paused/
 interrupted), `CDM_persist_progress_file_roundtrip`, `CDM_persist_progress_overlay`
 (progress.txt beats stale queue.txt), `CDM_persist_done_items_skipped`,
-`CDM_persist_v1_backward_compat`, `CDM_persist_progress_does_not_corrupt_queue`,
+`CDM_persist_progress_does_not_corrupt_queue`,
 `CDM_persist_retry_preserves_progress`, `CDM_persist_save_queue_atomic` (no `.tmp`
 leftover), `CDM_parse_i64_leading_minus_only`. cdmlib's `behavior_tests.ch` covers the
 library-side fields. All persistence tests set `CDM_CONFIG_DIR` to a temp dir.

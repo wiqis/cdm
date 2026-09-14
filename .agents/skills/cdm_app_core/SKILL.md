@@ -78,11 +78,16 @@ single truth for accepted names.
 ## Validation & errors
 
 - `ValidationError {ok, message}` + `is_ok()`; validators: `validate_url` (scheme must be
-  http/https, non-empty host), `validate_max_concurrent`, etc. Bridge `add` validates the
-  URL BEFORE queueing so users get immediate feedback instead of a later failure.
+  http/https, non-empty host), `validate_max_concurrent`, `validate_max_segments`,
+  `validate_speed_limit`, `validate_priority`, `validate_max_retries`,
+  `validate_retry_delay`, `validate_task_speed_limit`, `validate_duplicate_action`,
+  `validate_not_empty`, `validate_directory`, `validate_category_name`,
+  `validate_segments` — the single truth for limits.
+- Bridge `add` validates the URL BEFORE queueing so users get immediate feedback instead
+  of a later failure. The CLI currently does NOT call these validators (see the
+  `cdm_cli` skill note) — funnel new CLI checks through Validation.ch.
 - `CdmErrorCode` enum + `CdmError{code,message}` for structured errors.
-- CLI parses into `CliOptions` and reports validation failures with error codes (headless
-  mode prints and exits non-zero).
+- Headless mode reports parse failures and exits non-zero (`return 1` sites in Cli.ch).
 
 ## JSON building rules (JsonBuild)
 
@@ -99,6 +104,7 @@ single truth for accepted names.
 
 - Human-readable text lives in Formatters.ch — never build display strings ad hoc in
   Bridge/UI (state/category names especially: the UI matches on the human names).
+- No `==`/`!=` on strings — use `.equals_view()`/`.equals()`/`.find()`.
 - `~` expansion via `expand_home` (cdmlib), env roots via `CDM_CONFIG_DIR` (settings) and
   `CDM_TOOLS_DIR` (tools) — tests depend on both.
 - No `+` on strings: `append_view`/`append_string(&s)`/`append(char)`; copy with
