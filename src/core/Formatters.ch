@@ -6,6 +6,7 @@ using std::string;
 
     // 123456789 -> "117.7 MB"
     public func format_bytes(bytes : i64) : string {
+        if(bytes < 0) { return string::make_no_len("?") }
         if(bytes < 1024) {
             var s = string()
             s.append_integer(bytes as bigint)
@@ -33,6 +34,7 @@ using std::string;
 
     // bytes/sec -> "1.5 MB/s"
     public func format_speed(speed : i64) : string {
+        if(speed <= 0) { return string() }
         var s = format_bytes(speed)
         var suffix = string::make_no_len("/s")
         s.append_string(&suffix)
@@ -57,7 +59,14 @@ using std::string;
         }
         var minutes = secs / 60
         var hours = minutes / 60
-        if(hours > 0) {
+        var days = hours / 24
+        if(days > 0) {
+            s.append_integer(days as bigint)
+            s.append('d')
+            s.append(' ')
+            s.append_integer((hours % 24) as bigint)
+            s.append('h')
+        } else if(hours > 0) {
             s.append_integer(hours as bigint)
             s.append('h')
             s.append(' ')

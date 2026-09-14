@@ -354,6 +354,83 @@ func settings_dir() : string {
         out.append_view("categoryCompressed:")
         out.append_string(&cmp_v)
         out.append_view("\n")
+        // Network fields.
+        if(s.user_agent.size() > 0) { out.append_view("userAgent:"); out.append_string(&s.user_agent); out.append_view("\n") }
+        if(s.cookie_file.size() > 0) { out.append_view("cookieFile:"); out.append_string(&s.cookie_file); out.append_view("\n") }
+        out.append_view("verifySsl:")
+        if(s.verify_ssl) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("connectTimeout:")
+        out.append_integer(s.connect_timeout as bigint)
+        out.append_view("\n")
+        if(s.max_download_size > 0) { out.append_view("maxDownloadSize:"); out.append_integer(s.max_download_size as bigint); out.append_view("\n") }
+        if(s.min_disk_space_mb > 0) { out.append_view("minDiskSpaceMb:"); out.append_integer(s.min_disk_space_mb as bigint); out.append_view("\n") }
+        if(s.post_download_cmd.size() > 0) { out.append_view("postDownloadCmd:"); out.append_string(&s.post_download_cmd); out.append_view("\n") }
+        if(s.referer_header.size() > 0) { out.append_view("refererHeader:"); out.append_string(&s.referer_header); out.append_view("\n") }
+        if(s.auth_header.size() > 0) { out.append_view("authHeader:"); out.append_string(&s.auth_header); out.append_view("\n") }
+        out.append_view("forceIpv4:")
+        if(s.force_ipv4) { out.append_view("true\n") } else { out.append_view("false\n") }
+        out.append_view("forceIpv6:")
+        if(s.force_ipv6) { out.append_view("true\n") } else { out.append_view("false\n") }
+        if(s.filename_template.size() > 0) { out.append_view("filenameTemplate:"); out.append_string(&s.filename_template); out.append_view("\n") }
+        if(s.checksum.size() > 0) { out.append_view("checksum:"); out.append_string(&s.checksum); out.append_view("\n") }
+        out.append_view("notificationsEnabled:")
+        if(s.notifications_enabled) { out.append_view("true\n") } else { out.append_view("false\n") }
+        if(s.language.size() > 0) { out.append_view("language:"); out.append_string(&s.language); out.append_view("\n") }
+        out.append_view("maxHistory:")
+        out.append_integer(s.max_history as bigint)
+        out.append_view("\n")
+        if(s.theme.size() > 0) { out.append_view("theme:"); out.append_string(&s.theme); out.append_view("\n") }
+        // YouTube fields.
+        if(s.yt_quality.size() > 0) { out.append_view("ytQuality:"); out.append_string(&s.yt_quality); out.append_view("\n") }
+        if(s.yt_format.size() > 0) { out.append_view("ytFormat:"); out.append_string(&s.yt_format); out.append_view("\n") }
+        out.append_view("ytAudioOnly:")
+        if(s.yt_audio_only) { out.append_view("true\n") } else { out.append_view("false\n") }
+        if(s.yt_max_playlist_items > 0) { out.append_view("ytMaxPlaylistItems:"); out.append_integer(s.yt_max_playlist_items as bigint); out.append_view("\n") }
+        if(s.yt_output_template.size() > 0) { out.append_view("ytOutputTemplate:"); out.append_string(&s.yt_output_template); out.append_view("\n") }
+        if(s.yt_audio_format.size() > 0) { out.append_view("ytAudioFormat:"); out.append_string(&s.yt_audio_format); out.append_view("\n") }
+        if(s.yt_audio_quality > 0) { out.append_view("ytAudioQuality:"); out.append_integer(s.yt_audio_quality as bigint); out.append_view("\n") }
+        if(s.yt_recode_video.size() > 0) { out.append_view("ytRecodeVideo:"); out.append_string(&s.yt_recode_video); out.append_view("\n") }
+        if(s.yt_merge_output_format.size() > 0) { out.append_view("ytMergeOutputFormat:"); out.append_string(&s.yt_merge_output_format); out.append_view("\n") }
+        if(s.yt_write_subs) { out.append_view("ytWriteSubs:true\n") }
+        if(s.yt_write_auto_subs) { out.append_view("ytWriteAutoSubs:true\n") }
+        if(s.yt_sub_langs.size() > 0) { out.append_view("ytSubLangs:"); out.append_string(&s.yt_sub_langs); out.append_view("\n") }
+        if(s.yt_embed_subs) { out.append_view("ytEmbedSubs:true\n") }
+        if(s.yt_convert_subs.size() > 0) { out.append_view("ytConvertSubs:"); out.append_string(&s.yt_convert_subs); out.append_view("\n") }
+        if(s.yt_embed_metadata) { out.append_view("ytEmbedMetadata:true\n") }
+        if(s.yt_embed_thumbnail) { out.append_view("ytEmbedThumbnail:true\n") }
+        if(s.yt_write_description) { out.append_view("ytWriteDescription:true\n") }
+        if(s.yt_write_info_json) { out.append_view("ytWriteInfoJson:true\n") }
+        if(s.yt_write_comments) { out.append_view("ytWriteComments:true\n") }
+        if(s.yt_restrict_filenames) { out.append_view("ytRestrictFilenames:true\n") }
+        if(s.yt_trim_filenames > 0) { out.append_view("ytTrimFilenames:"); out.append_integer(s.yt_trim_filenames as bigint); out.append_view("\n") }
+        if(!s.yt_no_overwrites) { out.append_view("ytNoOverwrites:false\n") }
+        if(s.yt_playlist_start > 0) { out.append_view("ytPlaylistStart:"); out.append_integer(s.yt_playlist_start as bigint); out.append_view("\n") }
+        if(s.yt_playlist_end > 0) { out.append_view("ytPlaylistEnd:"); out.append_integer(s.yt_playlist_end as bigint); out.append_view("\n") }
+        if(s.yt_playlist_items.size() > 0) { out.append_view("ytPlaylistItems:"); out.append_string(&s.yt_playlist_items); out.append_view("\n") }
+        if(s.yt_proxy.size() > 0) { out.append_view("ytProxy:"); out.append_string(&s.yt_proxy); out.append_view("\n") }
+        if(s.yt_geo_bypass) { out.append_view("ytGeoBypass:true\n") }
+        if(s.yt_geo_bypass_country.size() > 0) { out.append_view("ytGeoBypassCountry:"); out.append_string(&s.yt_geo_bypass_country); out.append_view("\n") }
+        if(s.yt_extractor_retries != 3) { out.append_view("ytExtractorRetries:"); out.append_integer(s.yt_extractor_retries as bigint); out.append_view("\n") }
+        if(s.yt_socket_timeout != 30) { out.append_view("ytSocketTimeout:"); out.append_integer(s.yt_socket_timeout as bigint); out.append_view("\n") }
+        if(s.yt_username.size() > 0) { out.append_view("ytUsername:"); out.append_string(&s.yt_username); out.append_view("\n") }
+        if(s.yt_password.size() > 0) { out.append_view("ytPassword:"); out.append_string(&s.yt_password); out.append_view("\n") }
+        if(s.yt_netrc) { out.append_view("ytNetrc:true\n") }
+        if(s.yt_exec_cmd.size() > 0) { out.append_view("ytExecCmd:"); out.append_string(&s.yt_exec_cmd); out.append_view("\n") }
+        if(s.yt_ffmpeg_location.size() > 0) { out.append_view("ytFfmpegLocation:"); out.append_string(&s.yt_ffmpeg_location); out.append_view("\n") }
+        if(s.yt_remove_sponsorblock) { out.append_view("ytRemoveSponsorblock:true\n") }
+        if(s.yt_sponsorblock_mark.size() > 0) { out.append_view("ytSponsorblockMark:"); out.append_string(&s.yt_sponsorblock_mark); out.append_view("\n") }
+        if(s.yt_source_address.size() > 0) { out.append_view("ytSourceAddress:"); out.append_string(&s.yt_source_address); out.append_view("\n") }
+        if(s.yt_legacy_server_connect) { out.append_view("ytLegacyServerConnect:true\n") }
+        if(s.yt_no_check_certificates) { out.append_view("ytNoCheckCertificates:true\n") }
+        // FFmpeg fields.
+        if(s.ffmpeg_video_codec.size() > 0) { out.append_view("ffmpegVideoCodec:"); out.append_string(&s.ffmpeg_video_codec); out.append_view("\n") }
+        if(s.ffmpeg_audio_codec.size() > 0) { out.append_view("ffmpegAudioCodec:"); out.append_string(&s.ffmpeg_audio_codec); out.append_view("\n") }
+        if(s.ffmpeg_audio_bitrate.size() > 0) { out.append_view("ffmpegAudioBitrate:"); out.append_string(&s.ffmpeg_audio_bitrate); out.append_view("\n") }
+        // Download management.
+        if(s.bandwidth_limit_per > 0) { out.append_view("bandwidthLimitPer:"); out.append_integer(s.bandwidth_limit_per); out.append_view("\n") }
+        if(s.auto_rename_duplicates) { out.append_view("autoRenameDuplicates:true\n") }
+        if(s.move_completed_to.size() > 0) { out.append_view("moveCompletedTo:"); out.append_string(&s.move_completed_to); out.append_view("\n") }
+        if(s.clipboard_monitor) { out.append_view("clipboardMonitor:true\n") }
 
         var wrote = fwrite(out.data() as *mut u8, 1, out.size(), f)
         fclose(f)
@@ -604,6 +681,7 @@ func settings_dir() : string {
         dm.download_scheduler_start = s.download_scheduler_start.copy()
         dm.download_scheduler_end = s.download_scheduler_end.copy()
         dm.clipboard_monitor = s.clipboard_monitor
+        dm.use_categories = s.use_categories
         if(s.download_dir.size() > 0) {
             dm.download_dir = s.download_dir.copy()
         }

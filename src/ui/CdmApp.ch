@@ -123,6 +123,7 @@
             onResult(v)
         }).catch(function(e) {
             console.error("[CDM-JS] bridge error for " + method + ": " + e)
+            showToast("Bridge error: " + method, "error")
         })
     }
 
@@ -174,9 +175,11 @@
         })
     }
 
-    var call = (method, body) => {
+    var call = (method, body, onDone) => {
         asyncBridge(method, JSON.stringify(body || {}), function(d) {
+            if(d && !d.ok) { showToast(d.error || "Operation failed", "error") }
             refresh()
+            if(onDone) { onDone(d) }
         })
     }
 
@@ -279,10 +282,13 @@
             proxy_host: settings.proxy_host,
             proxy_port: settings.proxy_port
         }
-        call("settings_set", body)
-        alert = "Settings saved"
-        showSettings = false
-        refreshSettings()
+        call("settings_set", body, function(d) {
+            if(d && d.ok) {
+                alert = "Settings saved"
+                showSettings = false
+            }
+            refreshSettings()
+        })
     }
 
     // ---- YouTube functions ----
@@ -695,6 +701,20 @@
          (s === "Failed" || s === "Cancelled") ? "cdm-badge-error" :
          "cdm-badge-idle")
 
+    var renderSegments = (segs) => {
+        return <div class="cdm-segments">
+            {segs.map((seg) => {
+                var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
+                var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
+                return <div class={"cdm-seg " + segClass}
+                    title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
+                    style={"width:" + (100 / segs.length) + "%;"}>
+                    <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
+                </div>
+            })}
+        </div>
+    }
+
     var filterMatches = (s, cat) => {
         if(filter === "Active") {
             if(s !== "Downloading" && s !== "Queued") return false
@@ -789,19 +809,7 @@
                     <span class={stateClass(it.state)}>{it.state}</span>
                 </div>
                 {showProg ? <div class="cdm-progress"><div class="cdm-progress-fill" style={"width: " + p + "%;"}></div></div> : null}
-                {showProg && hasSegs ? (
-                    <div class="cdm-segments">
-                        {segs.map((seg) => {
-                            var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
-                            var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
-                            return <div class={"cdm-seg " + segClass}
-                                title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
-                                style={"width:" + (100 / segs.length) + "%;"}>
-                                <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
-                            </div>
-                        })}
-                    </div>
-                ) : null}
+                {showProg && hasSegs ? renderSegments(segs) : null}
                 <div class="cdm-item-meta">
                     <span>{fmtBytes(it.downloaded_bytes)} / {it.total_bytes >= 0 ? fmtBytes(it.total_bytes) : "?"}</span>
                     <span class="cdm-item-pct">{p.toFixed(1)}%</span>
@@ -972,19 +980,7 @@
                         <div class="cdm-progress-fill" style={"width: " + pct + "%;"}></div>
                     </div>
                 ) : null}
-                {showProgress && hasSegs ? (
-                    <div class="cdm-segments">
-                        {segs.map((seg) => {
-                            var segPct = seg.total > 0 ? (seg.copied * 100 / seg.total) : 0
-                            var segClass = seg.done ? "cdm-seg-done" : (seg.copied > 0 ? "cdm-seg-active" : "cdm-seg-pending")
-                            return <div class={"cdm-seg " + segClass}
-                                title={"Seg " + seg.index + ": " + fmtBytes(seg.copied) + " / " + fmtBytes(seg.total)}
-                                style={"width:" + (100 / segs.length) + "%;"}>
-                                <div class="cdm-seg-fill" style={"width:" + segPct + "%;"}></div>
-                            </div>
-                        })}
-                    </div>
-                ) : null}
+                {showProgress && hasSegs ? renderSegments(segs) : null}
                 <div class="cdm-item-meta">
                     <span>{fmtBytes(item.downloaded_bytes)} / {item.total_bytes >= 0 ? fmtBytes(item.total_bytes) : "?"}</span>
                     <span class="cdm-item-pct">{pct.toFixed(1)}%</span>

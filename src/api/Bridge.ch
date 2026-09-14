@@ -288,7 +288,7 @@ using std::Result;
         out.append_string(&string::make_no_len(",\"yt_write_comments\":")); if(dm.yt_write_comments) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"yt_playlist_items\":")); var yt_pi_s = json_string(string_view::make_view(&dm.yt_playlist_items)); out.append_string(&yt_pi_s)
         out.append_string(&string::make_no_len(",\"yt_sponsorblock_mark\":")); var yt_sbm_s = json_string(string_view::make_view(&dm.yt_sponsorblock_mark)); out.append_string(&yt_sbm_s)
-        out.append_string(&string::make_no_len(",\"use_categories\":true"))
+        out.append_string(&string::make_no_len(",\"use_categories\":")); if(dm.use_categories) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append('}')
         return out
     }
@@ -599,6 +599,24 @@ using std::Result;
             if(settings.download_dir.size() > 0u) {
                 var dv2 = validate_directory(string_view::make_view(&settings.download_dir))
                 if(!dv2.is_ok()) { return err_json(&dv2.message) }
+            }
+            if(settings.move_completed_to.size() > 0u) {
+                var mv = validate_directory(string_view::make_view(&settings.move_completed_to))
+                if(!mv.is_ok()) { return err_json(&mv.message) }
+            }
+            // Force IPv4 and IPv6 are mutually exclusive.
+            if(settings.force_ipv4 && settings.force_ipv6) {
+                var msg = string::make_no_len("force_ipv4 and force_ipv6 cannot both be true")
+                return err_json(&msg)
+            }
+            // Bounds checks for timeout/space settings.
+            if(settings.connect_timeout < 1) {
+                var msg = string::make_no_len("connect_timeout must be at least 1 second")
+                return err_json(&msg)
+            }
+            if(settings.min_disk_space_mb < 0) {
+                var msg = string::make_no_len("min_disk_space_mb must be non-negative")
+                return err_json(&msg)
             }
             // Apply to the live manager and persist for next launch.
             apply_settings_to_dm(&mut *dm, &settings)

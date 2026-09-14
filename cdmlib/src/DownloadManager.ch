@@ -98,6 +98,7 @@ using std::mutex;
         var download_scheduler_start : string
         var download_scheduler_end : string
         var clipboard_monitor : bool
+        var use_categories : bool
 
         @constructor func constructor() {
             var dir = expand_home(string_view::make_no_len(DEFAULT_DOWNLOAD_DIR))
@@ -186,7 +187,8 @@ using std::mutex;
                 download_scheduler_enabled = false,
                 download_scheduler_start = string(),
                 download_scheduler_end = string(),
-                clipboard_monitor = false
+                clipboard_monitor = false,
+                use_categories = true
             }
         }
 

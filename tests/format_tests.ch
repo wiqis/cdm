@@ -22,13 +22,19 @@ public func CDM_format_bytes(env : &mut TestEnv) {
 
     // Negative bytes (unknown).
     var b6 = cdm::format_bytes(-1)
-    if(!b6.equals_view("-1 B")) { env.error("-1 B"); return }
+    if(!b6.equals_view("?")) { env.error("unknown -> ?"); return }
+
+    var b7 = cdm::format_bytes(1023)
+    if(!b7.equals_view("1023 B")) { env.error("1023 B"); return }
+
+    var b8 = cdm::format_bytes(1)
+    if(!b8.equals_view("1 B")) { env.error("1 B"); return }
 }
 
 @test
 public func CDM_format_speed(env : &mut TestEnv) {
     var s1 = cdm::format_speed(0)
-    if(!s1.equals_view("0 B/s")) { env.error("0 B/s"); return }
+    if(!s1.empty()) { env.error("zero speed -> empty"); return }
 
     var s2 = cdm::format_speed(1024)
     if(!s2.equals_view("1.0 KB/s")) { env.error("1KB/s"); return }
@@ -97,4 +103,10 @@ public func CDM_format_seconds(env : &mut TestEnv) {
 
     var s5 = cdm::format_seconds(7384)
     if(!s5.equals_view("2h 3m")) { env.error("2h3m"); return }
+
+    var s6 = cdm::format_seconds(86400)
+    if(!s6.equals_view("1d 0h")) { env.error("1d0h"); return }
+
+    var s7 = cdm::format_seconds(90000)
+    if(!s7.equals_view("1d 1h")) { env.error("1d1h"); return }
 }

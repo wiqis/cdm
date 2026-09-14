@@ -44,6 +44,12 @@ using std::string_view;
         if(url.size() == 0) {
             return ValidationError.fail(string::make_no_len("URL is empty"))
         }
+        // Reject spaces anywhere in the URL.
+        for(var i = 0u; i < url.size(); i++) {
+            if(url.get(i) == ' ') {
+                return ValidationError.fail(string::make_no_len("URL contains spaces"))
+            }
+        }
         var lower = string(url.data(), url.size())
         for(var i = 0u; i < lower.size(); i++) {
             var c = lower.get(i)
@@ -129,7 +135,7 @@ using std::string_view;
         return ValidationError()
     }
 
-    // Validate max_retries (-1 = infinite, 0 = no retry, positive =有限).
+    // Validate max_retries (-1 = infinite, 0 = no retry, positive = finite).
     public func validate_max_retries(v : int) : ValidationError {
         if(v < -1) {
             return ValidationError.fail(string::make_no_len("max_retries must be -1 (infinite) or non-negative"))
@@ -194,23 +200,32 @@ using std::string_view;
         return ValidationError()
     }
 
-    // Validate category name string (must match a known category).
+    // Validate category name string (must match a known category, case-insensitive).
     public func validate_category_name(cat_name : string_view) : ValidationError {
         if(cat_name.size() == 0) {
             return ValidationError()  // empty => Other (default)
         }
-        var other = string_view::make_no_len("Other")
-        var docs = string_view::make_no_len("Documents")
-        var progs = string_view::make_no_len("Programs")
-        var video = string_view::make_no_len("Video")
-        var music = string_view::make_no_len("Music")
-        var comp = string_view::make_no_len("Compressed")
-        if(cat_name.equals(&other)) { return ValidationError() }
-        if(cat_name.equals(&docs)) { return ValidationError() }
-        if(cat_name.equals(&progs)) { return ValidationError() }
-        if(cat_name.equals(&video)) { return ValidationError() }
-        if(cat_name.equals(&music)) { return ValidationError() }
-        if(cat_name.equals(&comp)) { return ValidationError() }
+        // Lowercase for case-insensitive comparison.
+        var lower = string(cat_name.data(), cat_name.size())
+        for(var i = 0u; i < lower.size(); i++) {
+            var c = lower.get(i)
+            if(c >= 'A' && c <= 'Z') {
+                lower.set(i, (c + 32) as char)
+            }
+        }
+        var lv = string_view::make_view(&lower)
+        var other = string_view::make_no_len("other")
+        var docs = string_view::make_no_len("documents")
+        var progs = string_view::make_no_len("programs")
+        var video = string_view::make_no_len("video")
+        var music = string_view::make_no_len("music")
+        var comp = string_view::make_no_len("compressed")
+        if(lv.equals(&other)) { return ValidationError() }
+        if(lv.equals(&docs)) { return ValidationError() }
+        if(lv.equals(&progs)) { return ValidationError() }
+        if(lv.equals(&video)) { return ValidationError() }
+        if(lv.equals(&music)) { return ValidationError() }
+        if(lv.equals(&comp)) { return ValidationError() }
         var msg = string::make_no_len("unknown category: ")
         msg.append_view(&cat_name)
         return ValidationError.fail(msg)

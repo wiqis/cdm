@@ -130,6 +130,7 @@ public func CDM_settings_persistence(env : &mut TestEnv) {
 
     // Parse back.
     var parsed = cdm::parse_settings_string(string_view::make_view(&serialized))
+    if(!parsed.download_dir.equals_view("/tmp/test_cdm")) { env.error("parsed download_dir"); return }
     if(parsed.max_concurrent != 5) { env.error("parsed max_concurrent"); return }
     if(parsed.max_segments != 8) { env.error("parsed max_segments"); return }
     if(parsed.speed_limit_kbps != 500) { env.error("parsed speed_limit_kbps"); return }
@@ -168,6 +169,7 @@ public func CDM_settings_disk_roundtrip(env : &mut TestEnv) {
     // A fresh struct should be populated from disk.
     var loaded = cdm::CdmSettings()
     if(!cdm::load_settings(&raw mut loaded)) { env.error("load_settings failed"); return }
+    if(!loaded.download_dir.equals_view("/home/me/Downloads")) { env.error("disk download_dir"); return }
     if(loaded.max_concurrent != 6) { env.error("disk max_concurrent"); return }
     if(loaded.max_segments != 9) { env.error("disk max_segments"); return }
     if(loaded.speed_limit_kbps != 750) { env.error("disk speed_limit_kbps"); return }

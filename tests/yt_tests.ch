@@ -341,6 +341,12 @@ public func CDM_validate_url(env : &mut TestEnv) {
 
     var v6 = cdm::validate_url(string_view::make_no_len("https://example.com"))
     if(!v6.is_ok()) { env.error("valid URL with no path"); return }
+
+    var v7 = cdm::validate_url(string_view::make_no_len("https://exam ple.com/file"))
+    if(v7.is_ok()) { env.error("URL with space should fail"); return }
+
+    var v8 = cdm::validate_url(string_view::make_no_len("https://example.com:8080/file"))
+    if(!v8.is_ok()) { env.error("URL with port should pass"); return }
 }
 
 @test
@@ -431,6 +437,12 @@ public func CDM_validate_category_name(env : &mut TestEnv) {
 
     var v4 = cdm::validate_category_name(string_view::make_no_len("Unknown"))
     if(v4.is_ok()) { env.error("Unknown category should fail"); return }
+
+    var v5 = cdm::validate_category_name(string_view::make_no_len("video"))
+    if(!v5.is_ok()) { env.error("lowercase video should be valid"); return }
+
+    var v6 = cdm::validate_category_name(string_view::make_no_len("DOCUMENTS"))
+    if(!v6.is_ok()) { env.error("uppercase DOCUMENTS should be valid"); return }
 }
 
 @test
