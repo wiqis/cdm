@@ -285,6 +285,10 @@ using std::Result;
         out.append_string(&string::make_no_len(",\"clipboard_monitor\":")); if(dm.clipboard_monitor) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
         out.append_string(&string::make_no_len(",\"proxy_host\":")); var prx_h_s = json_string(string_view::make_view(&dm.proxy_host)); out.append_string(&prx_h_s)
         out.append_string(&string::make_no_len(",\"proxy_port\":")); out.append_integer(dm.proxy_port as bigint)
+        out.append_string(&string::make_no_len(",\"yt_write_comments\":")); if(dm.yt_write_comments) { out.append_string(&string::make_no_len("true")) } else { out.append_string(&string::make_no_len("false")) }
+        out.append_string(&string::make_no_len(",\"yt_playlist_items\":")); var yt_pi_s = json_string(string_view::make_view(&dm.yt_playlist_items)); out.append_string(&yt_pi_s)
+        out.append_string(&string::make_no_len(",\"yt_sponsorblock_mark\":")); var yt_sbm_s = json_string(string_view::make_view(&dm.yt_sponsorblock_mark)); out.append_string(&yt_sbm_s)
+        out.append_string(&string::make_no_len(",\"use_categories\":true"))
         out.append('}')
         return out
     }
@@ -578,6 +582,7 @@ using std::Result;
             var mct = json_field(args, string_view::make_no_len("move_completed_to"))
             if(mct.size() > 0) { settings.move_completed_to = mct.copy() }
             settings.clipboard_monitor = json_bool_field(args, string_view::make_no_len("clipboard_monitor"), dm.clipboard_monitor)
+            settings.use_categories = json_bool_field(args, string_view::make_no_len("use_categories"), true)
             // Validate core fields before applying.
             var cv = validate_max_concurrent(settings.max_concurrent)
             if(!cv.is_ok()) { return err_json(&cv.message) }
@@ -695,6 +700,12 @@ using std::Result;
                 if(last_slash != std::NPOS && last_slash > 0u) {
                     path = path.substring(0u, last_slash)
                 }
+            }
+            // Verify the final path exists before launching the file manager.
+            if(!fs::exists(path.data())) {
+                var msg = string::make_no_len("directory does not exist: ")
+                msg.append_string(&path)
+                return err_json(&msg)
             }
             var cmd_args = vector<string>()
             cmd_args.push_back(string::make_no_len("xdg-open"))

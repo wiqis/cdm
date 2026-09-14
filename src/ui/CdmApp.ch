@@ -282,6 +282,7 @@
         call("settings_set", body)
         alert = "Settings saved"
         showSettings = false
+        refreshSettings()
     }
 
     // ---- YouTube functions ----

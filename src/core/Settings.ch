@@ -1001,6 +1001,52 @@ func settings_dir() : string {
             else if(kh == comptime_fnv1_hash("language")) { out.language = val.copy() }
             else if(kh == comptime_fnv1_hash("max_history") || kh == comptime_fnv1_hash("maxHistory")) { if(val_is_num) { out.max_history = val_num as int } }
             else if(kh == comptime_fnv1_hash("theme")) { out.theme = val.copy() }
+            // Advanced yt-dlp fields.
+            else if(kh == comptime_fnv1_hash("yt_output_template")) { out.yt_output_template = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_audio_format")) { out.yt_audio_format = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_audio_quality")) { if(val_is_num) { out.yt_audio_quality = val_num as int } }
+            else if(kh == comptime_fnv1_hash("yt_recode_video")) { out.yt_recode_video = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_merge_output_format")) { out.yt_merge_output_format = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_write_subs")) { if(val_is_bool) { out.yt_write_subs = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_write_auto_subs")) { if(val_is_bool) { out.yt_write_auto_subs = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_sub_langs")) { out.yt_sub_langs = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_embed_subs")) { if(val_is_bool) { out.yt_embed_subs = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_convert_subs")) { out.yt_convert_subs = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_embed_metadata")) { if(val_is_bool) { out.yt_embed_metadata = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_embed_thumbnail")) { if(val_is_bool) { out.yt_embed_thumbnail = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_write_description")) { if(val_is_bool) { out.yt_write_description = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_write_info_json")) { if(val_is_bool) { out.yt_write_info_json = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_write_comments")) { if(val_is_bool) { out.yt_write_comments = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_restrict_filenames")) { if(val_is_bool) { out.yt_restrict_filenames = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_trim_filenames")) { if(val_is_num) { out.yt_trim_filenames = val_num as int } }
+            else if(kh == comptime_fnv1_hash("yt_no_overwrites")) { if(val_is_bool) { out.yt_no_overwrites = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_playlist_start")) { if(val_is_num) { out.yt_playlist_start = val_num as int } }
+            else if(kh == comptime_fnv1_hash("yt_playlist_end")) { if(val_is_num) { out.yt_playlist_end = val_num as int } }
+            else if(kh == comptime_fnv1_hash("yt_playlist_items")) { out.yt_playlist_items = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_proxy")) { out.yt_proxy = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_geo_bypass")) { if(val_is_bool) { out.yt_geo_bypass = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_geo_bypass_country")) { out.yt_geo_bypass_country = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_extractor_retries")) { if(val_is_num) { out.yt_extractor_retries = val_num as int } }
+            else if(kh == comptime_fnv1_hash("yt_socket_timeout")) { if(val_is_num) { out.yt_socket_timeout = val_num as int } }
+            else if(kh == comptime_fnv1_hash("yt_exec_cmd")) { out.yt_exec_cmd = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_ffmpeg_location")) { out.yt_ffmpeg_location = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_remove_sponsorblock")) { if(val_is_bool) { out.yt_remove_sponsorblock = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_sponsorblock_mark")) { out.yt_sponsorblock_mark = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_source_address")) { out.yt_source_address = val.copy() }
+            else if(kh == comptime_fnv1_hash("yt_legacy_server_connect")) { if(val_is_bool) { out.yt_legacy_server_connect = val_bool } }
+            else if(kh == comptime_fnv1_hash("yt_no_check_certificates")) { if(val_is_bool) { out.yt_no_check_certificates = val_bool } }
+            // FFmpeg fields.
+            else if(kh == comptime_fnv1_hash("ffmpeg_video_codec")) { out.ffmpeg_video_codec = val.copy() }
+            else if(kh == comptime_fnv1_hash("ffmpeg_audio_codec")) { out.ffmpeg_audio_codec = val.copy() }
+            else if(kh == comptime_fnv1_hash("ffmpeg_audio_bitrate")) { out.ffmpeg_audio_bitrate = val.copy() }
+            // Misc.
+            else if(kh == comptime_fnv1_hash("bandwidth_limit_per")) { if(val_is_num) { out.bandwidth_limit_per = val_num } }
+            else if(kh == comptime_fnv1_hash("auto_rename_duplicates")) { if(val_is_bool) { out.auto_rename_duplicates = val_bool } }
+            else if(kh == comptime_fnv1_hash("move_completed_to")) { out.move_completed_to = val.copy() }
+            else if(kh == comptime_fnv1_hash("clipboard_monitor")) { if(val_is_bool) { out.clipboard_monitor = val_bool } }
+            else if(kh == comptime_fnv1_hash("proxy_host")) { out.proxy_host = val.copy() }
+            else if(kh == comptime_fnv1_hash("proxy_port")) { if(val_is_num) { out.proxy_port = val_num as int } }
+            else if(kh == comptime_fnv1_hash("use_categories")) { if(val_is_bool) { out.use_categories = val_bool } }
             // Skip to next comma
             while(i < s.size() && s.get(i) != ',') { i = i + 1 }
             if(i < s.size()) { i = i + 1 }  // skip comma
