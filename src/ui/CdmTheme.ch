@@ -23,6 +23,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             gap: 16px;
             padding-bottom: 14px;
             border-bottom: 1px solid hsl(var(--border));
+            flex-wrap: wrap;
         }
         .cdm-header-title {
             display: flex;
@@ -69,6 +70,7 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-toolbar {
             display: flex;
             gap: 8px;
+            flex-wrap: wrap;
         }
         .cdm-url-input {
             flex: 1;
@@ -653,7 +655,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             font-size: 14px;
             font-weight: 600;
             color: hsl(var(--primary-foreground));
-            background: #ff0000;
+            background: hsl(var(--destructive));
             border: none;
             border-radius: calc(var(--radius) - 2px);
             cursor: pointer;
@@ -806,7 +808,7 @@ public func CdmTheme(page : &mut HtmlPage) {
         }
         .cdm-yt-progress-fill {
             height: 100%;
-            background: #ff0000;
+            background: hsl(var(--destructive));
             border-radius: 999px;
             transition: width 0.3s ease;
         }
@@ -879,42 +881,8 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-yt-quality-chip:hover { background: hsl(var(--secondary)); }
         .cdm-yt-quality-chip-on {
             color: hsl(var(--primary-foreground));
-            background: #ff0000;
-            border-color: #ff0000;
-        }
-        .cdm-yt-tool-status {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 14px;
-            background: hsl(var(--card));
-            border: 1px solid hsl(var(--border));
-            border-radius: calc(var(--radius) - 2px);
-        }
-        .cdm-yt-tool-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-        .cdm-yt-tool-dot-ok {
-            background: hsl(var(--success));
-        }
-        .cdm-yt-tool-dot-miss {
-            background: hsl(var(--muted-foreground) / 0.4);
-        }
-        .cdm-yt-tool-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: hsl(var(--foreground));
-        }
-        .cdm-yt-tool-ver {
-            font-size: 12px;
-            color: hsl(var(--muted-foreground));
-        }
-        .cdm-yt-tool-install {
-            margin-left: auto;
-            flex-shrink: 0;
+            background: hsl(var(--destructive));
+            border-color: hsl(var(--destructive));
         }
         .cdm-yt-dl-progress {
             padding: 12px 0;

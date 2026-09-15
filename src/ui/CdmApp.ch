@@ -64,6 +64,7 @@
     state ytDlMergeStatus = ""
     state ytDlMergeError = ""
     state ytDlNeedsMerge = false
+    state ytDlContainerId = ""
     state ytPlProgress = 0
     state ytPlSpeed = ""
     state ytPlEta = ""
@@ -157,10 +158,22 @@
             if(menuEl) return
             ctxOpen = false
         }
+        var onKeydown = (e) => {
+            if(e.key === "Escape") {
+                if(ctxOpen) { ctxOpen = false }
+                else if(showSettings) { showSettings = false }
+                else if(addOpen) { addOpen = false }
+                else if(changeUrlOpen) { changeUrlOpen = false }
+                else if(ytOpen && !ytLoading && !ytDownloading) { ytOpen = false }
+                else if(ytToolsOpen) { ytToolsOpen = false }
+            }
+        }
         document.addEventListener("mousedown", closeCtx)
+        document.addEventListener("keydown", onKeydown)
         return () => {
             clearInterval(t)
             document.removeEventListener("mousedown", closeCtx)
+            document.removeEventListener("keydown", onKeydown)
             if(ytInfoPollId) { clearInterval(ytInfoPollId) }
             if(ytDlPollId) { clearInterval(ytDlPollId) }
             if(ytPlPollId) { clearInterval(ytPlPollId) }
@@ -906,7 +919,9 @@
                         <button class="cdm-btn cdm-btn-danger" onClick={() => { asyncBridge("yt_cancel", "{}", function() { }) }}>Cancel Playlist</button>
                     ) : null}
                     {item.state !== "Downloading" && item.state !== "Queued" ? (
-                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove", item.id)}>Remove</button>
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => {
+                            if(confirm("Remove this playlist from the queue?")) { post("remove", item.id) }
+                        }}>Remove</button>
                     ) : null}
                 </div>
             </div>
@@ -1012,10 +1027,14 @@
                         <button class="cdm-btn cdm-btn-danger" onClick={() => post("cancel", item.id)}>Cancel</button>
                     ) : null}
                     {item.state !== "Downloading" && item.state !== "Queued" ? (
-                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove_file", item.id)}>&#128465; Remove file</button>
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => {
+                            if(confirm("Delete the downloaded file? This cannot be undone.")) { post("remove_file", item.id) }
+                        }}>&#128465; Remove file</button>
                     ) : null}
                     {item.state !== "Downloading" && item.state !== "Queued" ? (
-                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("remove", item.id)}>Remove</button>
+                        <button class="cdm-btn cdm-btn-danger" onClick={() => {
+                            if(confirm("Remove this download from the queue?")) { post("remove", item.id) }
+                        }}>Remove</button>
                     ) : null}
                 </div>
             </div>
@@ -1725,7 +1744,7 @@
                                         <div class="cdm-yt-formats" style="max-height:160px;">
                                             {ytPlaylistEntries.map((entry, i) => (
                                                 <div class="cdm-yt-playlist-item" onClick={() => togglePlaylistEntry(i)} style={{ cursor: "pointer", background: ytPlaylistSelected.indexOf(i) !== -1 ? "hsl(var(--primary) / 0.08)" : "" }}>
-                                                    <input type="checkbox" checked={ytPlaylistSelected.indexOf(i) !== -1} readOnly style={{ accentColor: "#ff0000" }} />
+                                                    <input type="checkbox" checked={ytPlaylistSelected.indexOf(i) !== -1} readOnly style={{ accentColor: "hsl(var(--destructive))" }} />
                                                     <span class="cdm-yt-playlist-idx">{entry.index || (i+1)}</span>
                                                     <span class="cdm-yt-playlist-title">{entry.title || "Unknown"}</span>
                                                     <span class="cdm-yt-playlist-dur">{entry.duration_str || ""}</span>
@@ -1957,7 +1976,10 @@
                     <div class="cdm-ctx-item cdm-ctx-danger" onClick={() => ctxAction("cancel")}>&#9209; Cancel</div>
                 ) : null}
                 <div class="cdm-ctx-sep"></div>
-                <div class="cdm-ctx-item cdm-ctx-danger" onClick={() => ctxAction("remove")}>&#128465; Remove</div>
+                <div class="cdm-ctx-item cdm-ctx-danger" onClick={() => {
+                    if(confirm("Remove this download from the queue?")) { ctxAction("remove") }
+                    else { ctxOpen = false }
+                }}>&#128465; Remove</div>
                 {ctxItem.state !== "Downloading" && ctxItem.state !== "Queued" ? (
                     <div class="cdm-ctx-item" onClick={() => {
                         ctxOpen = false
