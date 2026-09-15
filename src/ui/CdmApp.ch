@@ -91,6 +91,8 @@
     state toastMsg = ""
     state toastType = "info"      // info | success | error
     state toastVisible = false
+    // Button debounce state
+    state busy = false
 
     var isUrl = (s) => {
         var t = s.trim().toLowerCase()
@@ -120,10 +122,14 @@
     }
 
     // Async bridge helper: calls webview_bridge.call and handles the Promise.
-    var asyncBridge = (method, body, onResult) => {
+    // When debounce=true, sets busy=true during the call to prevent rapid re-submits.
+    var asyncBridge = (method, body, onResult, debounce) => {
+        if(debounce) { busy = true }
         window.webview_bridge.call(method, body || "{}").then(function(v) {
+            if(debounce) { busy = false }
             onResult(v)
         }).catch(function(e) {
+            if(debounce) { busy = false }
             console.error("[CDM-JS] bridge error for " + method + ": " + e)
             showToast("Bridge error: " + method, "error")
         })
@@ -152,6 +158,13 @@
         refreshSettings()
         refreshTools()
         var t = setInterval(refresh, 1000)
+        var alertTimer = null
+        var watchAlert = () => {
+            if(alert !== "") {
+                if(alertTimer) { clearTimeout(alertTimer) }
+                alertTimer = setTimeout(() => { alert = ""; alertTimer = null }, 5000)
+            }
+        }
         var closeCtx = (e) => {
             if(!ctxOpen) return
             var menuEl = e.target.closest && e.target.closest('.cdm-ctx-menu')
@@ -167,11 +180,25 @@
                 else if(ytOpen && !ytLoading && !ytDownloading) { ytOpen = false }
                 else if(ytToolsOpen) { ytToolsOpen = false }
             }
+            // Focus trap: keep Tab inside the topmost dialog
+            if(e.key === "Tab") {
+                var overlay = document.querySelector('.cdm-dialog-overlay:last-of-type')
+                if(!overlay) return
+                var dialog = overlay.querySelector('.cdm-dialog')
+                if(!dialog) return
+                var focusable = dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')
+                if(focusable.length === 0) return
+                var first = focusable[0]
+                var last = focusable[focusable.length - 1]
+                if(e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+                else if(!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+            }
         }
         document.addEventListener("mousedown", closeCtx)
         document.addEventListener("keydown", onKeydown)
         return () => {
             clearInterval(t)
+            if(alertTimer) { clearTimeout(alertTimer) }
             document.removeEventListener("mousedown", closeCtx)
             document.removeEventListener("keydown", onKeydown)
             if(ytInfoPollId) { clearInterval(ytInfoPollId) }
@@ -186,7 +213,7 @@
         asyncBridge(method, JSON.stringify(body), function(d) {
             if(d && !d.ok) { alert = d.error || "Operation failed" }
             refresh()
-        })
+        }, true)
     }
 
     var call = (method, body, onDone) => {
@@ -194,12 +221,12 @@
             if(d && !d.ok) { showToast(d.error || "Operation failed", "error") }
             refresh()
             if(onDone) { onDone(d) }
-        })
+        }, true)
     }
 
     var addDownload = () => {
         var u = addUrl.trim() || newUrl.trim()
-        if(u === "") return
+        if(u === "" || busy) return
         var body = { url: u }
         if(addDir.trim() !== "") body.dir = addDir.trim()
         if(addName.trim() !== "") body.filename = addName.trim()
@@ -216,7 +243,7 @@
                 alert = (d && d.error) || "Failed to add download"
             }
             refresh()
-        })
+        }, true)
     }
 
     var applySettings = () => {
@@ -1006,33 +1033,33 @@
                 {item.error !== "" ? <div class="cdm-item-error-text">{item.error}</div> : null}
                 <div class="cdm-item-actions">
                     {item.state === "Downloading" || item.state === "Queued" ? (
-                        <button class="cdm-btn" onClick={() => post("pause", item.id)}>Pause</button>
+                        <button class="cdm-btn" disabled={busy} onClick={() => post("pause", item.id)}>Pause</button>
                     ) : null}
                     {(item.state === "Paused" || (item.state === "Failed" && item.error === "interrupted by shutdown")) ? (
-                        <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
+                        <button class="cdm-btn" disabled={busy} onClick={() => post("resume", item.id)}>Resume</button>
                     ) : null}
                     {item.state === "Failed" && item.error !== "interrupted by shutdown" ? (
-                        <button class="cdm-btn" onClick={() => post("retry", item.id)}>Retry</button>
+                        <button class="cdm-btn" disabled={busy} onClick={() => post("retry", item.id)}>Retry</button>
                     ) : null}
                     {item.state === "Cancelled" && item.downloaded_bytes > 0 ? (
-                        <button class="cdm-btn" onClick={() => post("resume", item.id)}>Resume</button>
+                        <button class="cdm-btn" disabled={busy} onClick={() => post("resume", item.id)}>Resume</button>
                     ) : null}
                     {item.state === "Done" || item.state === "Failed" || item.state === "Cancelled" ? (
-                        <button class="cdm-btn" onClick={() => post("restart", item.id)}>&#10227; Restart</button>
+                        <button class="cdm-btn" disabled={busy} onClick={() => post("restart", item.id)}>&#10227; Restart</button>
                     ) : null}
                     {item.state !== "Downloading" && item.state !== "Queued" ? (
-                        <button class="cdm-btn" onClick={() => { changeUrlItem = item; changeUrlValue = item.url; changeUrlOpen = true }}>Change URL</button>
+                        <button class="cdm-btn" disabled={busy} onClick={() => { changeUrlItem = item; changeUrlValue = item.url; changeUrlOpen = true }}>Change URL</button>
                     ) : null}
                     {running ? (
-                        <button class="cdm-btn cdm-btn-danger" onClick={() => post("cancel", item.id)}>Cancel</button>
+                        <button class="cdm-btn cdm-btn-danger" disabled={busy} onClick={() => post("cancel", item.id)}>Cancel</button>
                     ) : null}
                     {item.state !== "Downloading" && item.state !== "Queued" ? (
-                        <button class="cdm-btn cdm-btn-danger" onClick={() => {
+                        <button class="cdm-btn cdm-btn-danger" disabled={busy} onClick={() => {
                             if(confirm("Delete the downloaded file? This cannot be undone.")) { post("remove_file", item.id) }
                         }}>&#128465; Remove file</button>
                     ) : null}
                     {item.state !== "Downloading" && item.state !== "Queued" ? (
-                        <button class="cdm-btn cdm-btn-danger" onClick={() => {
+                        <button class="cdm-btn cdm-btn-danger" disabled={busy} onClick={() => {
                             if(confirm("Remove this download from the queue?")) { post("remove", item.id) }
                         }}>Remove</button>
                     ) : null}
@@ -1066,8 +1093,8 @@
                 placeholder="Type or paste a download URL and press Enter…" value={newUrl}
                 onChange={(e) => { newUrl = e.target.value }}
                 onKeyDown={(e) => { if(e.key === "Enter") addDownload() }} />
-            <button class="cdm-add-btn" onClick={addDownload} disabled={newUrl.trim() === ""}>Add Download</button>
-            <button class="cdm-btn" onClick={() => { addUrl = newUrl; addOpen = true }} disabled={newUrl.trim() === ""}>Options…</button>
+            <button class="cdm-add-btn" onClick={addDownload} disabled={newUrl.trim() === "" || busy}>Add Download</button>
+            <button class="cdm-btn" onClick={() => { addUrl = newUrl; addOpen = true }} disabled={newUrl.trim() === "" || busy}>Options…</button>
         </div>
 
         <div class="cdm-filterbar">
@@ -1077,10 +1104,12 @@
                         onClick={() => { filter = f }}>{f}</button>
                 ))}
                 <span class="cdm-filter-sep"></span>
-                {["All", "Other", "Documents", "Programs", "Video", "Music", "Compressed"].map((c) => (
-                    <button class={"cdm-filter-chip cdm-filter-cat" + (catFilter === c ? " cdm-filter-chip-on" : "")}
-                        onClick={() => { catFilter = c }}>{c}</button>
-                ))}
+                <span class="cdm-filter-cat-wrap">
+                    {["All", "Other", "Documents", "Programs", "Video", "Music", "Compressed"].map((c) => (
+                        <button class={"cdm-filter-chip cdm-filter-cat" + (catFilter === c ? " cdm-filter-chip-on" : "")}
+                            onClick={() => { catFilter = c }}>{c}</button>
+                    ))}
+                </span>
             </div>
             <div class="cdm-filter-row cdm-filter-secondary">
                 <input class="cdm-search-input" type="text" placeholder="Search filename or URL…"
@@ -1101,13 +1130,15 @@
                         <div class="cdm-dialog-title">&#9881; Settings</div>
                         <button class="cdm-dialog-close" onClick={() => { showSettings = false }}>&#10005;</button>
                     </div>
-                    <div class="cdm-dialog-body">
+                    <div class="cdm-dialog-tabs">
                         <div class="cdm-settings-tabs">
                             <button class={"cdm-settings-tab" + (settingsTab === "general" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "general" }}>General</button>
                             <button class={"cdm-settings-tab" + (settingsTab === "youtube" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "youtube" }}>YouTube</button>
                             <button class={"cdm-settings-tab" + (settingsTab === "network" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "network" }}>Network</button>
                             <button class={"cdm-settings-tab" + (settingsTab === "advanced" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "advanced" }}>Advanced</button>
                         </div>
+                    </div>
+                    <div class="cdm-dialog-body">
 
                         {settingsTab === "general" ? <div>
                         <label>Download folder
@@ -1942,8 +1973,10 @@
         ) : null}
 
         {toastVisible ? (
-            <div class={"cdm-yt-toast cdm-yt-toast-" + toastType} onClick={() => { toastVisible = false }}>
-                {toastMsg}
+            <div class="cdm-toast-container">
+                <div class={"cdm-yt-toast cdm-yt-toast-" + toastType} onClick={() => { toastVisible = false }}>
+                    {toastMsg}
+                </div>
             </div>
         ) : null}
 
@@ -1991,13 +2024,31 @@
 
         {alert !== "" ? <div class="cdm-alert" onClick={() => { alert = "" }}>{alert}</div> : null}
 
-        {loading ? <div class="cdm-empty">Loading downloads…</div> : null}
+        {loading ? <div class="cdm-list">
+            {[1, 2, 3].map((i) => (
+                <div class="cdm-skeleton-card" key={i}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div class="cdm-skeleton cdm-skeleton-line cdm-skeleton-line-long" style={{ height: "14px", flex: "1", marginRight: "60px" }}></div>
+                        <div class="cdm-skeleton cdm-skeleton-line cdm-skeleton-line-short" style={{ height: "20px", width: "72px", borderRadius: "999px" }}></div>
+                    </div>
+                    <div class="cdm-skeleton cdm-skeleton-bar"></div>
+                    <div class="cdm-skeleton-meta">
+                        <div class="cdm-skeleton cdm-skeleton-line" style={{ width: "80px" }}></div>
+                        <div class="cdm-skeleton cdm-skeleton-line" style={{ width: "50px" }}></div>
+                        <div class="cdm-skeleton cdm-skeleton-line" style={{ width: "60px" }}></div>
+                    </div>
+                </div>
+            ))}
+        </div> : null}
 
         {!loading && visibleItems.length === 0 && !ytDownloading ? (
             <div class="cdm-empty">
                 <div class="cdm-empty-icon">&#128229;</div>
                 <p>{mainItems.length === 0 ? "No downloads yet." : "No downloads match this filter."}</p>
-                <p class="cdm-empty-sub">Paste a URL above, or click the Paste button to grab one from your clipboard.</p>
+                <p class="cdm-empty-sub">Paste a URL above, or click the button below to grab one from your clipboard.</p>
+                {mainItems.length === 0 ? (
+                    <button class="cdm-empty-cta" onClick={pasteFromClipboard}>&#128203; Paste URL from Clipboard</button>
+                ) : null}
             </div>
         ) : null}
 

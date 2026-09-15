@@ -152,11 +152,16 @@ public func CdmTheme(page : &mut HtmlPage) {
             display: flex;
             flex-direction: column;
             gap: 10px;
-            transition: border-color 0.15s, box-shadow 0.2s, transform 0.15s;
+            transition: border-color 0.15s, box-shadow 0.2s, transform 0.15s, opacity 0.25s;
+            animation: cdm-card-in 0.2s ease;
+        }
+        @keyframes cdm-card-in {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         .cdm-item:hover {
             border-color: hsl(var(--ring) / 0.4);
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 2px 12px hsl(var(--foreground) / 0.06);
         }
         .cdm-item-error {
             border-color: hsl(var(--destructive) / 0.4);
@@ -323,7 +328,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             position: fixed;
             inset: 0;
             z-index: 1000;
-            background: rgba(0, 0, 0, 0.5);
+            background: hsl(var(--foreground) / 0.5);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -343,7 +348,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             max-height: 85vh;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px hsl(var(--border));
+            box-shadow: 0 20px 60px hsl(var(--foreground) / 0.35), 0 0 0 1px hsl(var(--border));
             animation: cdm-dialog-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
         @keyframes cdm-dialog-in {
@@ -491,7 +496,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             background: hsl(var(--card));
             border: 1px solid hsl(var(--border));
             border-radius: var(--radius);
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px hsl(var(--border));
+            box-shadow: 0 12px 32px hsl(var(--foreground) / 0.28), 0 0 0 1px hsl(var(--border));
             padding: 4px 0;
             animation: cdm-ctx-in 0.12s cubic-bezier(0.16, 1, 0.3, 1);
         }
@@ -828,7 +833,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             border-radius: var(--radius);
             font-size: 13px;
             font-weight: 500;
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255,255,255,0.1);
+            box-shadow: 0 12px 32px hsl(var(--foreground) / 0.25), 0 0 0 1px hsl(var(--border) / 0.1);
             animation: cdm-toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             cursor: pointer;
             transition: opacity 0.2s, transform 0.2s;
@@ -908,6 +913,129 @@ public func CdmTheme(page : &mut HtmlPage) {
         }
         .cdm-yt-dl-eta {
             margin-left: auto;
+        }
+
+        /* ===== Skeleton Loading ===== */
+        @keyframes cdm-skeleton-shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .cdm-skeleton {
+            background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted) / 0.6) 50%, hsl(var(--muted)) 75%);
+            background-size: 200% 100%;
+            animation: cdm-skeleton-shimmer 1.5s ease-in-out infinite;
+            border-radius: calc(var(--radius) - 2px);
+        }
+        .cdm-skeleton-card {
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .cdm-skeleton-line {
+            height: 12px;
+            border-radius: 6px;
+        }
+        .cdm-skeleton-line-short { width: 40%; }
+        .cdm-skeleton-line-med { width: 65%; }
+        .cdm-skeleton-line-long { width: 85%; }
+        .cdm-skeleton-bar {
+            height: 6px;
+            border-radius: 999px;
+        }
+        .cdm-skeleton-meta {
+            display: flex;
+            gap: 12px;
+        }
+        .cdm-skeleton-meta span {
+            height: 10px;
+            border-radius: 5px;
+        }
+
+        /* ===== Toast Container ===== */
+        .cdm-toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+        .cdm-toast-container > * {
+            pointer-events: auto;
+        }
+
+        /* ===== Card Removal Transition ===== */
+        .cdm-item-removing {
+            opacity: 0;
+            transform: translateX(20px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+
+        /* ===== Empty State CTA ===== */
+        .cdm-empty-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 16px;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: hsl(var(--primary-foreground));
+            background: hsl(var(--primary));
+            border: none;
+            border-radius: calc(var(--radius) - 2px);
+            cursor: pointer;
+            transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+        }
+        .cdm-empty-cta:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+        }
+
+        /* ===== Category Filter Collapse ===== */
+        @media (max-width: 640px) {
+            .cdm-filter-cat-wrap {
+                display: none;
+            }
+            .cdm-header-stats {
+                gap: 8px;
+            }
+            .cdm-stat {
+                font-size: 11px;
+            }
+        }
+
+        /* ===== Sticky Settings Tabs ===== */
+        .cdm-dialog-tabs {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: hsl(var(--card));
+        }
+
+        /* ===== Button Loading Spinner ===== */
+        .cdm-btn-spin {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid hsl(var(--border));
+            border-top-color: hsl(var(--primary));
+            border-radius: 50%;
+            animation: cdm-spin 0.5s linear infinite;
+            vertical-align: middle;
+            margin-right: 4px;
+        }
+
+        /* ===== Focus Trap (dialog) ===== */
+        .cdm-dialog:focus-within {
+            outline: none;
         }
     """)
 }
