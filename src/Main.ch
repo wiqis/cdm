@@ -59,6 +59,17 @@ public func main(argc : int, argv : **char) : int {
 
     // Parse command-line arguments. Anything other than plain URLs opts into
     // headless mode; "cdm" with no arguments opens the GUI.
+    // Dev helper: print the server-rendered UI document to stdout and exit.
+    // Must run before parse_cli (which rejects unknown flags). Used to validate
+    // UI markup in a normal browser (e.g. headless Chrome) without the GTK webview.
+    if(argc >= 2 && string(argv[1]).equals_view(string_view::make_no_len("--dump-ui"))) {
+        fflush(null)
+        var html = build_ui_html()
+        printf("%s\n", html.data())
+        fflush(null)
+        return 0
+    }
+
     var opts = cdm::CliOptions()
     var parse_err = cdm::parse_cli(argc, argv, &mut opts)
     if(parse_err != null) {
