@@ -66,6 +66,27 @@ using std::vector;
         return string(args.data(), args.size())
     }
 
+    // True when the JSON object string contains `key` with a string value.
+    // Distinguishes {"ua":""} (present, empty) from a missing key — needed so
+    // settings_set can persist *cleared* fields instead of silently keeping
+    // the previous value. Uses the same resolve+parse as json_field.
+    func json_has_string_field(args : string_view, key : string_view) : bool {
+        var resolved = resolve_bridge_args(args)
+        var rview = string_view::make_view(&resolved)
+        var parser = JsonParser(128, 4096)
+        var ph = ASTJsonHandler.make()
+        parser.parse(rview.data(), rview.size(), &mut ph)
+        if(ph.root is JsonValue.Object) {
+            var Object(map) = ph.root else unreachable
+            var k = string(key.data(), key.size())
+            var vp = map.get_ptr(&k)
+            if(vp != null && vp is JsonValue.String) {
+                return true
+            }
+        }
+        return false
+    }
+
     // Extract a single string field from a JSON object string { "key": "..." }.
     // Returns an empty string when the field is absent or the args are invalid.
     func json_field(args : string_view, key : string_view) : string {
@@ -492,20 +513,25 @@ using std::vector;
             settings.max_retries = json_int_field(args, string_view::make_no_len("max_retries"), dm.retry_policy.max_retries)
             settings.retry_delay_ms = json_int_field(args, string_view::make_no_len("retry_delay_ms"), dm.retry_policy.delay_ms as int) as i64
             // HTTP / network.
-            var ua = json_field(args, string_view::make_no_len("user_agent"))
-            if(ua.size() > 0) { settings.user_agent = ua.copy() }
-            var ck = json_field(args, string_view::make_no_len("cookie_file"))
-            if(ck.size() > 0) { settings.cookie_file = ck.copy() }
+            // Present-but-empty means "clear this field" (Reset buttons send "").
+            if(json_has_string_field(args, string_view::make_no_len("user_agent"))) {
+                settings.user_agent = json_field(args, string_view::make_no_len("user_agent")).copy()
+            }
+            if(json_has_string_field(args, string_view::make_no_len("cookie_file"))) {
+                settings.cookie_file = json_field(args, string_view::make_no_len("cookie_file")).copy()
+            }
             settings.verify_ssl = json_bool_field(args, string_view::make_no_len("verify_ssl"), dm.verify_ssl)
             settings.connect_timeout = json_int_field(args, string_view::make_no_len("connect_timeout"), dm.connect_timeout)
             settings.max_download_size = json_int_field(args, string_view::make_no_len("max_download_size"), dm.max_download_size as int) as i64
             settings.min_disk_space_mb = json_int_field(args, string_view::make_no_len("min_disk_space_mb"), dm.min_disk_space_mb)
             var postcmd = json_field(args, string_view::make_no_len("post_download_cmd"))
             if(postcmd.size() > 0) { settings.post_download_cmd = postcmd.copy() }
-            var ref = json_field(args, string_view::make_no_len("referer_header"))
-            if(ref.size() > 0) { settings.referer_header = ref.copy() }
-            var auth = json_field(args, string_view::make_no_len("auth_header"))
-            if(auth.size() > 0) { settings.auth_header = auth.copy() }
+            if(json_has_string_field(args, string_view::make_no_len("referer_header"))) {
+                settings.referer_header = json_field(args, string_view::make_no_len("referer_header")).copy()
+            }
+            if(json_has_string_field(args, string_view::make_no_len("auth_header"))) {
+                settings.auth_header = json_field(args, string_view::make_no_len("auth_header")).copy()
+            }
             settings.force_ipv4 = json_bool_field(args, string_view::make_no_len("force_ipv4"), dm.force_ipv4)
             settings.force_ipv6 = json_bool_field(args, string_view::make_no_len("force_ipv6"), dm.force_ipv6)
             var ftemp = json_field(args, string_view::make_no_len("filename_template"))

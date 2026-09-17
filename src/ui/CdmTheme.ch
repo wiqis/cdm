@@ -922,36 +922,163 @@ public func CdmTheme(page : &mut HtmlPage) {
             color: hsl(var(--muted-foreground));
             margin: 0;
         }
-        .cdm-dialog:focus-within { outline: none; }
-        .cdm-dialog-tabs {
-            position: sticky;
-            top: 0;
-            z-index: 1;
-            background: hsl(var(--card));
+        /* ---- Settings dialog: section rail + rows ---- */
+        .cdm-set-body {
+            flex-direction: row;
+            padding: 0;
+            gap: 0;
+            flex: 1;
+            min-height: 0;
         }
-        .cdm-settings-tabs {
+        .cdm-set-rail {
+            width: 172px;
+            flex-shrink: 0;
+            border-right: 1px solid hsl(var(--border));
+            padding: 12px 8px;
+            overflow-y: auto;
             display: flex;
-            gap: 14px;
-            margin-bottom: 14px;
-            border-bottom: 1px solid hsl(var(--border));
+            flex-direction: column;
+            gap: 1px;
+            background: hsl(var(--muted) / 0.3);
         }
-        .cdm-settings-tab {
-            padding: 8px 2px;
+        .cdm-set-group {
+            font-size: 10px;
+            font-weight: 650;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: hsl(var(--muted-foreground) / 0.65);
+            padding: 12px 10px 4px;
+            user-select: none;
+        }
+        .cdm-set-group:first-child { padding-top: 2px; }
+        .cdm-set-nav {
+            text-align: left;
             font-size: 12.5px;
-            font-weight: 550;
-            cursor: pointer;
+            font-weight: 480;
             color: hsl(var(--muted-foreground));
             background: transparent;
             border: none;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -1px;
-            transition: color 0.1s, border-color 0.1s;
+            border-radius: 6px;
+            padding: 6px 10px;
+            cursor: pointer;
+            transition: background 0.1s, color 0.1s;
         }
-        .cdm-settings-tab:hover { color: hsl(var(--foreground)); }
-        .cdm-settings-tab-active {
+        .cdm-set-nav:hover {
+            background: hsl(var(--secondary) / 0.7);
             color: hsl(var(--foreground));
-            border-bottom-color: hsl(var(--accent));
         }
+        .cdm-set-nav-active {
+            background: hsl(var(--secondary));
+            color: hsl(var(--foreground));
+            font-weight: 550;
+        }
+        .cdm-set-panel {
+            flex: 1;
+            min-width: 0;
+            overflow-y: auto;
+            padding: 4px 18px 18px;
+            scroll-behavior: smooth;
+        }
+        .cdm-set-sec {
+            padding: 16px 0 6px;
+            scroll-margin-top: 8px;
+        }
+        .cdm-set-sec + .cdm-set-sec { border-top: 1px solid hsl(var(--border) / 0.7); }
+        .cdm-set-sec-head { margin-bottom: 6px; }
+        .cdm-set-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: hsl(var(--foreground));
+        }
+        .cdm-set-desc {
+            font-size: 12px;
+            line-height: 1.45;
+            color: hsl(var(--muted-foreground));
+            margin-top: 3px;
+        }
+        .cdm-set-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            padding: 9px 0;
+            min-height: 36px;
+        }
+        .cdm-set-row-text { min-width: 0; }
+        .cdm-set-row-label {
+            font-size: 12.5px;
+            font-weight: 500;
+            color: hsl(var(--foreground));
+        }
+        .cdm-set-row-desc {
+            font-size: 11.5px;
+            line-height: 1.4;
+            color: hsl(var(--muted-foreground));
+            margin-top: 2px;
+        }
+        .cdm-set-row input,
+        .cdm-set-row select {
+            width: 240px;
+            max-width: 46vw;
+            flex-shrink: 0;
+            padding: 6px 9px;
+            font-size: 12.5px;
+            font-family: var(--font-mono);
+            background: hsl(var(--background) / 0.6);
+            color: hsl(var(--foreground));
+            border: 1px solid hsl(var(--input));
+            border-radius: var(--r);
+            outline: none;
+            transition: border-color 0.12s;
+        }
+        .cdm-set-row select {
+            -webkit-appearance: none;
+            appearance: none;
+            padding-right: 26px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 9px center;
+            cursor: pointer;
+        }
+        .cdm-set-row input:focus,
+        .cdm-set-row select:focus { border-color: hsl(var(--accent) / 0.55); }
+        .cdm-set-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .cdm-set-reset {
+            font-size: 11px;
+            font-weight: 500;
+            color: hsl(var(--muted-foreground));
+            background: transparent;
+            border: 1px solid hsl(var(--border));
+            border-radius: 6px;
+            padding: 5px 9px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color 0.1s, border-color 0.1s, background 0.1s;
+        }
+        .cdm-set-reset:hover {
+            color: hsl(var(--foreground));
+            border-color: hsl(var(--accent) / 0.5);
+            background: hsl(var(--secondary) / 0.6);
+        }
+        .cdm-set-note {
+            font-size: 11.5px;
+            line-height: 1.45;
+            color: hsl(var(--muted-foreground));
+            margin: 6px 0 8px;
+        }
+        .cdm-set-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 2px 0 4px;
+        }
+        .cdm-yt-toggle { padding: 4px 0; }
+        .cdm-dialog:focus-within { outline: none; }
         .cdm-section-header {
             font-size: 11px;
             font-weight: 700;

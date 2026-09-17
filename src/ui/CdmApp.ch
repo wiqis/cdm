@@ -13,7 +13,6 @@
     state loading = true
     state settings = null
     state showSettings = false
-    state settingsTab = "general"
     state filter = "All"          // All | Active | Done | Failed | Paused
     state catFilter = "All"       // All | Other | Documents | Programs | Video | Music | Compressed
     state searchQuery = ""
@@ -276,6 +275,9 @@
             yt_format: settings.yt_format,
             yt_audio_only: settings.yt_audio_only,
             yt_max_playlist_items: settings.yt_max_playlist_items,
+            yt_playlist_start: settings.yt_playlist_start || 0,
+            yt_playlist_end: settings.yt_playlist_end || 0,
+            yt_playlist_items: settings.yt_playlist_items || "",
             referer_header: settings.referer_header,
             auth_header: settings.auth_header,
             force_ipv4: settings.force_ipv4,
@@ -333,6 +335,19 @@
             }
             refreshSettings()
         })
+    }
+
+    // Edit one settings field in the draft. Used by Reset buttons.
+    var resetField = (key) => {
+        if(!settings) return
+        settings[key] = ""
+        if(key === "connect_timeout" || key === "yt_socket_timeout") { settings[key] = 30 }
+        if(key === "yt_extractor_retries") { settings[key] = 3 }
+        if(key === "max_retries") { settings[key] = 5 }
+        if(key === "retry_delay_ms") { settings[key] = 5000 }
+        if(key === "max_segments") { settings[key] = 4 }
+        if(key === "max_concurrent") { settings[key] = 3 }
+        if(key === "speed_limit_kbps" || key === "bandwidth_limit_per" || key === "max_download_size" || key === "min_disk_space_mb" || key === "max_history" || key === "yt_max_playlist_items" || key === "yt_trim_filenames" || key === "proxy_port") { settings[key] = 0 }
     }
 
     // ---- YouTube functions ----
@@ -1180,527 +1195,7 @@
             </div>
             <div class="cdm-content">
 
-        {showSettings && settings ? (
-            <div class="cdm-dialog-overlay" onClick={() => { showSettings = false }}>
-                <div class="cdm-dialog" onClick={(e) => { e.stopPropagation() }}>
-                    <div class="cdm-dialog-header">
-                        <div class="cdm-dialog-title"><span class="cdm-ic cdm-ic-sliders"></span> Settings</div>
-                        <button class="cdm-dialog-close" onClick={() => { showSettings = false }}>&#10005;</button>
-                    </div>
-                    <div class="cdm-dialog-tabs">
-                        <div class="cdm-settings-tabs">
-                            <button class={"cdm-settings-tab" + (settingsTab === "general" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "general" }}>General</button>
-                            <button class={"cdm-settings-tab" + (settingsTab === "youtube" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "youtube" }}>YouTube</button>
-                            <button class={"cdm-settings-tab" + (settingsTab === "network" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "network" }}>Network</button>
-                            <button class={"cdm-settings-tab" + (settingsTab === "advanced" ? " cdm-settings-tab-active" : "")} onClick={() => { settingsTab = "advanced" }}>Advanced</button>
-                        </div>
-                    </div>
-                    <div class="cdm-dialog-body">
-
-                        {settingsTab === "general" ? <div>
-                        <label>Download folder
-                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                <input type="text" value={settings.download_dir} style={{ flex: "1" }}
-                                    onChange={(e) => { settings.download_dir = e.target.value }} />
-                                <button class="cdm-btn" onClick={() => {
-                                    asyncBridge("browse_folder", "{}", function(d) {
-                                        if(d && d.ok && d.path) {
-                                            settings.download_dir = d.path
-                                            // Persist to native so settings_json reflects the change,
-                                            // then re-fetch to trigger a full re-render.
-                                            asyncBridge("settings_set", JSON.stringify({download_dir: d.path}), function() {
-                                                refreshSettings()
-                                            })
-                                            showToast("Folder: " + d.path, "success")
-                                        }
-                                    })
-                                }} style={{ whiteSpace: "nowrap" }}>Browse</button>
-                            </div>
-                        </label>
-                        <label>Max concurrent downloads
-                            <input type="number" min="1" value={settings.max_concurrent}
-                                onChange={(e) => { settings.max_concurrent = parseInt(e.target.value) || 1 }} />
-                        </label>
-                        <label>Max segments per download
-                            <input type="number" min="1" value={settings.max_segments}
-                                onChange={(e) => { settings.max_segments = parseInt(e.target.value) || 1 }} />
-                        </label>
-                        <label>Global speed limit (KB/s, 0 = unlimited)
-                            <input type="number" min="0" value={settings.speed_limit_kbps}
-                                onChange={(e) => { settings.speed_limit_kbps = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Duplicate files handling
-                            <select value={settings.duplicate_action}
-                                onChange={(e) => { settings.duplicate_action = parseInt(e.target.value) || 0 }}>
-                                <option value="0">Rename (report (1).pdf)</option>
-                                <option value="1">Overwrite</option>
-                                <option value="2">Skip</option>
-                            </select>
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.auto_rename_duplicates || false}
-                                    onChange={(e) => { settings.auto_rename_duplicates = e.target.checked }} />
-                                Auto-rename duplicates
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.enable_resume}
-                                    onChange={(e) => { settings.enable_resume = e.target.checked }} />
-                                Enable resume (HTTP Range)
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.allow_segments}
-                                    onChange={(e) => { settings.allow_segments = e.target.checked }} />
-                                Allow segmented downloads
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.use_categories}
-                                    onChange={(e) => { settings.use_categories = e.target.checked }} />
-                                Use category subfolders
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.auto_resume_failed}
-                                    onChange={(e) => { settings.auto_resume_failed = e.target.checked }} />
-                                Auto-resume failed downloads
-                            </label>
-                        </div>
-                        <label>Max retries (-1 = infinite, 0 = no retry)
-                            <input type="number" min="-1" value={settings.max_retries}
-                                onChange={(e) => { settings.max_retries = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Retry delay (ms)
-                            <input type="number" min="0" value={settings.retry_delay_ms}
-                                onChange={(e) => { settings.retry_delay_ms = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Move completed files to
-                            <input type="text" value={settings.move_completed_to || ""}
-                                placeholder="Leave in download folder"
-                                onChange={(e) => { settings.move_completed_to = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.clipboard_monitor || false}
-                                    onChange={(e) => { settings.clipboard_monitor = e.target.checked }} />
-                                Monitor clipboard for URLs
-                            </label>
-                        </div>
-                        </div> : null}
-
-                        {settingsTab === "youtube" ? <div>
-                        <label>Quality (best, 1080, 720, 480)
-                            <input type="text" value={settings.yt_quality || ""}
-                                placeholder="best"
-                                onChange={(e) => { settings.yt_quality = e.target.value }} />
-                        </label>
-                        <label>Format (mp4, mkv, webm)
-                            <input type="text" value={settings.yt_format || ""}
-                                placeholder="mp4"
-                                onChange={(e) => { settings.yt_format = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_audio_only || false}
-                                    onChange={(e) => { settings.yt_audio_only = e.target.checked }} />
-                                Audio only
-                            </label>
-                        </div>
-                        <label>Max playlist items (0 = all)
-                            <input type="number" min="0" value={settings.yt_max_playlist_items || 0}
-                                onChange={(e) => { settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Output template (yt-dlp format)
-                            <input type="text" value={settings.yt_output_template || ""}
-                                placeholder="%(title)s.%(ext)s"
-                                onChange={(e) => { settings.yt_output_template = e.target.value }} />
-                        </label>
-                        <label>Merge output format
-                            <select value={settings.yt_merge_output_format || "mp4"}
-                                onChange={(e) => { settings.yt_merge_output_format = e.target.value }}>
-                                <option value="mp4">MP4</option>
-                                <option value="mkv">MKV</option>
-                                <option value="webm">WebM</option>
-                                <option value="avi">AVI</option>
-                            </select>
-                        </label>
-                        <label>Recode video to
-                            <select value={settings.yt_recode_video || ""}
-                                onChange={(e) => { settings.yt_recode_video = e.target.value }}>
-                                <option value="">Don't recode</option>
-                                <option value="mp4">MP4</option>
-                                <option value="mkv">MKV</option>
-                                <option value="webm">WebM</option>
-                            </select>
-                        </label>
-                        <label>Audio extraction format
-                            <select value={settings.yt_audio_format || ""}
-                                onChange={(e) => { settings.yt_audio_format = e.target.value }}>
-                                <option value="">None</option>
-                                <option value="mp3">MP3</option>
-                                <option value="aac">AAC</option>
-                                <option value="flac">FLAC</option>
-                                <option value="opus">Opus</option>
-                                <option value="vorbis">Vorbis</option>
-                            </select>
-                        </label>
-                        <label>Audio quality (0=best, 10=worst)
-                            <input type="number" min="0" max="10" value={settings.yt_audio_quality || 0}
-                                onChange={(e) => { settings.yt_audio_quality = parseInt(e.target.value) || 0 }} />
-                        </label>
-
-                        <div class="cdm-section-header">Subtitles</div>
-
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_subs || false}
-                                    onChange={(e) => { settings.yt_write_subs = e.target.checked }} />
-                                Download subtitles
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_auto_subs || false}
-                                    onChange={(e) => { settings.yt_write_auto_subs = e.target.checked }} />
-                                Auto-generated subtitles
-                            </label>
-                        </div>
-                        <label>Subtitle languages
-                            <input type="text" value={settings.yt_sub_langs || "en"}
-                                placeholder="en,ja,es"
-                                onChange={(e) => { settings.yt_sub_langs = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_embed_subs || false}
-                                    onChange={(e) => { settings.yt_embed_subs = e.target.checked }} />
-                                Embed subtitles in video
-                            </label>
-                        </div>
-                        <label>Convert subtitles to
-                            <select value={settings.yt_convert_subs || ""}
-                                onChange={(e) => { settings.yt_convert_subs = e.target.value }}>
-                                <option value="">No conversion</option>
-                                <option value="srt">SRT</option>
-                                <option value="vtt">VTT</option>
-                                <option value="ass">ASS</option>
-                            </select>
-                        </label>
-
-                        <div class="cdm-section-header">Metadata</div>
-
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_embed_metadata !== false}
-                                    onChange={(e) => { settings.yt_embed_metadata = e.target.checked }} />
-                                Embed metadata
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_embed_thumbnail || false}
-                                    onChange={(e) => { settings.yt_embed_thumbnail = e.target.checked }} />
-                                Embed thumbnail as cover art
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_description || false}
-                                    onChange={(e) => { settings.yt_write_description = e.target.checked }} />
-                                Write description file
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_write_info_json || false}
-                                    onChange={(e) => { settings.yt_write_info_json = e.target.checked }} />
-                                Write info.json file
-                            </label>
-                        </div>
-
-                        <div class="cdm-section-header">Playlist</div>
-
-                        <label>Playlist start index (1-based)
-                            <input type="number" min="1" value={settings.yt_playlist_start || 0}
-                                placeholder="0 = from start"
-                                onChange={(e) => { settings.yt_playlist_start = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Playlist end index (0 = all)
-                            <input type="number" min="0" value={settings.yt_playlist_end || 0}
-                                placeholder="0 = all"
-                                onChange={(e) => { settings.yt_playlist_end = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Playlist items (e.g. 1,2,5-10)
-                            <input type="text" value={settings.yt_playlist_items || ""}
-                                placeholder=""
-                                onChange={(e) => { settings.yt_playlist_items = e.target.value }} />
-                        </label>
-
-                        <div class="cdm-section-header">Sponsorblock</div>
-
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_remove_sponsorblock || false}
-                                    onChange={(e) => { settings.yt_remove_sponsorblock = e.target.checked }} />
-                                Remove sponsor segments
-                            </label>
-                        </div>
-                        <label>Mark sponsor segments (colors)
-                            <input type="text" value={settings.yt_sponsorblock_mark || ""}
-                                placeholder="sponsor,intro,outro"
-                                onChange={(e) => { settings.yt_sponsorblock_mark = e.target.value }} />
-                        </label>
-                        <label>yt-dlp --exec command
-                            <input type="text" value={settings.yt_exec_cmd || ""}
-                                placeholder="mpv {}"
-                                onChange={(e) => { settings.yt_exec_cmd = e.target.value }} />
-                        </label>
-                        </div> : null}
-
-                        {settingsTab === "network" ? <div>
-                        <label>User-Agent
-                            <input type="text" value={settings.user_agent || ""}
-                                placeholder="ChemicalDM/0.1"
-                                onChange={(e) => { settings.user_agent = e.target.value }} />
-                        </label>
-                        <label>Cookie file path
-                            <input type="text" value={settings.cookie_file || ""}
-                                placeholder="/path/to/cookies.txt"
-                                onChange={(e) => { settings.cookie_file = e.target.value }} />
-                        </label>
-                        <label>Referer header
-                            <input type="text" value={settings.referer_header || ""}
-                                placeholder="https://example.com"
-                                onChange={(e) => { settings.referer_header = e.target.value }} />
-                        </label>
-                        <label>Authorization header
-                            <input type="text" value={settings.auth_header || ""}
-                                placeholder="Bearer ..."
-                                onChange={(e) => { settings.auth_header = e.target.value }} />
-                        </label>
-                        <label>Connect timeout (seconds)
-                            <input type="number" min="1" value={settings.connect_timeout || 30}
-                                onChange={(e) => { settings.connect_timeout = parseInt(e.target.value) || 30 }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.verify_ssl !== false}
-                                    onChange={(e) => { settings.verify_ssl = e.target.checked }} />
-                                Verify SSL certificates
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.force_ipv4 || false}
-                                    onChange={(e) => { settings.force_ipv4 = e.target.checked }} />
-                                Force IPv4
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.force_ipv6 || false}
-                                    onChange={(e) => { settings.force_ipv6 = e.target.checked }} />
-                                Force IPv6
-                            </label>
-                        </div>
-
-                        <div class="cdm-section-header">Proxy</div>
-
-                        <label>HTTP proxy host
-                            <input type="text" value={settings.proxy_host || ""}
-                                placeholder="127.0.0.1"
-                                onChange={(e) => { settings.proxy_host = e.target.value }} />
-                        </label>
-                        <label>HTTP proxy port
-                            <input type="number" min="0" max="65535" value={settings.proxy_port || 0}
-                                onChange={(e) => { settings.proxy_port = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>yt-dlp proxy (socks5://host:port)
-                            <input type="text" value={settings.yt_proxy || ""}
-                                placeholder="socks5://127.0.0.1:1080"
-                                onChange={(e) => { settings.yt_proxy = e.target.value }} />
-                        </label>
-                        <label>Source IP address
-                            <input type="text" value={settings.yt_source_address || ""}
-                                placeholder="Auto"
-                                onChange={(e) => { settings.yt_source_address = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_geo_bypass || false}
-                                    onChange={(e) => { settings.yt_geo_bypass = e.target.checked }} />
-                                Geo-restriction bypass
-                            </label>
-                        </div>
-                        <label>Geo-bypass country code
-                            <input type="text" value={settings.yt_geo_bypass_country || ""}
-                                placeholder="US"
-                                onChange={(e) => { settings.yt_geo_bypass_country = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_no_check_certificates || false}
-                                    onChange={(e) => { settings.yt_no_check_certificates = e.target.checked }} />
-                                Skip SSL certificate verification
-                            </label>
-                        </div>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.yt_legacy_server_connect || false}
-                                    onChange={(e) => { settings.yt_legacy_server_connect = e.target.checked }} />
-                                Legacy SSL connections
-                            </label>
-                        </div>
-                        <label>Socket timeout (seconds)
-                            <input type="number" min="1" value={settings.yt_socket_timeout || 30}
-                                onChange={(e) => { settings.yt_socket_timeout = parseInt(e.target.value) || 30 }} />
-                        </label>
-                        <label>Extractor retries
-                            <input type="number" min="0" value={settings.yt_extractor_retries || 3}
-                                onChange={(e) => { settings.yt_extractor_retries = parseInt(e.target.value) || 3 }} />
-                        </label>
-                        </div> : null}
-
-                        {settingsTab === "advanced" ? <div>
-                        <div class="cdm-section-header">Limits</div>
-
-                        <label>Max download size (bytes, 0 = unlimited)
-                            <input type="number" min="0" value={settings.max_download_size || 0}
-                                onChange={(e) => { settings.max_download_size = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Min free disk space (MB, 0 = check disabled)
-                            <input type="number" min="0" value={settings.min_disk_space_mb || 0}
-                                onChange={(e) => { settings.min_disk_space_mb = parseInt(e.target.value) || 0 }} />
-                        </label>
-                        <label>Per-download speed limit (KB/s, 0=unlimited)
-                            <input type="number" min="0" value={settings.bandwidth_limit_per || 0}
-                                onChange={(e) => { settings.bandwidth_limit_per = parseInt(e.target.value) || 0 }} />
-                        </label>
-
-                        <div class="cdm-section-header">Files</div>
-
-                        <label>Filename template (placeholders: name, ext, date)
-                            <input type="text" value={settings.filename_template || ""}
-                                placeholder="name.ext"
-                                onChange={(e) => { settings.filename_template = e.target.value }} />
-                        </label>
-                        <label>Post-download command (placeholder: path = output file)
-                            <input type="text" value={settings.post_download_cmd || ""}
-                                placeholder="mpv"
-                                onChange={(e) => { settings.post_download_cmd = e.target.value }} />
-                        </label>
-                        <label>Checksum verification (md5, sha256)
-                            <input type="text" value={settings.checksum || ""}
-                                placeholder="sha256"
-                                onChange={(e) => { settings.checksum = e.target.value }} />
-                        </label>
-
-                        <div class="cdm-section-header">Post-Processing (ffmpeg)</div>
-
-                        <label>Video codec
-                            <select value={settings.ffmpeg_video_codec || ""}
-                                onChange={(e) => { settings.ffmpeg_video_codec = e.target.value }}>
-                                <option value="">Default (copy)</option>
-                                <option value="h264">H.264</option>
-                                <option value="h265">H.265/HEVC</option>
-                                <option value="vp9">VP9</option>
-                                <option value="av1">AV1</option>
-                            </select>
-                        </label>
-                        <label>Audio codec
-                            <select value={settings.ffmpeg_audio_codec || ""}
-                                onChange={(e) => { settings.ffmpeg_audio_codec = e.target.value }}>
-                                <option value="">Default (copy)</option>
-                                <option value="aac">AAC</option>
-                                <option value="mp3">MP3</option>
-                                <option value="opus">Opus</option>
-                            </select>
-                        </label>
-                        <label>Audio bitrate
-                            <select value={settings.ffmpeg_audio_bitrate || ""}
-                                onChange={(e) => { settings.ffmpeg_audio_bitrate = e.target.value }}>
-                                <option value="">Default</option>
-                                <option value="128K">128K</option>
-                                <option value="192K">192K</option>
-                                <option value="256K">256K</option>
-                                <option value="320K">320K</option>
-                            </select>
-                        </label>
-                        <label>Custom ffmpeg path
-                            <input type="text" value={settings.yt_ffmpeg_location || ""}
-                                placeholder="/usr/bin/ffmpeg"
-                                onChange={(e) => { settings.yt_ffmpeg_location = e.target.value }} />
-                        </label>
-
-                        <div class="cdm-section-header">Appearance</div>
-
-                        <label>Theme
-                            <select value={settings.theme || "auto"}
-                                onChange={(e) => { settings.theme = e.target.value }}>
-                                <option value="auto">Auto (system)</option>
-                                <option value="light">Light</option>
-                                <option value="dark">Dark</option>
-                            </select>
-                        </label>
-                        <label>Language (empty = auto)
-                            <input type="text" value={settings.language || ""}
-                                placeholder="en"
-                                onChange={(e) => { settings.language = e.target.value }} />
-                        </label>
-                        <div class="cdm-toggle-row">
-                            <label class="cdm-toggle-label">
-                                <input type="checkbox" checked={settings.notifications_enabled !== false}
-                                    onChange={(e) => { settings.notifications_enabled = e.target.checked }} />
-                                Desktop notifications
-                            </label>
-                        </div>
-                        <label>Max history items (0 = unlimited)
-                            <input type="number" min="0" value={settings.max_history || 0}
-                                onChange={(e) => { settings.max_history = parseInt(e.target.value) || 0 }} />
-                        </label>
-
-                        <div class="cdm-section-header">Backup</div>
-
-                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                            <button class="cdm-btn" onClick={() => {
-                                var path = prompt("Export settings to file:", "/tmp/cdm-settings.json")
-                                if(path) {
-                                    asyncBridge("settings_export", JSON.stringify({ path: path }), function(d) {
-                                        if(d && d.ok) { showToast("Settings exported to " + path) }
-                                        else { showToast(d && d.error ? d.error : "Export failed", "error") }
-                                    })
-                                }
-                            }}>Export Settings</button>
-                            <button class="cdm-btn" onClick={() => {
-                                var path = prompt("Import settings from file:", "/tmp/cdm-settings.json")
-                                if(path) {
-                                    asyncBridge("settings_import", JSON.stringify({ path: path }), function(d) {
-                                        if(d && d.ok) {
-                                            showToast("Settings imported — refreshing")
-                                            refreshSettings()
-                                        } else {
-                                            showToast(d && d.error ? d.error : "Import failed", "error")
-                                        }
-                                    })
-                                }
-                            }}>Import Settings</button>
-                        </div>
-                        <p style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", marginTop: "4px" }}>Export saves current settings to a JSON file. Import loads and applies settings from a file.</p>
-                        </div> : null}
-                    </div>
-                    <div class="cdm-dialog-footer">
-                        <button class="cdm-btn" onClick={() => { showSettings = false }}>Cancel</button>
-                        <button class="cdm-add-btn" onClick={applySettings}>Save Settings</button>
-                    </div>
-                </div>
-            </div>
-        ) : null}
+        {showSettings ? <CdmSettingsDialog settings={settings} reset={resetField} apply={applySettings} bridge={asyncBridge} toast={showToast} refresh={refreshSettings} close={() => { showSettings = false }} /> : null}
 
         {addOpen ? (
             <div class="cdm-dialog-overlay" onClick={() => { addOpen = false }}>
@@ -1900,19 +1395,11 @@
                                     </div>
                                 ) : null}
 
-                                <div class="cdm-toggle-row" style="margin-top:10px;">
-                                    <label class="cdm-toggle-label">
-                                        <input type="checkbox" checked={ytAutoMerge}
-                                            onChange={(e) => { ytAutoMerge = e.target.checked }} />
-                                        Auto-merge video + audio
-                                    </label>
+                                <div class="cdm-yt-toggle" style="margin-top:10px;">
+                                    <Switch checked={ytAutoMerge} size="sm" onChange={(e) => { ytAutoMerge = e.target.checked }}>Auto-merge video + audio</Switch>
                                 </div>
-                                <div class="cdm-toggle-row">
-                                    <label class="cdm-toggle-label">
-                                        <input type="checkbox" checked={ytDeleteSeparate}
-                                            onChange={(e) => { ytDeleteSeparate = e.target.checked }} />
-                                        Delete separate files after merge
-                                    </label>
+                                <div class="cdm-yt-toggle">
+                                    <Switch checked={ytDeleteSeparate} size="sm" onChange={(e) => { ytDeleteSeparate = e.target.checked }}>Delete separate files after merge</Switch>
                                 </div>
                                 {ytInfo && ytInfo.is_playlist ? (
                                     <div style="margin-top:8px;">
@@ -2128,3 +1615,591 @@
         {<ErrorOverlay />}
     </div>
 }
+
+// Settings dialog building blocks. Top-level #universal components so the
+// framework's component resolver finds them (local var-components have no
+// precedent in this codebase). CdmSec renders a titled section with a plain-
+// language description; CdmRow is one label/description + control line.
+#universal CdmSec(props) {
+    return <div class="cdm-set-sec">
+        <div class="cdm-set-sec-head">
+            <div class="cdm-set-title">{props.title}</div>
+            {props.desc ? <div class="cdm-set-desc">{props.desc}</div> : null}
+        </div>
+        {props.children}
+    </div>
+}
+
+#universal CdmRow(props) {
+    return <div class="cdm-set-row">
+        <div class="cdm-set-row-text">
+            <div class="cdm-set-row-label">{props.label}</div>
+            {props.desc ? <div class="cdm-set-row-desc">{props.desc}</div> : null}
+        </div>
+        {props.children}
+    </div>
+}
+// ─── Settings dialog ───────────────────────────────────────────────────────
+// Extracted into its own component: the deep tab ternaries live in a fresh
+// component scope (a current parser bug mis-tracks deeply nested ternaries in
+// the main tree), and the dialog keeps its own nav state.
+#universal CdmSettingsDialog(props) {
+    state settingsTab = "general"
+    state settingsSection = "general"
+    if(props.settings) {
+        return <div class="cdm-dialog-overlay" onClick={props.close}>
+                <div class="cdm-dialog" onClick={(e) => { e.stopPropagation() }}>
+                    <div class="cdm-dialog-header">
+                        <div class="cdm-dialog-title"><span class="cdm-ic cdm-ic-sliders"></span> Settings</div>
+                        <button class="cdm-dialog-close" onClick={props.close}>&#10005;</button>
+                    </div>
+                    <div class="cdm-dialog-body cdm-set-body">
+                        <div class="cdm-set-rail">
+                            <div class="cdm-set-group">General</div>
+                            <button class={"cdm-set-nav" + (settingsSection === "general" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "general" }}>Downloads</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "speed" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "speed" }}>Speed</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "reliability" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "reliability" }}>Reliability</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "organization" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "organization" }}>Organization</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "automation" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "automation" }}>Automation</button>
+                            <div class="cdm-set-group">Network</div>
+                            <button class={"cdm-set-nav" + (settingsSection === "headers" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "headers" }}>Headers</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "connection" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "connection" }}>Connection</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "security" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "security" }}>Cookies and SSL</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "proxy" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "proxy" }}>Proxy</button>
+                            <div class="cdm-set-group">YouTube</div>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytvideo" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytvideo" }}>Video</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytaudio" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytaudio" }}>Audio</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytsubs" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytsubs" }}>Subtitles</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytmeta" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytmeta" }}>Metadata</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytpl" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytpl" }}>Playlists</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytadv" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytadv" }}>YouTube Advanced</button>
+                            <div class="cdm-set-group">System</div>
+                            <button class={"cdm-set-nav" + (settingsSection === "limits" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "limits" }}>Limits</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "files" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "files" }}>Files</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ffmpeg" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "ffmpeg" }}>ffmpeg</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "appearance" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "appearance" }}>Appearance</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "backup" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "backup" }}>Backup</button>
+                        </div>
+                        <div class="cdm-set-panel">
+
+                        {settingsTab === "general" ? <div>
+                        <CdmSec title="Download folder" desc="Where completed files are saved. Category subfolders may add a folder inside this one.">
+                            <CdmRow label="Save files to" desc="">
+                                <div class="cdm-set-controls">
+                                <input type="text" value={props.settings.download_dir}
+                                    onChange={(e) => { props.settings.download_dir = e.target.value }} />
+                                <button class="cdm-btn" onClick={() => {
+                                    props.bridge("browse_folder", "{}", function(d) {
+                                        if(d && d.ok && d.path) {
+                                            props.settings.download_dir = d.path
+                                            // Persist to native so settings_json reflects the change,
+                                            // then re-fetch to trigger a full re-render.
+                                            props.bridge("settings_set", JSON.stringify({download_dir: d.path}), function() {
+                                                props.refresh()
+                                            })
+                                            props.toast("Folder: " + d.path, "success")
+                                        }
+                                    })
+                                }}>Browse</button>
+                                </div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Parallel downloads" desc="How many downloads run at the same time. More is not always faster — some servers throttle.">
+                            <CdmRow label="At the same time" desc="1 to 10. If a download looks stuck, try lowering this.">
+                                <div class="cdm-set-controls"><input type="number" min="1" max="10" value={props.settings.max_concurrent}
+                                    onChange={(e) => { props.settings.max_concurrent = parseInt(e.target.value) || 1 }} /></div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Splitting" desc="Big files are downloaded in several pieces at once, which is usually faster. Small files are never split.">
+                            <CdmRow label="Pieces per download" desc="2 to 32. More pieces help on fast, reliable servers.">
+                                <div class="cdm-set-controls"><input type="number" min="2" max="32" value={props.settings.max_segments}
+                                    onChange={(e) => { props.settings.max_segments = parseInt(e.target.value) || 4 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Allow splitting" desc="Turn off to always download in one piece. Some servers behave better that way.">
+                                <Switch checked={props.settings.allow_segments} size="sm" onChange={(e) => { props.settings.allow_segments = e.target.checked }}> </Switch>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Speed" desc="Limits how fast ChemicalDM downloads. Useful when you need your connection for other things.">
+                            <CdmRow label="Overall speed limit" desc="KB per second, shared by all downloads. 0 means no limit.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.speed_limit_kbps}
+                                    onChange={(e) => { props.settings.speed_limit_kbps = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                        </CdmSec>
+                        <label>Duplicate files handling
+                            <select value={props.settings.duplicate_action}
+                                onChange={(e) => { props.settings.duplicate_action = parseInt(e.target.value) || 0 }}>
+                                <option value="0">Rename (report (1).pdf)</option>
+                                <option value="1">Overwrite</option>
+                                <option value="2">Skip</option>
+                            </select>
+                        </label>
+                        <CdmSec title="Organization" desc="How finished files are sorted and named when two files would share a name.">
+                            <CdmRow label="Sort into category folders" desc="Videos, music, programs and archives each get their own folder inside the download folder.">
+                                <Switch checked={props.settings.use_categories} size="sm" onChange={(e) => { props.settings.use_categories = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Duplicate files" desc="What to do when the download folder already has a file with the same name.">
+                                <select value={props.settings.duplicate_action}
+                                    onChange={(e) => { props.settings.duplicate_action = parseInt(e.target.value) || 0 }}>
+                                    <option value="0">Rename new file as "name (1).ext"</option>
+                                    <option value="1">Overwrite the old file</option>
+                                    <option value="2">Skip the download</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Auto-rename duplicates" desc="Extra safety net: rename even if the duplicate check is off.">
+                                <Switch checked={props.settings.auto_rename_duplicates || false} size="sm" onChange={(e) => { props.settings.auto_rename_duplicates = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Move completed files to" desc="Leave empty to keep files in the download folder.">
+                                <div class="cdm-set-controls"><input type="text" value={props.settings.move_completed_to || ""}
+                                    placeholder="Leave in the download folder"
+                                    onChange={(e) => { props.settings.move_completed_to = e.target.value }} /></div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Reliability" desc="What ChemicalDM does when a connection drops mid-download.">
+                            <CdmRow label="Resume interrupted downloads" desc="Continue where the download left off instead of starting over. Works with most modern servers.">
+                                <Switch checked={props.settings.enable_resume} size="sm" onChange={(e) => { props.settings.enable_resume = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Retry failed downloads" desc="How many times to retry automatically. Use -1 to keep trying forever, 0 to never retry.">
+                                <div class="cdm-set-controls"><input type="number" min="-1" value={props.settings.max_retries}
+                                    onChange={(e) => { props.settings.max_retries = parseInt(e.target.value) }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Wait between retries" desc="Seconds to wait before each retry attempt.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={Math.round((props.settings.retry_delay_ms || 0) / 1000)}
+                                    onChange={(e) => { props.settings.retry_delay_ms = (parseInt(e.target.value) || 0) * 1000 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Auto-resume failed downloads at launch" desc="When the app starts, automatically retry downloads that failed last time.">
+                                <Switch checked={props.settings.auto_resume_failed} size="sm" onChange={(e) => { props.settings.auto_resume_failed = e.target.checked }}> </Switch>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Automation" desc="Hands-free conveniences.">
+                            <CdmRow label="Monitor clipboard for URLs" desc="Offer to download when a link is copied.">
+                                <Switch checked={props.settings.clipboard_monitor || false} size="sm" onChange={(e) => { props.settings.clipboard_monitor = e.target.checked }}> </Switch>
+                            </CdmRow>
+                        </CdmSec>
+                        </div> : null}
+
+                        {settingsTab === "youtube" ? <div>
+                        <CdmSec title="Video" desc="Quality and container for YouTube downloads.">
+                            <CdmRow label="Video quality" desc="Best available picks the highest resolution the video offers.">
+                                <select value={props.settings.yt_quality || ""}
+                                    onChange={(e) => { props.settings.yt_quality = e.target.value }}>
+                                    <option value="">Best available</option>
+                                    <option value="2160">2160p (4K)</option>
+                                    <option value="1440">1440p (2K)</option>
+                                    <option value="1080">1080p</option>
+                                    <option value="720">720p</option>
+                                    <option value="480">480p</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Container" desc="MP4 plays on everything.">
+                                <select value={props.settings.yt_format || ""}
+                                    onChange={(e) => { props.settings.yt_format = e.target.value }}>
+                                    <option value="">Best compatibility</option>
+                                    <option value="mp4">MP4</option>
+                                    <option value="mkv">MKV</option>
+                                    <option value="webm">WebM</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Merge format" desc="When video and audio come as separate streams, they are merged into this container.">
+                                <select value={props.settings.yt_merge_output_format || "mp4"}
+                                    onChange={(e) => { props.settings.yt_merge_output_format = e.target.value }}>
+                                    <option value="mp4">MP4</option>
+                                    <option value="mkv">MKV</option>
+                                    <option value="webm">WebM</option>
+                                    <option value="avi">AVI</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Recode after download" desc="Extra re-encoding pass. Only use if you need a specific format.">
+                                <select value={props.settings.yt_recode_video || ""}
+                                    onChange={(e) => { props.settings.yt_recode_video = e.target.value }}>
+                                    <option value="">Do not recode</option>
+                                    <option value="mp4">MP4</option>
+                                    <option value="mkv">MKV</option>
+                                    <option value="webm">WebM</option>
+                                </select>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Audio" desc="Save just the sound, or attach audio handling to video downloads.">
+                            <CdmRow label="Download audio only" desc="Saves an audio file instead of a video.">
+                                <Switch checked={props.settings.yt_audio_only || false} size="sm" onChange={(e) => { props.settings.yt_audio_only = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Audio format" desc="Used when downloading audio only.">
+                                <select value={props.settings.yt_audio_format || ""}
+                                    onChange={(e) => { props.settings.yt_audio_format = e.target.value }}>
+                                    <option value="">Best available</option>
+                                    <option value="mp3">MP3</option>
+                                    <option value="aac">AAC</option>
+                                    <option value="flac">FLAC</option>
+                                    <option value="opus">Opus</option>
+                                    <option value="vorbis">Vorbis</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Audio quality" desc="0 is best, 10 is worst. Applies to lossy formats like MP3.">
+                                <div class="cdm-set-controls"><input type="number" min="0" max="10" value={props.settings.yt_audio_quality || 0}
+                                    onChange={(e) => { props.settings.yt_audio_quality = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Playlists" desc="How playlists are downloaded.">
+                            <CdmRow label="Limit items per playlist" desc="0 downloads the whole playlist.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.yt_max_playlist_items || 0}
+                                    onChange={(e) => { props.settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Start at item" desc="First video to download, counting from 1.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.yt_playlist_start || 0}
+                                    onChange={(e) => { props.settings.yt_playlist_start = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Stop after item" desc="0 downloads to the end of the playlist.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.yt_playlist_end || 0}
+                                    onChange={(e) => { props.settings.yt_playlist_end = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Only these items" desc="Comma-separated positions, e.g. 1,2,5-10. Leave empty for all.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_playlist_items || ""}
+                                        placeholder="All items"
+                                        onChange={(e) => { props.settings.yt_playlist_items = e.target.value }} />
+                                    {props.settings.yt_playlist_items ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_playlist_items") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Output name pattern" desc="Advanced: yt-dlp output template, e.g. %(title)s.%(ext)s.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_output_template || ""}
+                                        placeholder="Title.ext (default)"
+                                        onChange={(e) => { props.settings.yt_output_template = e.target.value }} />
+                                    {props.settings.yt_output_template ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_output_template") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                        </CdmSec>                        <CdmSec title="Subtitles" desc="Download and embed subtitle tracks.">
+                            <CdmRow label="Download subtitles" desc="Save subtitle files next to the video.">
+                                <Switch checked={props.settings.yt_write_subs || false} size="sm" onChange={(e) => { props.settings.yt_write_subs = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Include auto-generated" desc="Also fetch YouTube's auto-generated captions.">
+                                <Switch checked={props.settings.yt_write_auto_subs || false} size="sm" onChange={(e) => { props.settings.yt_write_auto_subs = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Languages" desc="Comma-separated codes, e.g. en,ja,es.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_sub_langs || ""}
+                                        placeholder="English only"
+                                        onChange={(e) => { props.settings.yt_sub_langs = e.target.value }} />
+                                    {props.settings.yt_sub_langs ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_sub_langs") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Embed subtitles in video" desc="Bake subtitles into the container so players show them without extra files.">
+                                <Switch checked={props.settings.yt_embed_subs || false} size="sm" onChange={(e) => { props.settings.yt_embed_subs = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Convert subtitles to" desc="SRT works in most players.">
+                                <select value={props.settings.yt_convert_subs || ""}
+                                    onChange={(e) => { props.settings.yt_convert_subs = e.target.value }}>
+                                    <option value="">Keep original format</option>
+                                    <option value="srt">SRT</option>
+                                    <option value="vtt">VTT</option>
+                                    <option value="ass">ASS</option>
+                                </select>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Metadata" desc="Extra information saved with or inside the video.">
+                            <CdmRow label="Embed metadata" desc="Write title, artist and other tags into the file.">
+                                <Switch checked={props.settings.yt_embed_metadata !== false} size="sm" onChange={(e) => { props.settings.yt_embed_metadata = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Embed thumbnail as cover art" desc="Shows the video thumbnail in music players and file managers.">
+                                <Switch checked={props.settings.yt_embed_thumbnail || false} size="sm" onChange={(e) => { props.settings.yt_embed_thumbnail = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Write description file" desc="Saves video description as a .description text file.">
+                                <Switch checked={props.settings.yt_write_description || false} size="sm" onChange={(e) => { props.settings.yt_write_description = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Write info.json file" desc="All known video data as JSON. Useful for archiving.">
+                                <Switch checked={props.settings.yt_write_info_json || false} size="sm" onChange={(e) => { props.settings.yt_write_info_json = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Write comments" desc="Also saves video comments. Slows things down for large videos.">
+                                <Switch checked={props.settings.yt_write_comments || false} size="sm" onChange={(e) => { props.settings.yt_write_comments = e.target.checked }}> </Switch>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="SponsorBlock" desc="Skip or remove in-video sponsor reads and self-promotion, using the community SponsorBlock database.">
+                            <CdmRow label="Remove sponsor segments" desc="Cuts sponsor reads out of the saved video.">
+                                <Switch checked={props.settings.yt_remove_sponsorblock || false} size="sm" onChange={(e) => { props.settings.yt_remove_sponsorblock = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Mark sponsor segments" desc="Keeps the video intact but tags segments with these SponsorBlock categories.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_sponsorblock_mark || ""}
+                                        placeholder="Do not mark"
+                                        onChange={(e) => { props.settings.yt_sponsorblock_mark = e.target.value }} />
+                                    {props.settings.yt_sponsorblock_mark ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_sponsorblock_mark") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Run command after each download" desc="Advanced: yt-dlp --exec, with {} as the output file.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_exec_cmd || ""}
+                                        placeholder="No command"
+                                        onChange={(e) => { props.settings.yt_exec_cmd = e.target.value }} />
+                                    {props.settings.yt_exec_cmd ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_exec_cmd") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="ASCII-only filenames" desc="Avoid special characters in saved file names.">
+                                <Switch checked={props.settings.yt_restrict_filenames || false} size="sm" onChange={(e) => { props.settings.yt_restrict_filenames = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Limit filename length" desc="Truncate file names to this many characters. 0 keeps full names.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.yt_trim_filenames || 0}
+                                    onChange={(e) => { props.settings.yt_trim_filenames = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Do not overwrite existing files" desc="Skip a YouTube download when its file already exists.">
+                                <Switch checked={props.settings.yt_no_overwrites || false} size="sm" onChange={(e) => { props.settings.yt_no_overwrites = e.target.checked }}> </Switch>
+                            </CdmRow>
+                        </CdmSec>
+                        </div> : null}
+
+                        {settingsTab === "network" ? <div>
+                        <CdmSec title="Identification" desc="How ChemicalDM presents itself to websites. Most downloads work fine with the defaults.">
+                            <CdmRow label="User-Agent" desc="Only change this if a site blocks the default.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.user_agent || ""}
+                                        placeholder="Default (ChemicalDM)"
+                                        onChange={(e) => { props.settings.user_agent = e.target.value }} />
+                                    {props.settings.user_agent ? <button class="cdm-set-reset" onClick={() => { props.reset("user_agent") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Referer header" desc="Sends a referring address with requests. Rarely needed.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.referer_header || ""}
+                                        placeholder="None"
+                                        onChange={(e) => { props.settings.referer_header = e.target.value }} />
+                                    {props.settings.referer_header ? <button class="cdm-set-reset" onClick={() => { props.reset("referer_header") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Authorization header" desc="For servers that require a token, e.g. Bearer abc123.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.auth_header || ""}
+                                        placeholder="None"
+                                        onChange={(e) => { props.settings.auth_header = e.target.value }} />
+                                    {props.settings.auth_header ? <button class="cdm-set-reset" onClick={() => { props.reset("auth_header") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Connection" desc="Low-level network behaviour. Leave as is unless downloads misbehave.">
+                            <CdmRow label="Connect timeout" desc="Give up connecting after this many seconds.">
+                                <div class="cdm-set-controls"><input type="number" min="1" value={props.settings.connect_timeout || 30}
+                                    onChange={(e) => { props.settings.connect_timeout = parseInt(e.target.value) || 30 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Force IPv4" desc="Skip IPv6 entirely. Helps on networks with broken IPv6.">
+                                <Switch checked={props.settings.force_ipv4 || false} size="sm" onChange={(e) => { props.settings.force_ipv4 = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Force IPv6" desc="IPv4 and IPv6 cannot both be forced.">
+                                <Switch checked={props.settings.force_ipv6 || false} size="sm" onChange={(e) => { props.settings.force_ipv6 = e.target.checked }}> </Switch>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Cookies and SSL" desc="Signed-in downloads and certificate handling.">
+                            <CdmRow label="Cookie file" desc="Export a cookies.txt from your browser to download from sites you are signed in to.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.cookie_file || ""}
+                                        placeholder="Not using cookies"
+                                        onChange={(e) => { props.settings.cookie_file = e.target.value }} />
+                                    {props.settings.cookie_file ? <button class="cdm-set-reset" onClick={() => { props.reset("cookie_file") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Verify SSL certificates" desc="Turn off only for servers with self-signed certificates — this reduces security.">
+                                <Switch checked={props.settings.verify_ssl !== false} size="sm" onChange={(e) => { props.settings.verify_ssl = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Skip SSL verification for YouTube" desc="yt-dlp only. For networks that intercept HTTPS traffic.">
+                                <Switch checked={props.settings.yt_no_check_certificates || false} size="sm" onChange={(e) => { props.settings.yt_no_check_certificates = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Legacy SSL connections" desc="Allow older TLS versions for very old servers.">
+                                <Switch checked={props.settings.yt_legacy_server_connect || false} size="sm" onChange={(e) => { props.settings.yt_legacy_server_connect = e.target.checked }}> </Switch>
+                            </CdmRow>
+                        </CdmSec>
+
+                        <CdmSec title="Proxy" desc="Route downloads through a proxy server. All fields are optional.">
+                            <CdmRow label="HTTP proxy host" desc="Address of the proxy, e.g. 127.0.0.1. Leave empty for direct connection.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.proxy_host || ""}
+                                        placeholder="Direct connection"
+                                        onChange={(e) => { props.settings.proxy_host = e.target.value }} />
+                                    {props.settings.proxy_host ? <button class="cdm-set-reset" onClick={() => { props.reset("proxy_host") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="HTTP proxy port" desc="Usually 8080 or 1080.">
+                                <div class="cdm-set-controls"><input type="number" min="0" max="65535" value={props.settings.proxy_port || 0}
+                                    onChange={(e) => { props.settings.proxy_port = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="YouTube proxy" desc="Separate proxy for yt-dlp, e.g. socks5://127.0.0.1:1080.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_proxy || ""}
+                                        placeholder="Same as above (none by default)"
+                                        onChange={(e) => { props.settings.yt_proxy = e.target.value }} />
+                                    {props.settings.yt_proxy ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_proxy") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Source IP address" desc="Use a specific network interface. Leave empty for automatic.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_source_address || ""}
+                                        placeholder="Automatic"
+                                        onChange={(e) => { props.settings.yt_source_address = e.target.value }} />
+                                    {props.settings.yt_source_address ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_source_address") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Geo-restriction bypass" desc="Work around region-locked videos.">
+                                <Switch checked={props.settings.yt_geo_bypass || false} size="sm" onChange={(e) => { props.settings.yt_geo_bypass = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="Geo-bypass country" desc="Pretend to browse from this country code, e.g. US.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_geo_bypass_country || ""}
+                                        placeholder="Automatic"
+                                        onChange={(e) => { props.settings.yt_geo_bypass_country = e.target.value }} />
+                                    {props.settings.yt_geo_bypass_country ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_geo_bypass_country") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Socket timeout (YouTube)" desc="Give up on stalled YouTube requests after this many seconds.">
+                                <div class="cdm-set-controls"><input type="number" min="1" value={props.settings.yt_socket_timeout || 30}
+                                    onChange={(e) => { props.settings.yt_socket_timeout = parseInt(e.target.value) || 30 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Extractor retries (YouTube)" desc="Retry failed video-page lookups this many times.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.yt_extractor_retries || 3}
+                                    onChange={(e) => { props.settings.yt_extractor_retries = parseInt(e.target.value) || 3 }} /></div>
+                            </CdmRow>
+                        </CdmSec>
+                        </div> : null}
+
+                        {settingsTab === "advanced" ? <div>
+                        <CdmSec title="Limits" desc="Guard rails for large downloads and full disks.">
+                            <CdmRow label="Max download size" desc="Downloads bigger than this are rejected. 0 disables the check.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={Math.round((props.settings.max_download_size || 0) / 1048576)}
+                                    onChange={(e) => { props.settings.max_download_size = (parseInt(e.target.value) || 0) * 1048576 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Min free disk space" desc="Pause before writing if the disk has less than this much room left.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.min_disk_space_mb || 0}
+                                    onChange={(e) => { props.settings.min_disk_space_mb = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                            <CdmRow label="Per-download speed limit" desc="KB per second for each individual download. 0 means no limit.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.bandwidth_limit_per || 0}
+                                    onChange={(e) => { props.settings.bandwidth_limit_per = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Files" desc="Naming and automatic actions for finished downloads.">
+                            <CdmRow label="Filename template" desc="Advanced: available placeholders are name, ext and date.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.filename_template || ""}
+                                        placeholder="Original names"
+                                        onChange={(e) => { props.settings.filename_template = e.target.value }} />
+                                    {props.settings.filename_template ? <button class="cdm-set-reset" onClick={() => { props.reset("filename_template") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Checksum verification" desc="Verify finished downloads against a published checksum.">
+                                <select value={props.settings.checksum || ""}
+                                    onChange={(e) => { props.settings.checksum = e.target.value }}>
+                                    <option value="">Disabled</option>
+                                    <option value="md5">MD5</option>
+                                    <option value="sha256">SHA-256</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Run command after download" desc="Runs with the output file path. Leave empty for nothing.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.post_download_cmd || ""}
+                                        placeholder="No command"
+                                        onChange={(e) => { props.settings.post_download_cmd = e.target.value }} />
+                                    {props.settings.post_download_cmd ? <button class="cdm-set-reset" onClick={() => { props.reset("post_download_cmd") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="ffmpeg" desc="Re-encoding options for merged YouTube videos. Default keeps the original quality.">
+                            <CdmRow label="Video codec" desc="Re-encoding is slower. Keep original unless you need a specific codec.">
+                                <select value={props.settings.ffmpeg_video_codec || ""}
+                                    onChange={(e) => { props.settings.ffmpeg_video_codec = e.target.value }}>
+                                    <option value="">Keep original</option>
+                                    <option value="h264">H.264 (most compatible)</option>
+                                    <option value="h265">H.265 / HEVC (smaller files)</option>
+                                    <option value="vp9">VP9</option>
+                                    <option value="av1">AV1</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Audio codec">
+                                <select value={props.settings.ffmpeg_audio_codec || ""}
+                                    onChange={(e) => { props.settings.ffmpeg_audio_codec = e.target.value }}>
+                                    <option value="">Keep original</option>
+                                    <option value="aac">AAC</option>
+                                    <option value="mp3">MP3</option>
+                                    <option value="opus">Opus</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Audio bitrate" desc="Only used when an audio codec is set.">
+                                <select value={props.settings.ffmpeg_audio_bitrate || ""}
+                                    onChange={(e) => { props.settings.ffmpeg_audio_bitrate = e.target.value }}>
+                                    <option value="">Automatic</option>
+                                    <option value="128K">128 Kbps</option>
+                                    <option value="192K">192 Kbps</option>
+                                    <option value="256K">256 Kbps</option>
+                                    <option value="320K">320 Kbps</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="ffmpeg location" desc="Leave empty to use the version bundled with or installed by the app.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.yt_ffmpeg_location || ""}
+                                        placeholder="Automatic"
+                                        onChange={(e) => { props.settings.yt_ffmpeg_location = e.target.value }} />
+                                    {props.settings.yt_ffmpeg_location ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_ffmpeg_location") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                        </CdmSec>
+
+                        <CdmSec title="Appearance" desc="How ChemicalDM looks and sounds.">
+                            <CdmRow label="Theme" desc="Auto follows your system appearance.">
+                                <select value={props.settings.theme || "auto"}
+                                    onChange={(e) => { props.settings.theme = e.target.value }}>
+                                    <option value="auto">Auto (system)</option>
+                                    <option value="dark">Dark</option>
+                                    <option value="light">Light</option>
+                                </select>
+                            </CdmRow>
+                            <CdmRow label="Language" desc="Application language. Empty uses your system language.">
+                                <div class="cdm-set-controls">
+                                    <input type="text" value={props.settings.language || ""}
+                                        placeholder="System language"
+                                        onChange={(e) => { props.settings.language = e.target.value }} />
+                                    {props.settings.language ? <button class="cdm-set-reset" onClick={() => { props.reset("language") }}>Reset</button> : null}
+                                </div>
+                            </CdmRow>
+                            <CdmRow label="Desktop notifications" desc="Notify when downloads finish or fail.">
+                                <Switch checked={props.settings.notifications_enabled !== false} size="sm" onChange={(e) => { props.settings.notifications_enabled = e.target.checked }}> </Switch>
+                            </CdmRow>
+                            <CdmRow label="History length" desc="How many finished downloads to keep in the list. 0 keeps everything.">
+                                <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.max_history || 0}
+                                    onChange={(e) => { props.settings.max_history = parseInt(e.target.value) || 0 }} /></div>
+                            </CdmRow>
+                        </CdmSec>
+                        <CdmSec title="Backup" desc="Move your settings between machines.">
+                            <div class="cdm-set-buttons">
+                                <button class="cdm-btn" onClick={() => {
+                                    var path = prompt("Export settings to file:", "/tmp/cdm-props.settings.json")
+                                    if(path) {
+                                        props.bridge("settings_export", JSON.stringify({ path: path }), function(d) {
+                                            if(d && d.ok) { props.toast("Settings exported to " + path) }
+                                            else { props.toast(d && d.error ? d.error : "Export failed", "error") }
+                                        })
+                                    }
+                                }}>Export Settings</button>
+                                <button class="cdm-btn" onClick={() => {
+                                    var path = prompt("Import settings from file:", "/tmp/cdm-props.settings.json")
+                                    if(path) {
+                                        props.bridge("settings_import", JSON.stringify({ path: path }), function(d) {
+                                            if(d && d.ok) {
+                                                props.toast("Settings imported — refreshing")
+                                                props.refresh()
+                                            } else {
+                                                props.toast(d && d.error ? d.error : "Import failed", "error")
+                                            }
+                                        })
+                                    }
+                                }}>Import Settings</button>
+                            </div>
+                            <div class="cdm-set-note">Export saves all current settings to a JSON file. Import applies settings from such a file and saves them immediately.</div>
+                        </CdmSec>
+                        </div> : null}
+                    </div>
+                    </div>
+                    <div class="cdm-dialog-footer">
+                        <button class="cdm-btn" onClick={props.close}>Cancel</button>
+                        <button class="cdm-add-btn" onClick={props.apply}>Save Settings</button>
+                    </div>
+                </div>
+            </div>
+        } else {
+            return <div></div>
+        }
+    }
+}
+
