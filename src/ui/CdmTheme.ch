@@ -840,6 +840,14 @@ public func CdmTheme(page : &mut HtmlPage) {
             from { opacity: 0; transform: scale(0.98) translateY(6px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
+        /* Wide variant for the Settings dialog: definite height so WebKit
+           constrains the flex column and the panel becomes the sole scroller. */
+        .cdm-dialog-wide {
+            width: 92%;
+            max-width: 920px;
+            height: min(680px, 88vh);
+            max-height: none;
+        }
         .cdm-dialog-header {
             display: flex;
             align-items: center;
@@ -929,6 +937,7 @@ public func CdmTheme(page : &mut HtmlPage) {
             gap: 0;
             flex: 1;
             min-height: 0;
+            overflow: hidden;
         }
         .cdm-set-rail {
             width: 172px;
@@ -975,8 +984,9 @@ public func CdmTheme(page : &mut HtmlPage) {
         .cdm-set-panel {
             flex: 1;
             min-width: 0;
+            min-height: 0;
             overflow-y: auto;
-            padding: 4px 18px 18px;
+            padding: 4px 22px 22px;
             scroll-behavior: smooth;
         }
         .cdm-set-sec {

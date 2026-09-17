@@ -1621,7 +1621,7 @@
 // precedent in this codebase). CdmSec renders a titled section with a plain-
 // language description; CdmRow is one label/description + control line.
 #universal CdmSec(props) {
-    return <div class="cdm-set-sec">
+    return <div class="cdm-set-sec" id={props.id}>
         <div class="cdm-set-sec-head">
             <div class="cdm-set-title">{props.title}</div>
             {props.desc ? <div class="cdm-set-desc">{props.desc}</div> : null}
@@ -1647,7 +1647,7 @@
     state settingsTab = "general"
     state settingsSection = "general"
     return <div class="cdm-dialog-overlay" onClick={props.close}>
-                <div class="cdm-dialog" onClick={(e) => { e.stopPropagation() }}>
+                <div class="cdm-dialog cdm-dialog-wide" onClick={(e) => { e.stopPropagation() }}>
                     <div class="cdm-dialog-header">
                         <div class="cdm-dialog-title"><span class="cdm-ic cdm-ic-sliders"></span> Settings</div>
                         <button class="cdm-dialog-close" onClick={props.close}>&#10005;</button>
@@ -1655,34 +1655,34 @@
                     <div class="cdm-dialog-body cdm-set-body">
                         <div class="cdm-set-rail">
                             <div class="cdm-set-group">General</div>
-                            <button class={"cdm-set-nav" + (settingsSection === "general" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "general" }}>Downloads</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "speed" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "speed" }}>Speed</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "reliability" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "reliability" }}>Reliability</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "organization" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "organization" }}>Organization</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "automation" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "automation" }}>Automation</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "general" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "general"; setTimeout(() => { var el = document.getElementById("download-folder"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Downloads</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "speed" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "speed"; setTimeout(() => { var el = document.getElementById("speed"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Speed</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "reliability" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "reliability"; setTimeout(() => { var el = document.getElementById("reliability"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Reliability</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "organization" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "organization"; setTimeout(() => { var el = document.getElementById("organization"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Organization</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "automation" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "general"; settingsSection = "automation"; setTimeout(() => { var el = document.getElementById("automation"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Automation</button>
                             <div class="cdm-set-group">Network</div>
-                            <button class={"cdm-set-nav" + (settingsSection === "headers" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "headers" }}>Headers</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "connection" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "connection" }}>Connection</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "security" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "security" }}>Cookies and SSL</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "proxy" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "proxy" }}>Proxy</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "headers" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "headers"; setTimeout(() => { var el = document.getElementById("identification"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Headers</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "connection" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "connection"; setTimeout(() => { var el = document.getElementById("connection"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Connection</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "security" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "security"; setTimeout(() => { var el = document.getElementById("cookies-and-ssl"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Cookies and SSL</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "proxy" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "network"; settingsSection = "proxy"; setTimeout(() => { var el = document.getElementById("proxy"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Proxy</button>
                             <div class="cdm-set-group">YouTube</div>
-                            <button class={"cdm-set-nav" + (settingsSection === "ytvideo" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytvideo" }}>Video</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "ytaudio" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytaudio" }}>Audio</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "ytsubs" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytsubs" }}>Subtitles</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "ytmeta" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytmeta" }}>Metadata</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "ytpl" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytpl" }}>Playlists</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "ytadv" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytadv" }}>YouTube Advanced</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytvideo" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytvideo"; setTimeout(() => { var el = document.getElementById("video"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Video</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytaudio" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytaudio"; setTimeout(() => { var el = document.getElementById("audio"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Audio</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytsubs" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytsubs"; setTimeout(() => { var el = document.getElementById("subtitles"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Subtitles</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytmeta" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytmeta"; setTimeout(() => { var el = document.getElementById("metadata"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Metadata</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytpl" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytpl"; setTimeout(() => { var el = document.getElementById("playlists"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Playlists</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ytadv" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "youtube"; settingsSection = "ytadv"; setTimeout(() => { var el = document.getElementById("sponsorblock"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>YouTube Advanced</button>
                             <div class="cdm-set-group">System</div>
-                            <button class={"cdm-set-nav" + (settingsSection === "limits" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "limits" }}>Limits</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "files" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "files" }}>Files</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "ffmpeg" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "ffmpeg" }}>ffmpeg</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "appearance" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "appearance" }}>Appearance</button>
-                            <button class={"cdm-set-nav" + (settingsSection === "backup" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "backup" }}>Backup</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "limits" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "limits"; setTimeout(() => { var el = document.getElementById("limits"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Limits</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "files" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "files"; setTimeout(() => { var el = document.getElementById("files"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Files</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "ffmpeg" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "ffmpeg"; setTimeout(() => { var el = document.getElementById("ffmpeg"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>ffmpeg</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "appearance" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "appearance"; setTimeout(() => { var el = document.getElementById("appearance"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Appearance</button>
+                            <button class={"cdm-set-nav" + (settingsSection === "backup" ? " cdm-set-nav-active" : "")} onClick={() => { settingsTab = "advanced"; settingsSection = "backup"; setTimeout(() => { var el = document.getElementById("backup"); if(el) { el.scrollIntoView({ block: "start", behavior: "instant" }) } }, 60) }}>Backup</button>
                         </div>
                         <div class="cdm-set-panel">
 
                         {settingsTab === "general" ? <div>
-                        <CdmSec title="Download folder" desc="Where completed files are saved. Category subfolders may add a folder inside this one.">
+                        <CdmSec id="download-folder" title="Download folder" desc="Where completed files are saved. Category subfolders may add a folder inside this one.">
                             <CdmRow label="Save files to" desc="">
                                 <div class="cdm-set-controls">
                                 <input type="text" value={props.settings.download_dir}
@@ -1703,13 +1703,13 @@
                                 </div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Parallel downloads" desc="How many downloads run at the same time. More is not always faster — some servers throttle.">
+                        <CdmSec id="parallel-downloads" title="Parallel downloads" desc="How many downloads run at the same time. More is not always faster — some servers throttle.">
                             <CdmRow label="At the same time" desc="1 to 10. If a download looks stuck, try lowering this.">
                                 <div class="cdm-set-controls"><input type="number" min="1" max="10" value={props.settings.max_concurrent}
                                     onChange={(e) => { props.settings.max_concurrent = parseInt(e.target.value) || 1 }} /></div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Splitting" desc="Big files are downloaded in several pieces at once, which is usually faster. Small files are never split.">
+                        <CdmSec id="splitting" title="Splitting" desc="Big files are downloaded in several pieces at once, which is usually faster. Small files are never split.">
                             <CdmRow label="Pieces per download" desc="2 to 32. More pieces help on fast, reliable servers.">
                                 <div class="cdm-set-controls"><input type="number" min="2" max="32" value={props.settings.max_segments}
                                     onChange={(e) => { props.settings.max_segments = parseInt(e.target.value) || 4 }} /></div>
@@ -1718,7 +1718,7 @@
                                 <Switch checked={props.settings.allow_segments} size="sm" onChange={(e) => { props.settings.allow_segments = e.target.checked }}> </Switch>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Speed" desc="Limits how fast ChemicalDM downloads. Useful when you need your connection for other things.">
+                        <CdmSec id="speed" title="Speed" desc="Limits how fast ChemicalDM downloads. Useful when you need your connection for other things.">
                             <CdmRow label="Overall speed limit" desc="KB per second, shared by all downloads. 0 means no limit.">
                                 <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.speed_limit_kbps}
                                     onChange={(e) => { props.settings.speed_limit_kbps = parseInt(e.target.value) || 0 }} /></div>
@@ -1732,7 +1732,7 @@
                                 <option value="2">Skip</option>
                             </select>
                         </label>
-                        <CdmSec title="Organization" desc="How finished files are sorted and named when two files would share a name.">
+                        <CdmSec id="organization" title="Organization" desc="How finished files are sorted and named when two files would share a name.">
                             <CdmRow label="Sort into category folders" desc="Videos, music, programs and archives each get their own folder inside the download folder.">
                                 <Switch checked={props.settings.use_categories} size="sm" onChange={(e) => { props.settings.use_categories = e.target.checked }}> </Switch>
                             </CdmRow>
@@ -1753,7 +1753,7 @@
                                     onChange={(e) => { props.settings.move_completed_to = e.target.value }} /></div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Reliability" desc="What ChemicalDM does when a connection drops mid-download.">
+                        <CdmSec id="reliability" title="Reliability" desc="What ChemicalDM does when a connection drops mid-download.">
                             <CdmRow label="Resume interrupted downloads" desc="Continue where the download left off instead of starting over. Works with most modern servers.">
                                 <Switch checked={props.settings.enable_resume} size="sm" onChange={(e) => { props.settings.enable_resume = e.target.checked }}> </Switch>
                             </CdmRow>
@@ -1769,7 +1769,7 @@
                                 <Switch checked={props.settings.auto_resume_failed} size="sm" onChange={(e) => { props.settings.auto_resume_failed = e.target.checked }}> </Switch>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Automation" desc="Hands-free conveniences.">
+                        <CdmSec id="automation" title="Automation" desc="Hands-free conveniences.">
                             <CdmRow label="Monitor clipboard for URLs" desc="Offer to download when a link is copied.">
                                 <Switch checked={props.settings.clipboard_monitor || false} size="sm" onChange={(e) => { props.settings.clipboard_monitor = e.target.checked }}> </Switch>
                             </CdmRow>
@@ -1777,7 +1777,7 @@
                         </div> : null}
 
                         {settingsTab === "youtube" ? <div>
-                        <CdmSec title="Video" desc="Quality and container for YouTube downloads.">
+                        <CdmSec id="video" title="Video" desc="Quality and container for YouTube downloads.">
                             <CdmRow label="Video quality" desc="Best available picks the highest resolution the video offers.">
                                 <select value={props.settings.yt_quality || ""}
                                     onChange={(e) => { props.settings.yt_quality = e.target.value }}>
@@ -1817,7 +1817,7 @@
                                 </select>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Audio" desc="Save just the sound, or attach audio handling to video downloads.">
+                        <CdmSec id="audio" title="Audio" desc="Save just the sound, or attach audio handling to video downloads.">
                             <CdmRow label="Download audio only" desc="Saves an audio file instead of a video.">
                                 <Switch checked={props.settings.yt_audio_only || false} size="sm" onChange={(e) => { props.settings.yt_audio_only = e.target.checked }}> </Switch>
                             </CdmRow>
@@ -1837,7 +1837,7 @@
                                     onChange={(e) => { props.settings.yt_audio_quality = parseInt(e.target.value) || 0 }} /></div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Playlists" desc="How playlists are downloaded.">
+                        <CdmSec id="playlists" title="Playlists" desc="How playlists are downloaded.">
                             <CdmRow label="Limit items per playlist" desc="0 downloads the whole playlist.">
                                 <div class="cdm-set-controls"><input type="number" min="0" value={props.settings.yt_max_playlist_items || 0}
                                     onChange={(e) => { props.settings.yt_max_playlist_items = parseInt(e.target.value) || 0 }} /></div>
@@ -1866,7 +1866,7 @@
                                     {props.settings.yt_output_template ? <button class="cdm-set-reset" onClick={() => { props.reset("yt_output_template") }}>Reset</button> : null}
                                 </div>
                             </CdmRow>
-                        </CdmSec>                        <CdmSec title="Subtitles" desc="Download and embed subtitle tracks.">
+                        </CdmSec>                        <CdmSec id="subtitles" title="Subtitles" desc="Download and embed subtitle tracks.">
                             <CdmRow label="Download subtitles" desc="Save subtitle files next to the video.">
                                 <Switch checked={props.settings.yt_write_subs || false} size="sm" onChange={(e) => { props.settings.yt_write_subs = e.target.checked }}> </Switch>
                             </CdmRow>
@@ -1894,7 +1894,7 @@
                                 </select>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Metadata" desc="Extra information saved with or inside the video.">
+                        <CdmSec id="metadata" title="Metadata" desc="Extra information saved with or inside the video.">
                             <CdmRow label="Embed metadata" desc="Write title, artist and other tags into the file.">
                                 <Switch checked={props.settings.yt_embed_metadata !== false} size="sm" onChange={(e) => { props.settings.yt_embed_metadata = e.target.checked }}> </Switch>
                             </CdmRow>
@@ -1911,7 +1911,7 @@
                                 <Switch checked={props.settings.yt_write_comments || false} size="sm" onChange={(e) => { props.settings.yt_write_comments = e.target.checked }}> </Switch>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="SponsorBlock" desc="Skip or remove in-video sponsor reads and self-promotion, using the community SponsorBlock database.">
+                        <CdmSec id="sponsorblock" title="SponsorBlock" desc="Skip or remove in-video sponsor reads and self-promotion, using the community SponsorBlock database.">
                             <CdmRow label="Remove sponsor segments" desc="Cuts sponsor reads out of the saved video.">
                                 <Switch checked={props.settings.yt_remove_sponsorblock || false} size="sm" onChange={(e) => { props.settings.yt_remove_sponsorblock = e.target.checked }}> </Switch>
                             </CdmRow>
@@ -1945,7 +1945,7 @@
                         </div> : null}
 
                         {settingsTab === "network" ? <div>
-                        <CdmSec title="Identification" desc="How ChemicalDM presents itself to websites. Most downloads work fine with the defaults.">
+                        <CdmSec id="identification" title="Identification" desc="How ChemicalDM presents itself to websites. Most downloads work fine with the defaults.">
                             <CdmRow label="User-Agent" desc="Only change this if a site blocks the default.">
                                 <div class="cdm-set-controls">
                                     <input type="text" value={props.settings.user_agent || ""}
@@ -1971,7 +1971,7 @@
                                 </div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Connection" desc="Low-level network behaviour. Leave as is unless downloads misbehave.">
+                        <CdmSec id="connection" title="Connection" desc="Low-level network behaviour. Leave as is unless downloads misbehave.">
                             <CdmRow label="Connect timeout" desc="Give up connecting after this many seconds.">
                                 <div class="cdm-set-controls"><input type="number" min="1" value={props.settings.connect_timeout || 30}
                                     onChange={(e) => { props.settings.connect_timeout = parseInt(e.target.value) || 30 }} /></div>
@@ -1983,7 +1983,7 @@
                                 <Switch checked={props.settings.force_ipv6 || false} size="sm" onChange={(e) => { props.settings.force_ipv6 = e.target.checked }}> </Switch>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Cookies and SSL" desc="Signed-in downloads and certificate handling.">
+                        <CdmSec id="cookies-and-ssl" title="Cookies and SSL" desc="Signed-in downloads and certificate handling.">
                             <CdmRow label="Cookie file" desc="Export a cookies.txt from your browser to download from sites you are signed in to.">
                                 <div class="cdm-set-controls">
                                     <input type="text" value={props.settings.cookie_file || ""}
@@ -2003,7 +2003,7 @@
                             </CdmRow>
                         </CdmSec>
 
-                        <CdmSec title="Proxy" desc="Route downloads through a proxy server. All fields are optional.">
+                        <CdmSec id="proxy" title="Proxy" desc="Route downloads through a proxy server. All fields are optional.">
                             <CdmRow label="HTTP proxy host" desc="Address of the proxy, e.g. 127.0.0.1. Leave empty for direct connection.">
                                 <div class="cdm-set-controls">
                                     <input type="text" value={props.settings.proxy_host || ""}
@@ -2055,7 +2055,7 @@
                         </div> : null}
 
                         {settingsTab === "advanced" ? <div>
-                        <CdmSec title="Limits" desc="Guard rails for large downloads and full disks.">
+                        <CdmSec id="limits" title="Limits" desc="Guard rails for large downloads and full disks.">
                             <CdmRow label="Max download size" desc="Downloads bigger than this are rejected. 0 disables the check.">
                                 <div class="cdm-set-controls"><input type="number" min="0" value={Math.round((props.settings.max_download_size || 0) / 1048576)}
                                     onChange={(e) => { props.settings.max_download_size = (parseInt(e.target.value) || 0) * 1048576 }} /></div>
@@ -2069,7 +2069,7 @@
                                     onChange={(e) => { props.settings.bandwidth_limit_per = parseInt(e.target.value) || 0 }} /></div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Files" desc="Naming and automatic actions for finished downloads.">
+                        <CdmSec id="files" title="Files" desc="Naming and automatic actions for finished downloads.">
                             <CdmRow label="Filename template" desc="Advanced: available placeholders are name, ext and date.">
                                 <div class="cdm-set-controls">
                                     <input type="text" value={props.settings.filename_template || ""}
@@ -2095,7 +2095,7 @@
                                 </div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="ffmpeg" desc="Re-encoding options for merged YouTube videos. Default keeps the original quality.">
+                        <CdmSec id="ffmpeg" title="ffmpeg" desc="Re-encoding options for merged YouTube videos. Default keeps the original quality.">
                             <CdmRow label="Video codec" desc="Re-encoding is slower. Keep original unless you need a specific codec.">
                                 <select value={props.settings.ffmpeg_video_codec || ""}
                                     onChange={(e) => { props.settings.ffmpeg_video_codec = e.target.value }}>
@@ -2135,7 +2135,7 @@
                             </CdmRow>
                         </CdmSec>
 
-                        <CdmSec title="Appearance" desc="How ChemicalDM looks and sounds.">
+                        <CdmSec id="appearance" title="Appearance" desc="How ChemicalDM looks and sounds.">
                             <CdmRow label="Theme" desc="Auto follows your system appearance.">
                                 <select value={props.settings.theme || "auto"}
                                     onChange={(e) => { props.settings.theme = e.target.value }}>
@@ -2160,7 +2160,7 @@
                                     onChange={(e) => { props.settings.max_history = parseInt(e.target.value) || 0 }} /></div>
                             </CdmRow>
                         </CdmSec>
-                        <CdmSec title="Backup" desc="Move your settings between machines.">
+                        <CdmSec id="backup" title="Backup" desc="Move your settings between machines.">
                             <div class="cdm-set-buttons">
                                 <button class="cdm-btn" onClick={() => {
                                     var path = prompt("Export settings to file:", "/tmp/cdm-props.settings.json")
