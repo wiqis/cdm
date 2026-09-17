@@ -1195,7 +1195,7 @@
             </div>
             <div class="cdm-content">
 
-        {showSettings ? <CdmSettingsDialog settings={settings} reset={resetField} apply={applySettings} bridge={asyncBridge} toast={showToast} refresh={refreshSettings} close={() => { showSettings = false }} /> : null}
+        {showSettings && settings ? <CdmSettingsDialog settings={settings} reset={resetField} apply={applySettings} bridge={asyncBridge} toast={showToast} refresh={refreshSettings} close={() => { showSettings = false }} /> : null}
 
         {addOpen ? (
             <div class="cdm-dialog-overlay" onClick={() => { addOpen = false }}>
@@ -1646,8 +1646,7 @@
 #universal CdmSettingsDialog(props) {
     state settingsTab = "general"
     state settingsSection = "general"
-    if(props.settings) {
-        return <div class="cdm-dialog-overlay" onClick={props.close}>
+    return <div class="cdm-dialog-overlay" onClick={props.close}>
                 <div class="cdm-dialog" onClick={(e) => { e.stopPropagation() }}>
                     <div class="cdm-dialog-header">
                         <div class="cdm-dialog-title"><span class="cdm-ic cdm-ic-sliders"></span> Settings</div>
@@ -2197,9 +2196,5 @@
                     </div>
                 </div>
             </div>
-        } else {
-            return <div></div>
-        }
-    }
 }
 
