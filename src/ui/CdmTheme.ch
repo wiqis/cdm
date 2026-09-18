@@ -840,13 +840,14 @@ public func CdmTheme(page : &mut HtmlPage) {
             from { opacity: 0; transform: scale(0.98) translateY(6px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
-        /* Wide variant for the Settings dialog: definite height so WebKit
-           constrains the flex column and the panel becomes the sole scroller. */
+        /* Wide variant for the Settings dialog. Height adapts to the (single)
+           visible section; the cap keeps very tall sections from overflowing
+           the viewport, in which case the panel scrolls as a fallback. */
         .cdm-dialog-wide {
             width: 92%;
             max-width: 920px;
-            height: min(680px, 88vh);
-            max-height: none;
+            height: auto;
+            max-height: min(680px, 88vh);
         }
         .cdm-dialog-header {
             display: flex;
@@ -930,45 +931,64 @@ public func CdmTheme(page : &mut HtmlPage) {
             color: hsl(var(--muted-foreground));
             margin: 0;
         }
-        /* ---- Settings dialog: section rail + rows ---- */
+        /* ---- Settings dialog: tabbed nav + section rows ---- */
         .cdm-set-body {
-            flex-direction: row;
+            flex-direction: column;
             padding: 0;
             gap: 0;
             flex: 1;
             min-height: 0;
             overflow: hidden;
         }
-        .cdm-set-rail {
-            width: 172px;
-            flex-shrink: 0;
-            border-right: 1px solid hsl(var(--border));
-            padding: 12px 8px;
-            overflow-y: auto;
+        /* Settings nav: group chips + a section tab strip, both horizontal,
+           so the whole dialog fits the window with no scrolling anywhere. */
+        .cdm-set-navwrap {
             display: flex;
             flex-direction: column;
-            gap: 1px;
+            gap: 8px;
+            padding: 12px 18px 10px;
+            border-bottom: 1px solid hsl(var(--border));
             background: hsl(var(--muted) / 0.3);
         }
-        .cdm-set-group {
-            font-size: 10px;
-            font-weight: 650;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: hsl(var(--muted-foreground) / 0.65);
-            padding: 12px 10px 4px;
-            user-select: none;
+        .cdm-set-groups {
+            display: flex;
+            gap: 6px;
         }
-        .cdm-set-group:first-child { padding-top: 2px; }
+        .cdm-set-group {
+            font-size: 12px;
+            font-weight: 600;
+            color: hsl(var(--muted-foreground));
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            padding: 4px 12px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.1s, color 0.1s;
+        }
+        .cdm-set-group:hover {
+            background: hsl(var(--secondary) / 0.7);
+            color: hsl(var(--foreground));
+        }
+        .cdm-set-group-active {
+            background: hsl(var(--primary));
+            color: hsl(var(--primary-foreground));
+            border-color: hsl(var(--primary));
+        }
+        .cdm-set-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+        }
         .cdm-set-nav {
             text-align: left;
-            font-size: 12.5px;
+            font-size: 12px;
             font-weight: 480;
             color: hsl(var(--muted-foreground));
             background: transparent;
             border: none;
             border-radius: 6px;
-            padding: 6px 10px;
+            padding: 4px 9px;
             cursor: pointer;
             transition: background 0.1s, color 0.1s;
         }
@@ -987,13 +1007,10 @@ public func CdmTheme(page : &mut HtmlPage) {
             min-height: 0;
             overflow-y: auto;
             padding: 4px 22px 22px;
-            scroll-behavior: smooth;
         }
         .cdm-set-sec {
-            padding: 16px 0 6px;
-            scroll-margin-top: 8px;
+            padding: 2px 0 6px;
         }
-        .cdm-set-sec + .cdm-set-sec { border-top: 1px solid hsl(var(--border) / 0.7); }
         .cdm-set-sec-head { margin-bottom: 6px; }
         .cdm-set-title {
             font-size: 13px;
